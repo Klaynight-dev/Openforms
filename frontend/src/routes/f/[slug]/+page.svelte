@@ -82,7 +82,7 @@
       <div class="gform-card p-8 text-center text-[color:var(--danger)]">{loadError}</div>
     {:else if submitted}
       <div class="gform-card p-10 text-center">
-        <div class="mx-auto mb-3 text-brand-500"><IconCheckCircle size={52} weight="fill" /></div>
+        <div class="mx-auto mb-3 text-brand-500 flex justify-center"><IconCheckCircle size={52} weight="fill" /></div>
         <h1 class="mb-2 text-2xl font-bold">Merci !</h1>
         <p class="text-[color:var(--muted)]">Votre réponse a bien été enregistrée.</p>
       </div>
