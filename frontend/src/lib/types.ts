@@ -160,3 +160,24 @@ export interface FormActivitySummary {
   activity: { date: string; count: number }[];
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrganizationMember {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+  user: {
+    id: string;
+    email: string;
+    displayName: string | null;
+  };
+}
+

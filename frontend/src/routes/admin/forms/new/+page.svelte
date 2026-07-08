@@ -5,6 +5,8 @@
   import type { FieldDefinition, MetaColumn } from "$lib/types.ts";
   import { IconSave, IconBack } from "$lib/icons.ts";
 
+  import { page } from "$app/stores";
+
   let fields = $state<FieldDefinition[]>([]);
   let metaColumns = $state<MetaColumn[]>([]);
   let settings = $state({
@@ -17,6 +19,8 @@
   });
   let saving = $state(false);
   let error = $state<string | null>(null);
+
+  const orgId = $derived($page.url.searchParams.get("orgId") || undefined);
 
   async function save() {
     if (!settings.title.trim()) {
@@ -35,6 +39,7 @@
         consentText: settings.consentText || undefined,
         isAnonymized: settings.isAnonymized,
         encryptResponses: settings.encryptResponses,
+        organizationId: orgId,
       });
       goto(`/admin/forms/${res.form.id}`);
     } catch (e) {

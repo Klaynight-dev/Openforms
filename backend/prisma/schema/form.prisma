@@ -29,9 +29,12 @@ model Form {
 
   owner        User         @relation("FormOwner", fields: [ownerId], references: [id])
   ownerId      String
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
   responses    Response[]
   access       FormAccess[]
 
   @@index([ownerId])
   @@index([slug])
+  @@index([organizationId])
 }

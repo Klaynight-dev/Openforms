@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { resolveSession, type SessionContext } from "../lib/session.ts";
+import { prisma } from "../services/prisma.ts";
 
 export type Role = "SUPER_ADMIN" | "EDITOR";
 
@@ -57,12 +58,27 @@ export const authPlugin = new Elysia({ name: "auth" })
  * SUPER_ADMIN a tous les droits ; sinon on consulte la table FormAccess.
  */
 export async function resolveFormPermission(
-  prismaAccess: { findUnique: (args: any) => Promise<{ permission: string } | null> },
+  prismaAccess: any,
   user: SessionContext["user"],
   formId: string,
   ownerId: string,
 ): Promise<"NONE" | "READ" | "WRITE"> {
   if (user.role === "SUPER_ADMIN" || user.id === ownerId) return "WRITE";
+
+  // Check organization membership
+  const form = await prisma.form.findUnique({
+    where: { id: formId },
+    select: { organizationId: true },
+  });
+  if (form?.organizationId) {
+    const member = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId: form.organizationId, userId: user.id } },
+    });
+    if (member) {
+      return "WRITE";
+    }
+  }
+
   const access = await prismaAccess.findUnique({
     where: { userId_formId: { userId: user.id, formId } },
   });

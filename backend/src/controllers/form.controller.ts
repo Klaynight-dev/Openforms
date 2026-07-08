@@ -24,6 +24,7 @@ const FormSettings = {
   consentText: t.Optional(t.String({ maxLength: 2000 })),
   isAnonymized: t.Optional(t.Boolean()),
   encryptResponses: t.Optional(t.Boolean()),
+  organizationId: t.Optional(t.String()),
 };
 
 export const formController = new Elysia({ prefix: "/api/v1/forms" })
@@ -59,15 +60,22 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .get(
     "/",
     async ({ auth }) => {
-      const where =
-        auth!.user.role === "SUPER_ADMIN"
-          ? {}
-          : {
-              OR: [
-                { ownerId: auth!.user.id },
-                { access: { some: { userId: auth!.user.id } } },
-              ],
-            };
+      let where = {};
+      if (auth!.user.role !== "SUPER_ADMIN") {
+        const userOrgs = await prisma.organizationMember.findMany({
+          where: { userId: auth!.user.id },
+          select: { organizationId: true },
+        });
+        const orgIds = userOrgs.map((o) => o.organizationId);
+
+        where = {
+          OR: [
+            { ownerId: auth!.user.id },
+            { organizationId: { in: orgIds } },
+            { access: { some: { userId: auth!.user.id } } },
+          ],
+        };
+      }
       const forms = await prisma.form.findMany({
         where,
         orderBy: { updatedAt: "desc" },
@@ -78,10 +86,25 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
     { requireRole: true },
   )
 
-  // --- Création (Super Admin uniquement) ---
+  // --- Création (Super Admin ou membre d'une organisation) ---
   .post(
     "/",
-    async ({ auth, body }) => {
+    async ({ auth, body, set }) => {
+      if (body.organizationId) {
+        const member = await prisma.organizationMember.findUnique({
+          where: { organizationId_userId: { organizationId: body.organizationId, userId: auth!.user.id } },
+        });
+        if (!member) {
+          set.status = 403;
+          return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
+        }
+      } else {
+        if (auth!.user.role !== "SUPER_ADMIN") {
+          set.status = 403;
+          return { success: false, error: "Création réservée aux administrateurs ou au sein d'une organisation." };
+        }
+      }
+
       const form = await prisma.form.create({
         data: {
           slug: slugify(body.title),
@@ -94,11 +117,12 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           isAnonymized: body.isAnonymized ?? false,
           encryptResponses: body.encryptResponses ?? false,
           ownerId: auth!.user.id,
+          organizationId: body.organizationId ?? null,
         },
       });
       return { success: true, form };
     },
-    { body: t.Object(FormSettings), requireRole: ["SUPER_ADMIN"] },
+    { body: t.Object(FormSettings), requireRole: true },
   )
 
   // --- Détail (accès lecture minimum) ---
@@ -182,17 +206,34 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
     },
   )
 
-  // --- Suppression (Super Admin uniquement) ---
+  // --- Suppression (Super Admin, propriétaire, ou admin d'organisation) ---
   .delete(
     "/:id",
-    async ({ params, set }) => {
+    async ({ params, auth, set }) => {
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
+
+      let canDelete = auth!.user.role === "SUPER_ADMIN" || form.ownerId === auth!.user.id;
+
+      if (!canDelete && form.organizationId) {
+        const member = await prisma.organizationMember.findUnique({
+          where: { organizationId_userId: { organizationId: form.organizationId, userId: auth!.user.id } },
+        });
+        if (member && (member.role === "OWNER" || member.role === "ADMIN")) {
+          canDelete = true;
+        }
+      }
+
+      if (!canDelete) {
+        set.status = 403;
+        return { success: false, error: "Action non autorisée." };
+      }
+
       await prisma.form.delete({ where: { id: params.id } });
       return { success: true };
     },
-    { params: t.Object({ id: t.String() }), requireRole: ["SUPER_ADMIN"] },
+    { params: t.Object({ id: t.String() }), requireRole: true },
   );

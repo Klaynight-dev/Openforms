@@ -15,6 +15,8 @@ import type {
   UploadedFileInfo,
   GlobalStats,
   FormActivitySummary,
+  Organization,
+  OrganizationMember,
 } from "../types.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
@@ -137,6 +139,20 @@ export const api = {
   getFormStatsSummary: (formId: string) =>
     request<{ success: boolean; summary: FormActivitySummary }>("GET", `/api/v1/stats/form/${formId}/summary`),
 
+  // --- Organisations ---
+  listOrganizations: () =>
+    request<{ success: boolean; organizations: Organization[] }>("GET", "/api/v1/organizations"),
+  createOrganization: (name: string) =>
+    request<{ success: boolean; organization: Organization }>("POST", "/api/v1/organizations", { name }),
+  getOrganization: (id: string) =>
+    request<{ success: boolean; organization: Organization; role: string }>("GET", `/api/v1/organizations/${id}`),
+  listOrgMembers: (id: string) =>
+    request<{ success: boolean; members: OrganizationMember[] }>("GET", `/api/v1/organizations/${id}/members`),
+  addOrgMember: (orgId: string, email: string, role: string) =>
+    request<{ success: boolean; member: OrganizationMember }>("POST", `/api/v1/organizations/${orgId}/members`, { email, role }),
+  removeOrgMember: (orgId: string, memberId: string) =>
+    request<{ success: boolean }>("DELETE", `/api/v1/organizations/${orgId}/members/${memberId}`),
+
   // --- Upload de fichier (multipart) ---
   async uploadFile(
     formId: string,
@@ -169,6 +185,7 @@ export interface FormPayload {
   consentText?: string;
   isAnonymized?: boolean;
   encryptResponses?: boolean;
+  organizationId?: string;
 }
 
 export interface SignedFileDescriptor {

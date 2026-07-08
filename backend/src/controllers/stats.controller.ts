@@ -170,14 +170,10 @@ export const statsController = new Elysia({ prefix: "/api/v1/stats" })
       }
 
       // Vérification des droits
-      if (auth.user.role !== "SUPER_ADMIN" && auth.user.id !== form.ownerId) {
-        const access = await prisma.formAccess.findUnique({
-          where: { userId_formId: { userId: auth.user.id, formId: form.id } },
-        });
-        if (!access) {
-          set.status = 403;
-          return { success: false, error: "Accès refusé." };
-        }
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
+      if (perm === "NONE") {
+        set.status = 403;
+        return { success: false, error: "Accès refusé." };
       }
 
       const now = new Date();

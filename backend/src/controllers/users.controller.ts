@@ -38,6 +38,19 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
         },
         select: { id: true, email: true, role: true, displayName: true, isActive: true },
       });
+
+      // Ajout automatique à l'organisation par défaut "Humanitours"
+      const defaultOrg = await prisma.organization.findUnique({ where: { slug: "humanitours" } });
+      if (defaultOrg) {
+        await prisma.organizationMember.create({
+          data: {
+            organizationId: defaultOrg.id,
+            userId: user.id,
+            role: "MEMBER",
+          },
+        });
+      }
+
       return { success: true, user };
     },
     {
