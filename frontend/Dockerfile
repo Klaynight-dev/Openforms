@@ -7,13 +7,13 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Build-time environment variable for Vite
-ARG VITE_API_BASE=http://localhost:3000
+ARG VITE_API_BASE=http://localhost:3535
 ENV VITE_API_BASE=$VITE_API_BASE
 
 # Build the application
@@ -28,7 +28,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install only production dependencies
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy build artifacts from builder
 COPY --from=builder /app/build ./build

@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 
 # Install dependencies
-RUN bun install --frozen-lockfile
+RUN bun install
 
 # Copy project files
 COPY . .
@@ -16,8 +16,8 @@ RUN bunx prisma generate
 
 # Environment setup
 ENV NODE_ENV=production
-ENV PORT=3000
-EXPOSE 3000
+ENV PORT=3535
+EXPOSE 3535
 
 # Start server
 CMD ["bun", "run", "src/index.ts"]
