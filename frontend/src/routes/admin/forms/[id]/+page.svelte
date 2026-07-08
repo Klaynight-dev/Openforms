@@ -85,23 +85,26 @@
 {:else if error && !form}
   <p class="text-red-600">{error}</p>
 {:else}
-  <div class="mb-4 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <button class="btn-text !px-2" onclick={() => goto("/admin")}><IconBack size={18} /></button>
-      <h1 class="text-2xl font-bold">Éditer le formulaire</h1>
+  <!-- Header responsive : titre + actions -->
+  <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <!-- Ligne 1 : retour + titre + lien public -->
+    <div class="flex items-center gap-2 min-w-0">
+      <button class="btn-text !px-2 shrink-0" onclick={() => goto("/admin")}><IconBack size={18} /></button>
+      <h1 class="text-lg font-bold truncate min-w-0">Éditer le formulaire</h1>
       {#if form?.isPublished}
-        <a class="flex items-center gap-1 text-xs text-brand-600 hover:underline" href={`/f/${form.slug}`} target="_blank">
-          Page publique <IconExternal size={13} />
+        <a class="flex items-center gap-1 text-xs text-brand-600 hover:underline shrink-0" href={`/f/${form.slug}`} target="_blank">
+          <IconExternal size={13} />
         </a>
       {/if}
     </div>
-    <div class="flex items-center gap-2">
-      {#if saved}<span class="flex items-center gap-1 text-sm text-brand-600"><IconCheck size={15} weight="bold" /> Enregistré</span>{/if}
-      <button class="btn-secondary" onclick={togglePublish}>
+    <!-- Ligne 2 : actions -->
+    <div class="flex items-center gap-2 flex-wrap">
+      {#if saved}<span class="flex items-center gap-1 text-sm text-brand-600 shrink-0"><IconCheck size={15} weight="bold" /> Enregistré</span>{/if}
+      <button class="btn-secondary shrink-0" onclick={togglePublish}>
         <IconEye size={17} /> {form?.isPublished ? "Dépublier" : "Publier"}
       </button>
-      <button class="btn-secondary" onclick={() => goto(`/admin/forms/${id}/responses`)}><IconTable size={17} /> Réponses</button>
-      <button class="btn-primary" onclick={save} disabled={saving}><IconSave size={17} /> {saving ? "…" : "Enregistrer"}</button>
+      <button class="btn-secondary shrink-0" onclick={() => goto(`/admin/forms/${id}/responses`)}><IconTable size={17} /> Réponses</button>
+      <button class="btn-primary shrink-0" onclick={save} disabled={saving}><IconSave size={17} /> {saving ? "…" : "Enregistrer"}</button>
     </div>
   </div>
   {#if error}<p class="mb-3 text-sm text-red-600">{error}</p>{/if}

@@ -30,15 +30,16 @@
 {#if !auth.ready}
   <div class="grid h-screen place-items-center text-[color:var(--muted)]">Chargement…</div>
 {:else}
-  <div class="min-h-screen bg-[#f8f9fa]">
+  <div class="min-h-screen overflow-x-hidden bg-[#f8f9fa]">
     {#if showChrome}
       <header class="sticky top-0 z-20 border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
         <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
-          <a href="/admin" class="flex items-center gap-2.5 font-bold text-[color:var(--ink)] text-lg">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-md shadow-brand-500/20">
+          <a href="/admin" class="flex items-center gap-2.5 font-bold text-[color:var(--ink)] text-lg min-w-0 shrink-0">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-md shadow-brand-500/20 shrink-0">
               <IconLeaf size={20} weight="fill" />
             </span>
-            Humanitour <span class="text-xs font-semibold px-2 py-0.5 rounded bg-brand-50 text-brand-700 ml-1">admin</span>
+            <span class="hidden sm:inline truncate">Humanitour</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-brand-50 text-brand-700 shrink-0">admin</span>
           </a>
           <nav class="hidden md:flex items-center gap-1.5 text-sm font-semibold">
             <a href="/admin" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition">
