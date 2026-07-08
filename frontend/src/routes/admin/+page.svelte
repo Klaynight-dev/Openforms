@@ -586,10 +586,6 @@
               <button class="btn-secondary flex-1 !px-3 !py-2 text-xs font-bold" onclick={() => goto(`/admin/forms/${f.id}/responses`)}>
                 <IconTable size={15} /> Réponses
               </button>
-              <!-- Bouton Stats -->
-              <button class="btn-secondary !px-3 !py-2 text-xs" onclick={() => goto(`/admin/forms/${f.id}/stats`)} title="Statistiques">
-                <IconChartBar size={15} />
-              </button>
               {#if canEditForm(f)}
                 <button class="btn-secondary flex-1 !px-3 !py-2 text-xs font-bold" onclick={() => goto(`/admin/forms/${f.id}`)}>
                   <IconEdit size={15} /> Éditer
@@ -611,6 +607,12 @@
                 {#if openMenuId === f.id}
                   <div class="fixed inset-0 z-30" onclick={() => openMenuId = null} role="none"></div>
                   <div class="absolute right-0 bottom-full mb-2 w-48 rounded-xl border border-[color:var(--line)] bg-white p-1.5 shadow-xl z-40 text-left">
+                    <button
+                      class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                      onclick={() => { openMenuId = null; goto(`/admin/forms/${f.id}/stats`); }}
+                    >
+                      <IconChartBar size={14} /> Statistiques
+                    </button>
                     {#if canEditForm(f)}
                       <button
                         class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
