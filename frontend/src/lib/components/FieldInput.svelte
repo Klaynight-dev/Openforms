@@ -35,6 +35,17 @@
     value = `${OTHER_KEY}:${otherText}`;
   }
 
+  function checkboxGridToggle(row: string, col: string, checked: boolean) {
+    const obj = (typeof value === "object" && value ? { ...(value as Record<string, string[]>) } : {}) as Record<string, string[]>;
+    if (!obj[row]) obj[row] = [];
+    if (checked) {
+      obj[row] = [...obj[row], col];
+    } else {
+      obj[row] = obj[row].filter((v) => v !== col);
+    }
+    value = obj;
+  }
+
   function toggleCheckbox(optValue: string, checked: boolean) {
     const arr = Array.isArray(value) ? [...(value as string[])] : [];
     if (checked) arr.push(optValue);
@@ -241,6 +252,100 @@
       <p class="mt-1 flex items-center gap-1 text-xs text-brand-700"><IconCheck size={13} weight="bold" /> {uploadedNames.join(", ")}</p>
     {/if}
     {#if uploadError}<p class="mt-1 text-xs text-red-600">{uploadError}</p>{/if}
+  {:else if field.type === "linear_scale"}
+    {@const scaleMin = field.scale?.min ?? 1}
+    {@const scaleMax = field.scale?.max ?? 5}
+    {@const steps = Array.from({ length: scaleMax - scaleMin + 1 }, (_, i) => scaleMin + i)}
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-1 flex-wrap">
+        {#each steps as n}
+          {@const isActive = value === n}
+          <button
+            type="button"
+            class="flex h-10 w-10 items-center justify-center rounded-xl border-2 text-sm font-bold transition-all duration-150 select-none"
+            class:border-brand-500={isActive}
+            class:bg-brand-500={isActive}
+            class:text-white={isActive}
+            class:shadow-md={isActive}
+            class:border-slate-200={!isActive}
+            class:bg-white={!isActive}
+            class:text-[color:var(--ink)]={!isActive}
+            class:hover:border-brand-300={!isActive}
+            onclick={() => value = isActive ? null : n}
+          >{n}</button>
+        {/each}
+      </div>
+      {#if field.scale?.minLabel || field.scale?.maxLabel}
+        <div class="flex justify-between text-xs text-[color:var(--muted)] font-medium px-1">
+          <span>{field.scale?.minLabel ?? ""}</span>
+          <span>{field.scale?.maxLabel ?? ""}</span>
+        </div>
+      {/if}
+    </div>
+  {:else if field.type === "checkbox_grid"}
+    <div class="w-full">
+      <!-- Desktop -->
+      <div class="hidden md:block overflow-x-auto">
+        <table class="min-w-full border-collapse border border-[color:var(--line)] text-sm">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="border border-[color:var(--line)] p-3 text-left font-semibold"></th>
+              {#each field.grid?.columns ?? [] as col}
+                <th class="border border-[color:var(--line)] p-3 text-center font-semibold">{col}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each field.grid?.rows ?? [] as row}
+              <tr class="hover:bg-brand-50/30 transition-colors">
+                <td class="border border-[color:var(--line)] p-3 font-medium">{row}</td>
+                {#each field.grid?.columns ?? [] as col}
+                  {@const rowVals = (value as Record<string, string[]>)?.[row] ?? []}
+                  <td class="border border-[color:var(--line)] p-3 text-center">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 accent-brand cursor-pointer"
+                      checked={rowVals.includes(col)}
+                      onchange={(e) => checkboxGridToggle(row, col, (e.target as HTMLInputElement).checked)}
+                    />
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <!-- Mobile -->
+      <div class="block md:hidden space-y-4">
+        {#each field.grid?.rows ?? [] as row}
+          {@const rowVals = (value as Record<string, string[]>)?.[row] ?? []}
+          <div class="rounded-xl border border-[color:var(--line)] p-4 bg-slate-50/50 shadow-sm">
+            <div class="font-semibold text-sm mb-3">{row}</div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each field.grid?.columns ?? [] as col}
+                {@const checked = rowVals.includes(col)}
+                <button
+                  type="button"
+                  class="flex items-center gap-2 rounded-lg border p-2.5 text-xs font-medium transition-all duration-200 select-none text-left"
+                  class:bg-brand={checked}
+                  class:text-white={checked}
+                  class:border-brand={checked}
+                  class:bg-white={!checked}
+                  class:text-[color:var(--ink)]={!checked}
+                  class:border-[color:var(--line)]={!checked}
+                  onclick={() => checkboxGridToggle(row, col, !checked)}
+                >
+                  <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 {checked ? 'border-white bg-white/30' : 'border-current'}">
+                    {#if checked}<span class="block h-2 w-2 rounded-sm bg-white"></span>{/if}
+                  </span>
+                  {col}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
   {/if}
 
   {#if error}

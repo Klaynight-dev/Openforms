@@ -53,6 +53,8 @@ import {
   GridFour,
   Rows,
   Sparkle,
+  SlidersHorizontal,
+  GridNine,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -96,6 +98,8 @@ export {
   MicrosoftExcelLogo as IconExcel,
   Rows as IconCanvas,
   Sparkle as IconSparkle,
+  SlidersHorizontal as IconLinearScale,
+  GridNine as IconCheckboxGrid,
 };
 
 // --- Fallback Lucide ---
@@ -114,4 +118,6 @@ export const FIELD_ICONS: Record<FieldType, typeof TextT> = {
   datetime: Clock,
   file: Paperclip,
   grid: GridFour,
+  linear_scale: SlidersHorizontal,
+  checkbox_grid: GridNine,
 };

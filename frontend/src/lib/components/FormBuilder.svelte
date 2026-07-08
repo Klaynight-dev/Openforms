@@ -264,14 +264,6 @@
         </label>
       {/if}
 
-      {#if selected.type === "grid" && selected.grid}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <label class="label">Lignes (une par ligne)</label>
-          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.rows)} oninput={(e) => setGridRows((e.target as HTMLTextAreaElement).value)}></textarea>
-          <label class="label">Colonnes (une par ligne)</label>
-          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.columns)} oninput={(e) => setGridCols((e.target as HTMLTextAreaElement).value)}></textarea>
-        </div>
-      {/if}
 
       {#if selected.type === "file"}
         <div class="mb-4 pt-3 border-t border-slate-100">
@@ -279,6 +271,43 @@
           <input class="input mb-3 text-xs" placeholder="image/*, application/pdf" value={(selected.accept ?? []).join(", ")} oninput={(e) => (selected.accept = (e.target as HTMLInputElement).value.split(",").map((s) => s.trim()).filter(Boolean))} />
           <label class="label">Taille max (octets)</label>
           <input class="input mb-3 text-xs" type="number" bind:value={selected.maxSizeBytes} />
+        </div>
+      {/if}
+
+      {#if selected.type === "linear_scale"}
+        <div class="mb-4 pt-3 border-t border-slate-100">
+          <div class="label mb-2">Échelle</div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <label class="label">Valeur min</label>
+              <input class="input text-xs" type="number" min="0" max="10"
+                value={selected.scale?.min ?? 1}
+                oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.min = parseInt((e.target as HTMLInputElement).value) || 1; }} />
+            </div>
+            <div>
+              <label class="label">Valeur max</label>
+              <input class="input text-xs" type="number" min="2" max="10"
+                value={selected.scale?.max ?? 5}
+                oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.max = parseInt((e.target as HTMLInputElement).value) || 5; }} />
+            </div>
+          </div>
+          <label class="label">Libellé gauche (min)</label>
+          <input class="input mb-2 text-xs" placeholder="ex : Pas du tout d'accord"
+            value={selected.scale?.minLabel ?? ""}
+            oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.minLabel = (e.target as HTMLInputElement).value; }} />
+          <label class="label">Libellé droite (max)</label>
+          <input class="input text-xs" placeholder="ex : Tout à fait d'accord"
+            value={selected.scale?.maxLabel ?? ""}
+            oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.maxLabel = (e.target as HTMLInputElement).value; }} />
+        </div>
+      {/if}
+
+      {#if (selected.type === "grid" || selected.type === "checkbox_grid") && selected.grid}
+        <div class="mb-4 pt-3 border-t border-slate-100">
+          <label class="label">Lignes (une par ligne)</label>
+          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.rows)} oninput={(e) => setGridRows((e.target as HTMLTextAreaElement).value)}></textarea>
+          <label class="label">Colonnes (une par ligne)</label>
+          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.columns)} oninput={(e) => setGridCols((e.target as HTMLTextAreaElement).value)}></textarea>
         </div>
       {/if}
 

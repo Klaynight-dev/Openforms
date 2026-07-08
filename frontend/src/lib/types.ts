@@ -11,7 +11,9 @@ export type FieldType =
   | "date"
   | "datetime"
   | "file"
-  | "grid";
+  | "grid"
+  | "linear_scale"
+  | "checkbox_grid";
 
 export interface FieldOption {
   value: string;
@@ -39,6 +41,7 @@ export interface FieldDefinition {
   accept?: string[];
   maxSizeBytes?: number;
   grid?: { rows: string[]; columns: string[] };
+  scale?: { min: number; max: number; minLabel?: string; maxLabel?: string };
 }
 
 export type MetaColumnKind = "text" | "number" | "formula";
