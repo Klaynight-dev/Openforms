@@ -47,6 +47,19 @@ export function makeRateLimit(options: { max: number; duration: number; message:
   return rateLimit({
     duration: options.duration,
     max: options.max,
+    generator: (request, server) => {
+      const fwd = request.headers.get("x-forwarded-for");
+      if (fwd) return fwd.split(",")[0]?.trim();
+      const realIp = request.headers.get("x-real-ip");
+      if (realIp) return realIp;
+      
+      try {
+        const ip = server?.requestIP(request)?.address;
+        if (ip) return ip;
+      } catch {}
+      
+      return "127.0.0.1";
+    },
     errorResponse: new Response(JSON.stringify({ success: false, error: options.message }), {
       status: 429,
       headers: { "content-type": "application/json" },
