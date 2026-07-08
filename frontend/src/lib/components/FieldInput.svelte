@@ -120,34 +120,73 @@
       {/each}
     </div>
   {:else if field.type === "grid"}
-    <div class="overflow-x-auto">
-      <table class="min-w-full border text-sm">
-        <thead>
-          <tr>
-            <th class="border p-2"></th>
-            {#each field.grid?.columns ?? [] as col}
-              <th class="border p-2 text-center font-medium">{col}</th>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each field.grid?.rows ?? [] as row}
-            <tr>
-              <td class="border p-2 font-medium">{row}</td>
+    <div class="w-full">
+      <!-- Desktop Table View -->
+      <div class="hidden md:block overflow-x-auto">
+        <table class="min-w-full border-collapse border border-[color:var(--line)] text-sm">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="border border-[color:var(--line)] p-3 text-left font-semibold text-[color:var(--ink)]"></th>
               {#each field.grid?.columns ?? [] as col}
-                <td class="border p-2 text-center">
-                  <input
-                    type="radio"
-                    name={`${field.key}_${row}`}
-                    checked={(value as Record<string, string>)?.[row] === col}
-                    onchange={() => gridSet(row, col)}
-                  />
-                </td>
+                <th class="border border-[color:var(--line)] p-3 text-center font-semibold text-[color:var(--ink)]">{col}</th>
               {/each}
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each field.grid?.rows ?? [] as row}
+              <tr class="hover:bg-brand-50/30 transition-colors">
+                <td class="border border-[color:var(--line)] p-3 font-medium text-[color:var(--ink)]">{row}</td>
+                {#each field.grid?.columns ?? [] as col}
+                  <td class="border border-[color:var(--line)] p-3 text-center">
+                    <input
+                      type="radio"
+                      class="h-4 w-4 text-brand focus:ring-brand accent-brand cursor-pointer"
+                      name={`${field.key}_${row}`}
+                      checked={(value as Record<string, string>)?.[row] === col}
+                      onchange={() => gridSet(row, col)}
+                    />
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile Stacked Card View -->
+      <div class="block md:hidden space-y-4">
+        {#each field.grid?.rows ?? [] as row}
+          <div class="rounded-xl border border-[color:var(--line)] p-4 bg-slate-50/50 shadow-sm">
+            <div class="font-semibold text-sm mb-3 text-[color:var(--ink)]">{row}</div>
+            <div class="grid grid-cols-2 gap-2">
+              {#each field.grid?.columns ?? [] as col}
+                {@const isSelected = (value as Record<string, string>)?.[row] === col}
+                <button
+                  type="button"
+                  class="flex items-center justify-center gap-1.5 rounded-lg border p-2.5 text-xs font-medium transition-all duration-200 text-center select-none"
+                  class:bg-brand={isSelected}
+                  class:text-white={isSelected}
+                  class:border-brand={isSelected}
+                  class:bg-white={!isSelected}
+                  class:text-[color:var(--ink)]={!isSelected}
+                  class:border-[color:var(--line)]={!isSelected}
+                  class:hover:bg-brand-50={!isSelected}
+                  onclick={() => gridSet(row, col)}
+                >
+                  <input
+                    type="radio"
+                    class="sr-only"
+                    name={`${field.key}_${row}_mobile`}
+                    checked={isSelected}
+                    readOnly
+                  />
+                  <span>{col}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
     </div>
   {:else if field.type === "file"}
     <input

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { FieldDefinition, MetaColumn, ResponseRow } from "../types.ts";
   import { api } from "../api/client.ts";
   import { evaluateRowFormula, evaluateAggregate } from "../formulaEngine.ts";
@@ -76,6 +77,14 @@
   let aggregates = $state<Record<string, string>>({}); // colKey -> "SUM" | "AVG" | ...
   let busy = $state(false);
   let message = $state<string | null>(null);
+  let viewMode = $state<"table" | "cards">("table");
+  let actionsMenuOpen = $state(false);
+
+  onMount(() => {
+    if (window.innerWidth < 768) {
+      viewMode = "cards";
+    }
+  });
 
   // Valeur brute d'une cellule (champ, méta ou formule calculée par ligne).
   function rawValue(row: ResponseRow, col: Column): unknown {
@@ -317,22 +326,105 @@
 </script>
 
 <div class="tableur-container">
-  <div class="toolbar">
-    <div class="search-box">
+  <!-- Toolbar responsive -->
+  <div class="toolbar flex flex-col md:flex-row items-stretch md:items-center gap-3 p-3 bg-slate-50 border border-[color:var(--line)] border-b-0 rounded-t-2xl">
+    <div class="search-box flex-1 max-w-sm">
       <span class="search-ico"><IconSearch size={16} /></span>
-      <input type="text" placeholder="Filtrer toutes les colonnes…" bind:value={searchQuery} class="search-input" />
+      <input type="text" placeholder="Rechercher dans les réponses…" bind:value={searchQuery} class="search-input w-full" />
     </div>
-    <div class="spacer"></div>
-    {#if canEdit}
-      <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={addRow} disabled={busy} type="button"><IconPlus size={14} weight="bold" /> Ligne</button>
-      <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={addColumn} type="button"><IconPlus size={14} weight="bold" /> Colonne</button>
-      <label class="btn-secondary cursor-pointer !px-3 !py-1.5 text-xs">
-        <IconImport size={15} /> Importer
-        <input type="file" accept=".xlsx,.csv" class="hidden" onchange={importFile} />
-      </label>
-    {/if}
-    <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={exportCsv} type="button"><IconDownload size={15} /> CSV</button>
-    <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={exportXlsx} type="button"><IconExcel size={15} /> Excel</button>
+    
+    <div class="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto">
+      <!-- Toggle mode d'affichage -->
+      <div class="flex border border-slate-200 rounded-xl p-0.5 bg-white shrink-0">
+        <button 
+          type="button"
+          class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 select-none"
+          class:bg-brand={viewMode === "table"}
+          class:text-white={viewMode === "table"}
+          class:text-slate-500={viewMode !== "table"}
+          onclick={() => viewMode = "table"}
+        >
+          Tableur
+        </button>
+        <button 
+          type="button"
+          class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 select-none"
+          class:bg-brand={viewMode === "cards"}
+          class:text-white={viewMode === "cards"}
+          class:text-slate-500={viewMode !== "cards"}
+          onclick={() => viewMode = "cards"}
+        >
+          Cartes
+        </button>
+      </div>
+
+      <!-- Actions de modification (desktop inline, mobile menu) -->
+      <div class="flex items-center gap-1.5">
+        <!-- Actions PC -->
+        <div class="hidden md:flex items-center gap-1.5">
+          {#if canEdit}
+            <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={addRow} disabled={busy} type="button"><IconPlus size={14} weight="bold" /> Ligne</button>
+            <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={addColumn} type="button"><IconPlus size={14} weight="bold" /> Colonne</button>
+            <label class="btn-secondary cursor-pointer !px-3 !py-1.5 text-xs">
+              <IconImport size={15} /> Importer
+              <input type="file" accept=".xlsx,.csv" class="hidden" onchange={importFile} />
+            </label>
+          {/if}
+          <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={exportCsv} type="button"><IconDownload size={15} /> CSV</button>
+          <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={exportXlsx} type="button"><IconExcel size={15} /> Excel</button>
+        </div>
+
+        <!-- Actions Mobile Dropdown -->
+        <div class="relative block md:hidden">
+          <button 
+            class="btn-secondary !px-3 !py-1.5 text-xs" 
+            onclick={() => actionsMenuOpen = !actionsMenuOpen}
+            type="button"
+          >
+            Actions
+          </button>
+          
+          {#if actionsMenuOpen}
+            <!-- Overlay to close -->
+            <div class="fixed inset-0 z-30" onclick={() => actionsMenuOpen = false} role="none"></div>
+            
+            <div class="absolute right-0 top-full mt-2 w-48 rounded-xl border border-[color:var(--line)] bg-white p-1.5 shadow-xl z-40 text-left">
+              {#if canEdit}
+                <button 
+                  class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                  onclick={() => { actionsMenuOpen = false; addRow(); }}
+                >
+                  <IconPlus size={14} /> Ajouter une ligne
+                </button>
+                <button 
+                  class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                  onclick={() => { actionsMenuOpen = false; addColumn(); }}
+                >
+                  <IconPlus size={14} /> Ajouter une colonne
+                </button>
+                <label class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 cursor-pointer transition">
+                  <IconImport size={14} /> Importer XLSX/CSV
+                  <input type="file" accept=".xlsx,.csv" class="hidden" onchange={(e) => { actionsMenuOpen = false; importFile(e); }} />
+                </label>
+                <hr class="my-1 border-slate-100" />
+              {/if}
+              <button 
+                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                onclick={() => { actionsMenuOpen = false; exportCsv(); }}
+              >
+                <IconDownload size={14} /> Exporter CSV
+              </button>
+              <button 
+                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                onclick={() => { actionsMenuOpen = false; exportXlsx(); }}
+              >
+                <IconDownload size={14} /> Exporter Excel
+              </button>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
   </div>
 
   {#if message}
@@ -342,7 +434,8 @@
     </div>
   {/if}
 
-  <div class="table-wrapper">
+  <!-- Vue Tableur classique -->
+  <div class="table-wrapper" class:hidden={viewMode !== "table"}>
     <table class="custom-table">
       <thead>
         <tr>
@@ -427,6 +520,66 @@
       </tfoot>
     </table>
   </div>
+
+  <!-- Vue par Cartes (Mobile) -->
+  {#if viewMode === "cards"}
+    <div class="space-y-4 mt-4">
+      {#each viewRows as row, i (row.id)}
+        <div class="card border border-[color:var(--line)] bg-white rounded-2xl p-5 shadow-sm">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+            <span class="text-xs font-bold text-brand uppercase tracking-wider">Réponse #{viewRows.length - i}</span>
+            <span class="text-xs font-medium text-slate-400">{new Date(row.submittedAt).toLocaleString()}</span>
+          </div>
+          
+          <div class="space-y-3 mb-4">
+            {#each columns as col}
+              <div class="flex flex-col border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{col.label}</span>
+                {#if editing?.rowId === row.id && editing?.key === col.key}
+                  <div class="flex items-center gap-1.5 mt-1">
+                    <input 
+                      class="input !py-1.5 text-xs font-semibold" 
+                      type={col.numeric ? "number" : "text"} 
+                      bind:value={editValue}
+                      onkeydown={editKeydown}
+                      use:focus 
+                    />
+                    <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={commitEdit}>OK</button>
+                    <button class="btn-secondary !px-3 !py-1.5 text-xs text-slate-500" onclick={() => editing = null}>Fermer</button>
+                  </div>
+                {:else}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div 
+                    class="text-sm text-[color:var(--ink)] font-semibold min-h-[1.5rem] py-1 px-1.5 rounded transition hover:bg-brand-50/50 cursor-pointer"
+                    onclick={() => { if (col.editable) startEdit(row, col); }}
+                    title={col.editable ? "Cliquez pour modifier" : ""}
+                  >
+                    {formatCell(rawValue(row, col)) || "—"}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+
+          {#if canEdit}
+            <div class="flex justify-end pt-3 border-t border-slate-100">
+              <button 
+                class="btn-text !py-1 text-xs !text-[color:var(--danger)] flex items-center gap-1.5"
+                onclick={() => deleteRow(row.id)}
+                type="button"
+              >
+                <IconTrash size={15} /> Supprimer
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/each}
+      {#if viewRows.length === 0}
+        <div class="text-center text-slate-400 p-12 bg-white rounded-2xl border border-[color:var(--line)]">Aucune réponse.</div>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style lang="scss">
@@ -625,6 +778,6 @@
     }
   }
   .hidden {
-    display: none;
+    display: none !important;
   }
 </style>

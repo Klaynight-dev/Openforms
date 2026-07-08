@@ -87,20 +87,27 @@
         <p class="text-[color:var(--muted)]">Votre réponse a bien été enregistrée.</p>
       </div>
     {:else if form}
-      <!-- En-tête façon Google Forms -->
-      <div class="gform-card mb-4 p-6">
-        <h1 class="text-3xl font-normal text-[color:var(--ink)]">{form.title}</h1>
-        {#if form.description}<p class="mt-2 text-[color:var(--muted)]">{form.description}</p>{/if}
-        {#if form.isAnonymized}
-          <p class="mt-3 inline-flex items-center gap-1.5 rounded bg-brand-50 px-2.5 py-1 text-xs text-brand-700">
-            <IconLock size={13} /> Réponses anonymes — aucune donnée d'identification n'est collectée.
-          </p>
-        {/if}
+      <!-- En-tête façon Google Forms Premium -->
+      <div class="gform-card mb-5">
+        <div class="w-full h-24 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 relative overflow-hidden flex items-end p-4">
+          <div class="absolute inset-0 bg-black/5"></div>
+          <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10 blur-xl"></div>
+          <div class="absolute -left-12 -bottom-12 w-28 h-28 rounded-full bg-white/10 blur-lg"></div>
+        </div>
+        <div class="p-6 md:p-8">
+          <h1 class="text-3xl font-bold tracking-tight text-[color:var(--ink)]">{form.title}</h1>
+          {#if form.description}<p class="mt-3 text-sm text-[color:var(--muted)] leading-relaxed">{form.description}</p>{/if}
+          {#if form.isAnonymized}
+            <p class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
+              <IconLock size={14} /> Réponses anonymes — aucune donnée d'identification n'est collectée.
+            </p>
+          {/if}
+        </div>
       </div>
 
       <form onsubmit={submit}>
         {#each form.schema as field (field.key)}
-          <div class="mb-3 rounded-lg border border-[color:var(--line)] bg-white p-6">
+          <div class="mb-4 rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
             <FieldInput
               {field}
               formId={form.id}
@@ -112,22 +119,22 @@
         {/each}
 
         {#if form.requireConsent}
-          <label class="mb-3 flex items-start gap-2.5 rounded-lg border border-[color:var(--line)] bg-white p-6 text-sm">
-            <input type="checkbox" bind:checked={consent} class="mt-0.5" />
-            <span>{form.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
+          <label class="mb-5 flex items-start gap-3 rounded-xl border border-[color:var(--line)] bg-white p-6 text-sm shadow-sm hover:shadow-md cursor-pointer transition-shadow duration-200">
+            <input type="checkbox" bind:checked={consent} class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
+            <span class="text-[color:var(--ink)] font-medium leading-tight">{form.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
           </label>
         {/if}
 
         {#if submitError}
-          <p class="mb-3 text-sm text-[color:var(--danger)]">{submitError}</p>
+          <p class="mb-4 text-sm font-semibold text-[color:var(--danger)]">{submitError}</p>
         {/if}
 
-        <div class="flex items-center justify-between">
-          <button class="btn-primary" type="submit" disabled={submitting}>
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+          <button class="btn-primary w-full sm:w-auto" type="submit" disabled={submitting}>
             {submitting ? "Envoi…" : "Envoyer"}
           </button>
-          <span class="flex items-center gap-1.5 text-xs text-[color:var(--muted)]">
-            <IconShield size={14} /> Sans tracker · Auto-hébergé · Open-source
+          <span class="flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted)]">
+            <IconShield size={15} /> Sans tracker · Auto-hébergé · Open-source
           </span>
         </div>
       </form>
