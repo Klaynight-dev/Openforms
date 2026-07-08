@@ -86,8 +86,8 @@ Cette commande va :
 
 ### 3. Accès
 * **Frontend** : [http://localhost:5173](http://localhost:5173)
-* **API Backend** : [http://localhost:3000](http://localhost:3000)
-* **Documentation Swagger (API)** : [http://localhost:3000/docs](http://localhost:3000/docs)
+* **API Backend** : [http://localhost:3535](http://localhost:3535)
+* **Documentation Swagger (API)** : [http://localhost:3535/docs](http://localhost:3535/docs)
 
 ---
 
@@ -143,7 +143,7 @@ bun run dev
 ```
 
 * Le frontend de développement sera accessible sur : [http://localhost:5173](http://localhost:5173)
-* Le backend de développement sera accessible sur : [http://localhost:3000](http://localhost:3000)
+* Le backend de développement sera accessible sur : [http://localhost:3535](http://localhost:3535)
 
 ---
 
@@ -154,7 +154,7 @@ bun run dev
 | Variable | Description | Valeur par défaut |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | URL de connexion PostgreSQL | **Requis** |
-| `PORT` | Port d'écoute de l'API | `3000` |
+| `PORT` | Port d'écoute de l'API | `3535` |
 | `NODE_ENV` | Mode de l'application | `development` ou `production` |
 | `FRONTEND_ORIGIN` | Liste des origines CORS autorisées (séparées par des virgules) | `http://localhost:5173` |
 | `ENCRYPTION_KEY` | Clé AES-256-GCM encodée en base64 (exactement 32 octets décodés) | **Requis en production** |
@@ -168,7 +168,7 @@ bun run dev
 
 ### Frontend (`frontend/.env` ou variables d'environnement système)
 
-* **`VITE_API_BASE`** : L'URL publique d'accès à l'API backend. Par défaut `http://localhost:3000`. Lors de la construction de l'image Docker, cette variable est passée via l'argument de build `VITE_API_BASE`.
+* **`VITE_API_BASE`** : L'URL publique d'accès à l'API backend. Par défaut `http://localhost:3535`. Lors de la construction de l'image Docker, cette variable est passée via l'argument de build `VITE_API_BASE`.
 
 ---
 

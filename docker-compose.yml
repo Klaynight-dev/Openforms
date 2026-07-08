@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://humanitour:humanitour_secure_pass@db:5432/formulaire_humanitour?schema=public
-      PORT: 3000
+      PORT: 3535
       NODE_ENV: production
       FRONTEND_ORIGIN: http://localhost:5173
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-uzvA8UqS86fGkGv2Xq6d7S9lFf4b8G9vRzHhL6e2X1c=}
@@ -43,7 +43,7 @@ services:
     volumes:
       - uploads:/app/uploads
     ports:
-      - "3000:3000"
+      - "3535:3535"
     command: >
       sh -c "bunx prisma migrate deploy && bun run prisma/seed.ts && bun run src/index.ts"
 
@@ -52,7 +52,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:3000}
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:3535}
     container_name: humanitour-frontend
     restart: always
     depends_on:
