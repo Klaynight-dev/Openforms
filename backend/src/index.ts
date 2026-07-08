@@ -7,6 +7,7 @@ import { usersController } from "./controllers/users.controller.ts";
 import { formController } from "./controllers/form.controller.ts";
 import { responseController } from "./controllers/response.controller.ts";
 import { uploadController } from "./controllers/upload.controller.ts";
+import { statsController } from "./controllers/stats.controller.ts";
 import { purgeExpiredSessions } from "./lib/session.ts";
 
 export const app = new Elysia()
@@ -44,7 +45,8 @@ export const app = new Elysia()
   .use(usersController)
   .use(formController)
   .use(responseController)
-  .use(uploadController);
+  .use(uploadController)
+  .use(statsController);
 
 // Purge périodique des sessions expirées (toutes les heures).
 setInterval(() => {

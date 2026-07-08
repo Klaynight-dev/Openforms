@@ -3,7 +3,7 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte.ts";
-  import { IconLeaf, IconUsers, IconLogout, IconTable, IconClose } from "$lib/icons.ts";
+  import { IconLeaf, IconUsers, IconLogout, IconTable, IconClose, IconChartBar } from "$lib/icons.ts";
 
   let { children } = $props();
   let menuOpen = $state(false);

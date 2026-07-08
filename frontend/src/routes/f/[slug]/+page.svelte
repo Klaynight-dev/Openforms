@@ -29,6 +29,47 @@
 
   let currentPageIndex = $state(0);
 
+  function isConditionMet(cond: { fieldKey: string; value: string } | undefined): boolean {
+    if (!cond) return true;
+    const val = values[cond.fieldKey];
+    if (val == null) return false;
+    if (Array.isArray(val)) {
+      return val.map(String).includes(cond.value);
+    }
+    return String(val) === cond.value;
+  }
+
+  let visibleFieldKeys = $derived.by<Set<string>>(() => {
+    if (!form) return new Set();
+    const visible = new Set<string>();
+    let currentSectionKey: string | null = null;
+
+    for (const f of form.schema) {
+      let parentSectionVisible = true;
+      if (f.type !== "section" && currentSectionKey !== null) {
+        parentSectionVisible = visible.has(currentSectionKey);
+      }
+
+      let fieldVisible = parentSectionVisible;
+      if (fieldVisible && f.condition) {
+        fieldVisible = isConditionMet(f.condition);
+      }
+
+      if (f.type === "section") {
+        currentSectionKey = f.key;
+        if (fieldVisible) {
+          visible.add(f.key);
+        }
+        continue;
+      }
+
+      if (fieldVisible) {
+        visible.add(f.key);
+      }
+    }
+    return visible;
+  });
+
   let pages = $derived.by<Page[]>(() => {
     if (!form) return [];
     const list: Page[] = [];
@@ -38,18 +79,22 @@
 
     for (const field of form.schema) {
       if (field.type === "section") {
-        list.push({
-          title: currentTitle,
-          description: currentDescription,
-          fields: currentFields,
-          isFirst: list.length === 0,
-          isLast: false,
-        });
-        currentFields = [];
-        currentTitle = field.label;
-        currentDescription = field.description ?? "";
+        if (visibleFieldKeys.has(field.key)) {
+          list.push({
+            title: currentTitle,
+            description: currentDescription,
+            fields: currentFields,
+            isFirst: false,
+            isLast: false,
+          });
+          currentFields = [];
+          currentTitle = field.label;
+          currentDescription = field.description ?? "";
+        }
       } else {
-        currentFields.push(field);
+        if (visibleFieldKeys.has(field.key)) {
+          currentFields.push(field);
+        }
       }
     }
 
@@ -57,16 +102,24 @@
       title: currentTitle,
       description: currentDescription,
       fields: currentFields,
-      isFirst: list.length === 0,
-      isLast: true,
+      isFirst: false,
+      isLast: false,
     });
 
-    for (let i = 0; i < list.length; i++) {
-      list[i].isFirst = i === 0;
-      list[i].isLast = i === list.length - 1;
+    const filteredList = list.filter((p, idx) => idx === 0 || p.fields.length > 0);
+
+    for (let i = 0; i < filteredList.length; i++) {
+      filteredList[i].isFirst = i === 0;
+      filteredList[i].isLast = i === filteredList.length - 1;
     }
 
-    return list;
+    return filteredList;
+  });
+
+  $effect(() => {
+    if (pages.length > 0 && currentPageIndex >= pages.length) {
+      currentPageIndex = pages.length - 1;
+    }
   });
 
   let currentPage = $derived(pages[currentPageIndex] ?? null);
@@ -118,6 +171,7 @@
     const errs: Record<string, string> = {};
     for (const f of form.schema) {
       if (f.type === "section") continue;
+      if (!visibleFieldKeys.has(f.key)) continue;
       const v = values[f.key];
       const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
       if (f.required && empty) errs[f.key] = "Ce champ est requis.";
@@ -145,11 +199,24 @@
     }
     submitting = true;
     try {
+      const cleanValues: Record<string, unknown> = {};
+      for (const k of Object.keys(values)) {
+        if (visibleFieldKeys.has(k)) {
+          cleanValues[k] = values[k];
+        }
+      }
+      const cleanFiles: Record<string, any> = {};
+      for (const k of Object.keys(files)) {
+        if (visibleFieldKeys.has(k)) {
+          cleanFiles[k] = files[k];
+        }
+      }
+
       const res = await api.submit({
         formId: form!.id,
-        data: values,
+        data: cleanValues,
         consent,
-        files: Object.keys(files).length ? files : undefined,
+        files: Object.keys(cleanFiles).length ? cleanFiles : undefined,
       });
       if (res.success) submitted = true;
       else submitError = "La soumission a échoué.";

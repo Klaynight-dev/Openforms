@@ -5,7 +5,7 @@
   import Tableur from "$components/Tableur.svelte";
   import { api } from "$api/client.ts";
   import type { FieldDefinition, MetaColumn, ResponseRow, FormDetail } from "$lib/types.ts";
-  import { IconBack, IconEdit, IconEye } from "$lib/icons.ts";
+  import { IconBack, IconEdit, IconEye, IconChartBar } from "$lib/icons.ts";
 
   const id = $page.params.id as string;
 
@@ -56,12 +56,19 @@
 
 <svelte:head><title>Réponses — {title}</title></svelte:head>
 
-<div class="mb-4 flex items-center gap-3">
+<div class="mb-4 flex flex-wrap items-center gap-3">
   <button class="btn-text !px-2" onclick={() => goto("/admin")}><IconBack size={18} /></button>
   <h1 class="text-2xl font-bold">{title}</h1>
   <span class="chip-muted">
     {#if canEdit}<IconEdit size={13} /> Édition{:else}<IconEye size={13} /> Lecture seule{/if}
   </span>
+  <button
+    class="btn-secondary ml-auto flex items-center gap-1.5 text-xs !py-1.5"
+    onclick={() => goto(`/admin/forms/${id}/stats`)}
+  >
+    <IconChartBar size={16} />
+    Statistiques
+  </button>
 </div>
 
 {#if loading}

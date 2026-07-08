@@ -21,10 +21,16 @@
   let uploadError = $state<string | null>(null);
   let uploadedNames = $state<string[]>([]);
 
-  // Gestion de l'option "Autre" pour les champs radio
+  // Gestion de l'option "Autre" pour les champs radio et select
   const OTHER_KEY = "__other__";
   let otherText = $state("");
   let otherSelected = $derived(typeof value === "string" && (value === OTHER_KEY || (value as string).startsWith(OTHER_KEY + ":")));
+
+  $effect(() => {
+    if (typeof value === "string" && value.startsWith(OTHER_KEY + ":")) {
+      otherText = value.slice(OTHER_KEY.length + 1);
+    }
+  });
 
   function selectOther() {
     value = otherText ? `${OTHER_KEY}:${otherText}` : OTHER_KEY;
@@ -116,12 +122,36 @@
   {:else if field.type === "date" || field.type === "datetime"}
     <input id={field.key} class="input" type={field.type === "date" ? "date" : "datetime-local"} bind:value />
   {:else if field.type === "select"}
-    <select id={field.key} class="input" bind:value>
+    <select
+      id={field.key}
+      class="input"
+      value={otherSelected ? OTHER_KEY : (value ?? "")}
+      onchange={(e) => {
+        const val = (e.target as HTMLSelectElement).value;
+        if (val === OTHER_KEY) {
+          selectOther();
+        } else {
+          value = val;
+        }
+      }}
+    >
       <option value="" disabled selected={!value}>— Choisir —</option>
       {#each field.options ?? [] as opt}
         <option value={opt.value}>{opt.label}</option>
       {/each}
+      {#if field.allowOther}
+        <option value={OTHER_KEY}>Autre…</option>
+      {/if}
     </select>
+    {#if field.allowOther && otherSelected}
+      <input
+        type="text"
+        class="input mt-2 !py-1.5 text-sm"
+        placeholder="Précisez votre réponse"
+        value={otherText}
+        oninput={onOtherInput}
+      />
+    {/if}
   {:else if field.type === "radio"}
     <div class="space-y-2">
       {#each field.options ?? [] as opt}

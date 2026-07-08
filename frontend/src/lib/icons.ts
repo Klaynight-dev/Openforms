@@ -55,6 +55,14 @@ import {
   Sparkle,
   SlidersHorizontal,
   GridNine,
+  ChartBar,
+  TrendUp,
+  ChartLine,
+  ChartPie,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  ArrowRight,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -100,6 +108,14 @@ export {
   Sparkle as IconSparkle,
   SlidersHorizontal as IconLinearScale,
   GridNine as IconCheckboxGrid,
+  ArrowRight as IconSection,
+  ChartBar as IconChartBar,
+  TrendUp as IconTrend,
+  ChartLine as IconChartLine,
+  ChartPie as IconChartPie,
+  ArrowUp as IconArrowUp,
+  ArrowDown as IconArrowDown,
+  Minus as IconMinus,
 };
 
 // --- Fallback Lucide ---
@@ -120,4 +136,5 @@ export const FIELD_ICONS: Record<FieldType, typeof TextT> = {
   grid: GridFour,
   linear_scale: SlidersHorizontal,
   checkbox_grid: GridNine,
+  section: ArrowRight,
 };

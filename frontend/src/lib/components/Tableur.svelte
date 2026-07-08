@@ -98,10 +98,19 @@
   function formatCell(value: unknown): string {
     if (value === null || value === undefined) return "";
     if (Array.isArray(value)) {
-      return value.map((v) => (typeof v === "object" ? (v as any).originalName ?? JSON.stringify(v) : v)).join(", ");
+      return value.map((v) => {
+        if (typeof v === "object") return (v as any).originalName ?? JSON.stringify(v);
+        const s = String(v);
+        if (s.startsWith("__other__:")) return s.slice(10);
+        if (s === "__other__") return "Autre";
+        return v;
+      }).join(", ");
     }
     if (typeof value === "object") return JSON.stringify(value);
-    return String(value);
+    const s = String(value);
+    if (s.startsWith("__other__:")) return s.slice(10);
+    if (s === "__other__") return "Autre";
+    return s;
   }
 
   // --- Filtrage + tri (réactif) ---

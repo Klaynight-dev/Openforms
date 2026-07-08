@@ -13,7 +13,8 @@ export type FieldType =
   | "file"
   | "grid"
   | "linear_scale"
-  | "checkbox_grid";
+  | "checkbox_grid"
+  | "section";
 
 export interface FieldOption {
   value: string;
@@ -28,6 +29,11 @@ export interface FieldValidation {
   max?: number;
 }
 
+export interface FieldCondition {
+  fieldKey: string;
+  value: string;
+}
+
 export interface FieldDefinition {
   key: string;
   type: FieldType;
@@ -37,6 +43,7 @@ export interface FieldDefinition {
   required: boolean;
   options?: FieldOption[];
   allowOther?: boolean;
+  condition?: FieldCondition;
   validation?: FieldValidation;
   accept?: string[];
   maxSizeBytes?: number;
@@ -116,3 +123,40 @@ export interface User {
 }
 
 export type Permission = "NONE" | "READ" | "WRITE";
+
+export interface GlobalStats {
+  forms: {
+    total: number;
+    published: number;
+    draft: number;
+  };
+  responses: {
+    total: number;
+    today: number;
+    week: number;
+    month: number;
+    monthDelta: number | null;
+  };
+  users: {
+    total: number;
+    active: number;
+    inactive: number;
+  };
+  topForms: {
+    id: string;
+    title: string;
+    slug: string;
+    isPublished: boolean;
+    responseCount: number;
+  }[];
+  activity: { date: string; count: number }[];
+}
+
+export interface FormActivitySummary {
+  formId: string;
+  title: string;
+  isPublished: boolean;
+  totalResponses: number;
+  activity: { date: string; count: number }[];
+}
+

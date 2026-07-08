@@ -36,6 +36,13 @@ const ValidationSchema = t.Optional(
   }),
 );
 
+const ConditionSchema = t.Optional(
+  t.Object({
+    fieldKey: t.String({ pattern: "^[a-zA-Z0-9_]{1,64}$" }),
+    value: t.String({ maxLength: 200 }),
+  })
+);
+
 /** Définition d'un champ de formulaire. */
 export const FieldDefinitionSchema = t.Object({
   key: t.String({ pattern: "^[a-zA-Z0-9_]{1,64}$" }),
@@ -45,6 +52,8 @@ export const FieldDefinitionSchema = t.Object({
   placeholder: t.Optional(t.String({ maxLength: 300 })),
   required: t.Boolean({ default: false }),
   options: t.Optional(t.Array(OptionSchema, { maxItems: 200 })),
+  allowOther: t.Optional(t.Boolean()),
+  condition: ConditionSchema,
   validation: ValidationSchema,
   /** Champ "file" : types MIME acceptés + taille max en octets. */
   accept: t.Optional(t.Array(t.String({ maxLength: 100 }), { maxItems: 50 })),
@@ -79,6 +88,19 @@ export interface ValidationError {
   message: string;
 }
 
+function isConditionMet(
+  condition: { fieldKey: string; value: string } | undefined,
+  cleanValues: Record<string, any>,
+): boolean {
+  if (!condition) return true;
+  const val = cleanValues[condition.fieldKey];
+  if (val == null) return false;
+  if (Array.isArray(val)) {
+    return val.map(String).includes(condition.value);
+  }
+  return String(val) === condition.value;
+}
+
 /**
  * Valide les réponses soumises (`data`) contre la définition d'un formulaire.
  * Applique : requis, longueurs, regex, bornes numériques, appartenance aux options.
@@ -91,7 +113,30 @@ export function validateSubmission(
   const errors: ValidationError[] = [];
   const clean: Record<string, unknown> = {};
 
+  let currentSectionKey: string | null = null;
+  const visibleFields = new Set<string>();
+
   for (const field of fields) {
+    let parentSectionVisible = true;
+    if (field.type !== "section" && currentSectionKey !== null) {
+      parentSectionVisible = visibleFields.has(currentSectionKey);
+    }
+    const fieldVisible = parentSectionVisible && isConditionMet(field.condition, clean);
+
+    if (field.type === "section") {
+      currentSectionKey = field.key;
+      if (fieldVisible) {
+        visibleFields.add(field.key);
+      }
+      continue;
+    }
+
+    if (!fieldVisible) {
+      continue;
+    }
+
+    visibleFields.add(field.key);
+
     const raw = data[field.key];
     const isEmpty =
       raw === undefined ||
@@ -142,7 +187,8 @@ export function validateSubmission(
       case "select": {
         const s = String(raw);
         const allowed = new Set((field.options ?? []).map((o) => o.value));
-        if (!allowed.has(s))
+        const isOther = field.allowOther && (s === "__other__" || s.startsWith("__other__:"));
+        if (!allowed.has(s) && !isOther)
           errors.push({ key: field.key, message: `« ${field.label} » : choix non autorisé.` });
         clean[field.key] = s;
         break;

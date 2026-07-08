@@ -30,6 +30,11 @@
   let activeTab = $state<"canvas" | "palette" | "config">("canvas");
 
   let selected = $derived(selectedIndex !== null ? fields[selectedIndex] : null);
+  let precedingChoiceFields = $derived(
+    selectedIndex !== null
+      ? fields.slice(0, selectedIndex).filter((f) => ["radio", "select", "checkbox"].includes(f.type))
+      : []
+  );
 
   // Switch to config panel automatically when a field is selected on mobile
   $effect(() => {
@@ -214,12 +219,17 @@
           onclick={() => (selectedIndex = i)}
           onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
         >
-          <div class="flex items-center gap-2">
-            <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity"><IconDrag size={16} /></span>
-            <FieldIcon size={16} class="text-indigo-500" />
-            <span class="flex-1 font-bold text-sm text-indigo-700">{field.label || "Nouvelle section"}</span>
-            {#if field.description}<span class="text-xs text-indigo-500">{field.description}</span>{/if}
-            <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
+          <div class="flex flex-col gap-1 w-full">
+            <div class="flex items-center gap-2">
+              <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity"><IconDrag size={16} /></span>
+              <FieldIcon size={16} class="text-indigo-500 shrink-0" />
+              <span class="flex-1 font-bold text-sm text-indigo-700 truncate">{field.label || "Nouvelle section"}</span>
+              {#if field.condition}<span class="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">Conditionnel</span>{/if}
+              <button class="ghost text-slate-400 hover:text-[color:var(--danger)] shrink-0" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
+            </div>
+            {#if field.description}
+              <div class="text-[11px] text-indigo-500/80 pl-8 mt-0.5 truncate max-w-lg">{field.description}</div>
+            {/if}
           </div>
         </div>
       {:else}
@@ -239,6 +249,7 @@
             <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity" title="Glisser pour réordonner"><IconDrag size={16} /></span>
             <span class="icon text-brand bg-brand-50 p-1.5 rounded-lg"><FieldIcon size={16} /></span>
             <span class="flex-1 font-semibold text-sm text-[color:var(--ink)]">{field.label || "Question sans titre"}</span>
+            {#if field.condition}<span class="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">Conditionnel</span>{/if}
             {#if field.required}<span class="req">requis</span>{/if}
             <button class="ghost text-slate-400 hover:text-brand" onclick={(e) => { e.stopPropagation(); duplicateField(i); }} type="button" title="Dupliquer"><IconDuplicate size={16} /></button>
             <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
@@ -259,8 +270,12 @@
       <label class="label">Libellé</label>
       <input class="input mb-3" bind:value={selected.label} />
 
-      <label class="label">{selected.type === "section" ? "Sous-titre / description" : "Description"}</label>
-      <input class="input mb-3" bind:value={selected.description} />
+      <label class="label">{selected.type === "section" ? "Texte / Description de la catégorie" : "Description"}</label>
+      {#if selected.type === "section"}
+        <textarea class="input mb-3 text-xs" rows="4" placeholder="Saisissez ici le texte explicatif de cette catégorie..." bind:value={selected.description}></textarea>
+      {:else}
+        <input class="input mb-3" bind:value={selected.description} />
+      {/if}
 
       {#if selected.type !== "section" && selected.type !== "grid" && selected.type !== "file" && selected.type !== "checkbox_grid" && selected.type !== "linear_scale"}
         <label class="label">Placeholder</label>
@@ -374,6 +389,83 @@
               <input class="input text-xs" type="number" bind:value={selected.validation!.max} />
             </div>
           </div>
+        </div>
+      {/if}
+      <!-- Affichage Conditionnel -->
+      {#if selectedIndex > 0}
+        <div class="mb-4 pt-3 border-t border-slate-100">
+          <label class="mb-2 flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!selected.condition}
+              onchange={(e) => {
+                if ((e.target as HTMLInputElement).checked) {
+                  const firstChoice = precedingChoiceFields[0];
+                  selected.condition = {
+                    fieldKey: firstChoice?.key ?? "",
+                    value: firstChoice?.options?.[0]?.value ?? "",
+                  };
+                } else {
+                  selected.condition = undefined;
+                }
+                fields = [...fields];
+              }}
+              class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand"
+            />
+            Afficher sous condition
+          </label>
+
+          {#if selected.condition}
+            {#if precedingChoiceFields.length === 0}
+              <p class="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 mt-2">
+                Vous devez ajouter une question à choix (unique, multiple ou liste) avant ce champ pour créer une condition.
+              </p>
+            {:else}
+              {@const triggerField = precedingChoiceFields.find((f) => f.key === selected.condition.fieldKey)}
+              <div class="space-y-2 mt-2 pl-5 border-l-2 border-slate-100">
+                <div>
+                  <label class="label !text-[10px]">Si la question suivante :</label>
+                  <select
+                    class="input text-xs"
+                    value={selected.condition.fieldKey}
+                    onchange={(e) => {
+                      const key = (e.target as HTMLSelectElement).value;
+                      const trigger = precedingChoiceFields.find((f) => f.key === key);
+                      selected.condition = {
+                        fieldKey: key,
+                        value: trigger?.options?.[0]?.value ?? "",
+                      };
+                      fields = [...fields];
+                    }}
+                  >
+                    {#each precedingChoiceFields as f}
+                      <option value={f.key}>{f.label || f.key}</option>
+                    {/each}
+                  </select>
+                </div>
+
+                {#if triggerField}
+                  <div>
+                    <label class="label !text-[10px]">Est égale à :</label>
+                    <select
+                      class="input text-xs"
+                      bind:value={selected.condition.value}
+                      onchange={() => {
+                        fields = [...fields];
+                      }}
+                    >
+                      {#each triggerField.options ?? [] as opt}
+                        <option value={opt.value}>{opt.label}</option>
+                      {/each}
+                      {#if triggerField.allowOther}
+                        <option value="__other__">Autre…</option>
+                      {/if}
+                    </select>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/if}
         </div>
       {/if}
 

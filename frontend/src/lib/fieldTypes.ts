@@ -10,6 +10,7 @@ export interface FieldTypeMeta {
 }
 
 export const FIELD_TYPE_META: FieldTypeMeta[] = [
+  { type: "section", label: "Section / Page suivante", icon: "S", hasOptions: false, hasGrid: false, isFile: false },
   { type: "short_text", label: "Texte court", icon: "T", hasOptions: false, hasGrid: false, isFile: false },
   { type: "paragraph", label: "Paragraphe", icon: "P", hasOptions: false, hasGrid: false, isFile: false },
   { type: "email", label: "Email", icon: "@", hasOptions: false, hasGrid: false, isFile: false },
@@ -49,6 +50,9 @@ export function newField(type: FieldType): FieldDefinition {
   }
   if (type === "linear_scale") {
     base.scale = { min: 1, max: 5, minLabel: "", maxLabel: "" };
+  }
+  if (type === "short_text" || type === "paragraph" || type === "number" || type === "email") {
+    base.validation = {};
   }
   return base;
 }

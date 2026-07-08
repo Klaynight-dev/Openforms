@@ -13,6 +13,8 @@ import type {
   User,
   Permission,
   UploadedFileInfo,
+  GlobalStats,
+  FormActivitySummary,
 } from "../types.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
@@ -128,6 +130,12 @@ export const api = {
     request<{ success: boolean }>("PUT", "/api/v1/access", { userId, formId, permission }),
   revokeAccess: (userId: string, formId: string) =>
     request<{ success: boolean }>("DELETE", "/api/v1/access", { userId, formId }),
+
+  // --- Statistiques ---
+  getGlobalStats: () =>
+    request<{ success: boolean; stats: GlobalStats }>("GET", "/api/v1/stats"),
+  getFormStatsSummary: (formId: string) =>
+    request<{ success: boolean; summary: FormActivitySummary }>("GET", `/api/v1/stats/form/${formId}/summary`),
 
   // --- Upload de fichier (multipart) ---
   async uploadFile(
