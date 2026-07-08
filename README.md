@@ -1,4 +1,4 @@
-# 🌱 Formulaire Humanitour
+# 🌱 OpenForms
 
 > Une alternative **éthique**, moderne, open-source et auto-hébergeable à Google Forms.  
 > Conçue avec **Svelte 5 (Runes)**, **ElysiaJS** et **Prisma**, entièrement propulsée par le runtime **Bun**.
