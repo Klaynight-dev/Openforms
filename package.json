@@ -13,6 +13,7 @@
     "dev:backend": "bun run --cwd backend dev",
     "dev:frontend": "bun run --cwd frontend dev",
     "build": "bun run --cwd backend build && bun run --cwd frontend build",
+    "start": "node frontend/build",
     "db:generate": "bun run --cwd backend db:generate",
     "db:migrate": "bun run --cwd backend db:migrate",
     "db:studio": "bun run --cwd backend db:studio",
