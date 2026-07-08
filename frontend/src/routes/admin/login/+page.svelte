@@ -43,8 +43,12 @@
         <IconLock size={15} /> {error}
       </p>
     {/if}
-    <button class="btn-primary w-full" type="submit" disabled={loading}>
+    <button class="btn-primary w-full mb-4" type="submit" disabled={loading}>
       {loading ? "Connexion…" : "Se connecter"}
     </button>
+    <div class="text-center text-xs">
+      <span class="text-[color:var(--muted)]">Pas encore de compte ?</span>
+      <a href="/admin/register" class="text-brand-500 font-bold hover:underline ml-1">S'inscrire</a>
+    </div>
   </form>
 </div>

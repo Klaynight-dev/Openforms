@@ -14,9 +14,10 @@
 
   $effect(() => {
     if (!auth.ready) return;
-    const isLogin = $page.url.pathname === "/admin/login";
-    if (!auth.isAuthenticated && !isLogin) goto("/admin/login");
-    if (auth.isAuthenticated && isLogin) goto("/admin");
+    const path = $page.url.pathname;
+    const isAuthPage = path === "/admin/login" || path === "/admin/register";
+    if (!auth.isAuthenticated && !isAuthPage) goto("/admin/login");
+    if (auth.isAuthenticated && isAuthPage) goto("/admin");
   });
 
   async function logout() {

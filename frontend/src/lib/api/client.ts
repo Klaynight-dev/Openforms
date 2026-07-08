@@ -74,6 +74,12 @@ export const api = {
       email,
       password,
     }),
+  register: (email: string, password: string, displayName?: string) =>
+    request<{ success: boolean; user: User; csrfToken: string }>("POST", "/api/v1/auth/register", {
+      email,
+      password,
+      displayName,
+    }),
   logout: () => request<{ success: boolean }>("POST", "/api/v1/auth/logout"),
   me: () =>
     request<{ authenticated: boolean; user?: User; csrfToken?: string }>("GET", "/api/v1/auth/me"),

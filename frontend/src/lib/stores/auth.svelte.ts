@@ -34,6 +34,12 @@ class AuthState {
     return res.user;
   }
 
+  async register(email: string, password: string, displayName?: string) {
+    const res = await api.register(email, password, displayName);
+    this.user = res.user;
+    return res.user;
+  }
+
   async logout() {
     await api.logout().catch(() => {});
     this.user = null;
