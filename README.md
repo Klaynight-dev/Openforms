@@ -23,6 +23,11 @@
 * **Protections intégrées** : Validation stricte des données avec Typebox, en-têtes de sécurité, jetons CSRF (Double-Submit Cookie), limitation de requêtes (rate-limiting) et CORS restreints.
 * **Chiffrement au repos** : Clés AES-256-GCM pour protéger les réponses et fichiers sensibles directement en base de données.
 
+<img width="1900" height="910" alt="Capture" src="https://github.com/Klaynight-dev/Openforms/blob/main/contents/imgs/Capture%20d'%C3%A9cran%202026-07-08%20142129.png?raw=true" />
+<img width="1900" height="910" alt="Capture" src="https://github.com/Klaynight-dev/Openforms/blob/main/contents/imgs/Capture%20d'%C3%A9cran%202026-07-08%20142052.png?raw=true" />
+<img width="1900" height="910" alt="Capture" src="https://github.com/Klaynight-dev/Openforms/blob/main/contents/imgs/Capture%20d'%C3%A9cran%202026-07-08%20142108.png?raw=true" />
+<img width="1900" height="910" alt="Capture" src="https://github.com/Klaynight-dev/Openforms/blob/main/contents/imgs/Capture%20d'%C3%A9cran%202026-07-08%20142118.png?raw=true" />
+
 ---
 
 ## 🏗️ Architecture du Projet
