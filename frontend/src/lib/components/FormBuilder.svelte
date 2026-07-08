@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { FieldDefinition, MetaColumn, FieldType } from "../types.ts";
   import { FIELD_TYPE_META, metaFor, newField } from "../fieldTypes.ts";
-  import { FIELD_ICONS, IconDrag, IconDuplicate, IconTrash, IconPlus, IconClose } from "../icons.ts";
+  import { FIELD_ICONS, IconDrag, IconDuplicate, IconTrash, IconPlus, IconClose, IconCanvas, IconSettings, IconSparkle } from "../icons.ts";
 
   interface Settings {
     title: string;
@@ -120,7 +120,7 @@
     class:text-[color:var(--muted)]={activeTab !== "palette"}
     onclick={() => activeTab = "palette"}
   >
-    + Champ
+    <span class="flex items-center gap-1 justify-center"><IconPlus size={13} /> Champ</span>
   </button>
   <button 
     type="button" 
@@ -130,7 +130,7 @@
     class:text-[color:var(--muted)]={activeTab !== "canvas"}
     onclick={() => activeTab = "canvas"}
   >
-    📝 Canevas
+    <span class="flex items-center gap-1 justify-center"><IconCanvas size={13} /> Canevas</span>
   </button>
   <button 
     type="button" 
@@ -140,7 +140,7 @@
     class:text-[color:var(--muted)]={activeTab !== "config"}
     onclick={() => activeTab = "config"}
   >
-    ⚙️ Options
+    <span class="flex items-center gap-1 justify-center"><IconSettings size={13} /> Options</span>
   </button>
 </div>
 
@@ -185,7 +185,7 @@
 
     {#if fields.length === 0}
       <div class="empty flex flex-col items-center justify-center p-12 text-slate-400 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
-        <span class="text-3xl mb-2">✨</span>
+        <span class="mb-2 text-slate-300"><IconSparkle size={32} /></span>
         <p class="text-sm font-semibold mb-1">Votre formulaire est vide</p>
         <p class="text-xs text-slate-400">Cliquez sur l'onglet "+ Champ" pour ajouter votre première question.</p>
       </div>

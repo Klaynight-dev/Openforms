@@ -51,6 +51,8 @@ import {
   CalendarBlank,
   Clock,
   GridFour,
+  Rows,
+  Sparkle,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -92,6 +94,8 @@ export {
   Warning as IconWarning,
   FileArrowUp as IconImport,
   MicrosoftExcelLogo as IconExcel,
+  Rows as IconCanvas,
+  Sparkle as IconSparkle,
 };
 
 // --- Fallback Lucide ---
