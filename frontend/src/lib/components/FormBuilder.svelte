@@ -38,6 +38,12 @@
     }
   });
 
+  $effect(() => {
+    if (selected && (selected.type === "short_text" || selected.type === "paragraph" || selected.type === "number" || selected.type === "email") && !selected.validation) {
+      selected.validation = {};
+    }
+  });
+
   function addField(type: FieldType) {
     fields = [...fields, newField(type)];
     selectedIndex = fields.length - 1;
@@ -78,7 +84,8 @@
   function addOption() {
     if (!selected) return;
     const opts = selected.options ?? [];
-    selected.options = [...opts, { value: `opt${opts.length + 1}`, label: `Option ${opts.length + 1}` }];
+    const name = `Option ${opts.length + 1}`;
+    selected.options = [...opts, { value: name, label: name }];
   }
   function removeOption(idx: number) {
     if (!selected?.options) return;
@@ -193,28 +200,52 @@
 
     {#each fields as field, i (field.key)}
       {@const FieldIcon = FIELD_ICONS[field.type]}
-      <div
-        class="field-card group transition-all duration-200"
-        class:selected={selectedIndex === i}
-        draggable="true"
-        role="button"
-        tabindex="0"
-        ondragstart={() => onDragStart(i)}
-        ondragover={(e) => e.preventDefault()}
-        ondrop={() => onDrop(i)}
-        onclick={() => (selectedIndex = i)}
-        onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
-      >
-        <div class="field-head">
-          <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity" title="Glisser pour réordonner"><IconDrag size={16} /></span>
-          <span class="icon text-brand bg-brand-50 p-1.5 rounded-lg"><FieldIcon size={16} /></span>
-          <span class="flex-1 font-semibold text-sm text-[color:var(--ink)]">{field.label || "Question sans titre"}</span>
-          {#if field.required}<span class="req">requis</span>{/if}
-          <button class="ghost text-slate-400 hover:text-brand" onclick={(e) => { e.stopPropagation(); duplicateField(i); }} type="button" title="Dupliquer"><IconDuplicate size={16} /></button>
-          <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
+      {#if field.type === "section"}
+        <!-- Section divider card -->
+        <div
+          class="section-card group cursor-pointer transition-all duration-200"
+          class:selected={selectedIndex === i}
+          draggable="true"
+          role="button"
+          tabindex="0"
+          ondragstart={() => onDragStart(i)}
+          ondragover={(e) => e.preventDefault()}
+          ondrop={() => onDrop(i)}
+          onclick={() => (selectedIndex = i)}
+          onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
+        >
+          <div class="flex items-center gap-2">
+            <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity"><IconDrag size={16} /></span>
+            <FieldIcon size={16} class="text-indigo-500" />
+            <span class="flex-1 font-bold text-sm text-indigo-700">{field.label || "Nouvelle section"}</span>
+            {#if field.description}<span class="text-xs text-indigo-500">{field.description}</span>{/if}
+            <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
+          </div>
         </div>
-        <div class="field-type font-mono uppercase">{metaFor(field.type).label}</div>
-      </div>
+      {:else}
+        <div
+          class="field-card group transition-all duration-200"
+          class:selected={selectedIndex === i}
+          draggable="true"
+          role="button"
+          tabindex="0"
+          ondragstart={() => onDragStart(i)}
+          ondragover={(e) => e.preventDefault()}
+          ondrop={() => onDrop(i)}
+          onclick={() => { selectedIndex = i; if (window.innerWidth < 768) activeTab = "config"; }}
+          onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
+        >
+          <div class="field-head">
+            <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity" title="Glisser pour réordonner"><IconDrag size={16} /></span>
+            <span class="icon text-brand bg-brand-50 p-1.5 rounded-lg"><FieldIcon size={16} /></span>
+            <span class="flex-1 font-semibold text-sm text-[color:var(--ink)]">{field.label || "Question sans titre"}</span>
+            {#if field.required}<span class="req">requis</span>{/if}
+            <button class="ghost text-slate-400 hover:text-brand" onclick={(e) => { e.stopPropagation(); duplicateField(i); }} type="button" title="Dupliquer"><IconDuplicate size={16} /></button>
+            <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
+          </div>
+          <div class="field-type font-mono uppercase">{metaFor(field.type).label}</div>
+        </div>
+      {/if}
     {/each}
   </section>
 
@@ -228,36 +259,39 @@
       <label class="label">Libellé</label>
       <input class="input mb-3" bind:value={selected.label} />
 
-      <label class="label">Clé (identifiant de colonne)</label>
-      <input class="input mb-3 font-mono text-xs" bind:value={selected.key} />
-
-      <label class="label">Description</label>
+      <label class="label">{selected.type === "section" ? "Sous-titre / description" : "Description"}</label>
       <input class="input mb-3" bind:value={selected.description} />
 
-      {#if selected.type !== "grid" && selected.type !== "file"}
+      {#if selected.type !== "section" && selected.type !== "grid" && selected.type !== "file" && selected.type !== "checkbox_grid" && selected.type !== "linear_scale"}
         <label class="label">Placeholder</label>
         <input class="input mb-3" bind:value={selected.placeholder} />
       {/if}
 
-      <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer">
-        <input type="checkbox" bind:checked={selected.required} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Champ requis
-      </label>
+      {#if selected.type !== "section"}
+        <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer">
+          <input type="checkbox" bind:checked={selected.required} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Champ requis
+        </label>
+      {/if}
 
       {#if metaFor(selected.type).hasOptions}
         <div class="mb-4 pt-3 border-t border-slate-100">
           <div class="label">Options de réponse</div>
           {#each selected.options ?? [] as opt, oi}
-            <div class="opt-row">
-              <input class="input !py-1 text-xs" placeholder="valeur" bind:value={opt.value} />
-              <input class="input !py-1 text-xs" placeholder="libellé" bind:value={opt.label} />
-              <button class="text-[color:var(--danger)] hover:scale-105 transition-transform" onclick={() => removeOption(oi)} type="button" aria-label="Retirer"><IconClose size={14} /></button>
+            <div class="opt-row flex items-center gap-1.5 mb-2">
+              <input
+                class="input !py-1 text-xs flex-1"
+                placeholder="Option"
+                bind:value={opt.label}
+                oninput={() => opt.value = opt.label}
+              />
+              <button class="text-[color:var(--danger)] hover:scale-105 transition-transform shrink-0" onclick={() => removeOption(oi)} type="button" aria-label="Retirer"><IconClose size={14} /></button>
             </div>
           {/each}
           <button class="btn-secondary mt-2 w-full text-xs" onclick={addOption} type="button"><IconPlus size={14} weight="bold" /> Option</button>
         </div>
       {/if}
 
-      {#if selected.type === "radio"}
+      {#if selected.type === "radio" || selected.type === "select"}
         <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer border border-[color:var(--line)] rounded-lg px-3 py-2 hover:bg-slate-50 transition">
           <input type="checkbox" bind:checked={selected.allowOther} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" />
           <span class="flex-1">Option « Autre » avec champ texte</span>
@@ -341,6 +375,18 @@
             </div>
           </div>
         </div>
+      {/if}
+
+      {#if selected.type !== "section"}
+        <details class="mt-4 pt-3 border-t border-slate-100 text-xs">
+          <summary class="cursor-pointer font-bold text-slate-400 hover:text-slate-600 select-none outline-none">Paramètres avancés</summary>
+          <div class="mt-3 space-y-3">
+            <div>
+              <label class="label">Clé (identifiant de colonne)</label>
+              <input class="input font-mono text-[11px] !py-1" bind:value={selected.key} />
+            </div>
+          </div>
+        </details>
       {/if}
     {:else}
       <h3 class="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">Paramètres Généraux</h3>
@@ -435,6 +481,26 @@
       border-left-color: m.$brand;
       box-shadow: 0 10px 15px -3px rgba(103, 58, 183, 0.08);
       background: m.$gray-bg;
+    }
+  }
+  .section-card {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-left: 4px solid #6366f1;
+    border-radius: m.$radius;
+    padding: 0.85rem 1.25rem;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    &:hover {
+      border-color: #94a3b8;
+      background: #f1f5f9;
+    }
+    &.selected {
+      border-color: #6366f1;
+      box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.12);
+      background: #e2e8f0;
     }
   }
   .field-head {
