@@ -257,6 +257,13 @@
         </div>
       {/if}
 
+      {#if selected.type === "radio"}
+        <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer border border-[color:var(--line)] rounded-lg px-3 py-2 hover:bg-slate-50 transition">
+          <input type="checkbox" bind:checked={selected.allowOther} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" />
+          <span class="flex-1">Option « Autre » avec champ texte</span>
+        </label>
+      {/if}
+
       {#if selected.type === "grid" && selected.grid}
         <div class="mb-4 pt-3 border-t border-slate-100">
           <label class="label">Lignes (une par ligne)</label>

@@ -21,6 +21,20 @@
   let uploadError = $state<string | null>(null);
   let uploadedNames = $state<string[]>([]);
 
+  // Gestion de l'option "Autre" pour les champs radio
+  const OTHER_KEY = "__other__";
+  let otherText = $state("");
+  let otherSelected = $derived(typeof value === "string" && (value === OTHER_KEY || (value as string).startsWith(OTHER_KEY + ":")));
+
+  function selectOther() {
+    value = otherText ? `${OTHER_KEY}:${otherText}` : OTHER_KEY;
+  }
+
+  function onOtherInput(e: Event) {
+    otherText = (e.target as HTMLInputElement).value;
+    value = `${OTHER_KEY}:${otherText}`;
+  }
+
   function toggleCheckbox(optValue: string, checked: boolean) {
     const arr = Array.isArray(value) ? [...(value as string[])] : [];
     if (checked) arr.push(optValue);
@@ -98,13 +112,37 @@
       {/each}
     </select>
   {:else if field.type === "radio"}
-    <div class="space-y-1">
+    <div class="space-y-2">
       {#each field.options ?? [] as opt}
-        <label class="flex items-center gap-2 text-sm">
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input type="radio" name={field.key} value={opt.value} bind:group={value} />
           {opt.label}
         </label>
       {/each}
+      {#if field.allowOther}
+        <label class="flex items-start gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="radio"
+            name={field.key}
+            value={OTHER_KEY}
+            checked={otherSelected}
+            onchange={selectOther}
+            class="mt-1 shrink-0"
+          />
+          <span class="flex flex-col gap-1 flex-1 min-w-0">
+            <span class="font-medium text-[color:var(--ink)]">Autre…</span>
+            {#if otherSelected}
+              <input
+                type="text"
+                class="input !py-1.5 text-sm"
+                placeholder="Précisez votre réponse"
+                value={otherText}
+                oninput={onOtherInput}
+              />
+            {/if}
+          </span>
+        </label>
+      {/if}
     </div>
   {:else if field.type === "checkbox"}
     <div class="space-y-1">

@@ -34,6 +34,7 @@ export interface FieldDefinition {
   placeholder?: string;
   required: boolean;
   options?: FieldOption[];
+  allowOther?: boolean;
   validation?: FieldValidation;
   accept?: string[];
   maxSizeBytes?: number;
