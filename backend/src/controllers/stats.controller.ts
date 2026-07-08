@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { prisma } from "../services/prisma.ts";
-import { authPlugin } from "../middleware/auth.ts";
+import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 
 /**
  * Statistiques globales de la plateforme.
