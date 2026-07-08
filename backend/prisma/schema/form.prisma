@@ -1,0 +1,37 @@
+model Form {
+  id           String   @id @default(uuid())
+  /// Slug public utilisé dans l'URL de partage (/f/:slug).
+  slug         String   @unique
+  title        String
+  description  String?
+
+  /// Structure des champs du formulaire (validée par Typebox côté API).
+  /// Tableau de FieldDefinition : { key, type, label, required, validation, options... }
+  schema       Json     @default("[]")
+
+  /// Colonnes de métadonnées ajoutables dans le tableur admin
+  /// (ex: statut de traitement, note interne, formule). Tableau de
+  /// { key, label, kind: 'text'|'number'|'formula', formula? }.
+  metaColumns  Json     @default("[]")
+
+  // --- Éthique / RGPD par design ---
+  /// Consentement explicite obligatoire avant soumission.
+  requireConsent Boolean @default(true)
+  consentText    String?
+  /// Anonymisation complète : aucune métadonnée d'identification stockée.
+  isAnonymized   Boolean @default(false)
+  /// Chiffrement au repos du contenu des réponses (AES-256-GCM).
+  encryptResponses Boolean @default(false)
+
+  isPublished  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  owner        User         @relation("FormOwner", fields: [ownerId], references: [id])
+  ownerId      String
+  responses    Response[]
+  access       FormAccess[]
+
+  @@index([ownerId])
+  @@index([slug])
+}

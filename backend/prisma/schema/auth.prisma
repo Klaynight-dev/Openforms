@@ -1,0 +1,64 @@
+/// Rôles applicatifs.
+/// - SUPER_ADMIN : création de formulaires, gestion des accès et des utilisateurs.
+/// - EDITOR      : accès aux réponses (lecture seule ou édition) selon FormAccess.
+enum Role {
+  SUPER_ADMIN
+  EDITOR
+}
+
+/// Niveau d'accès d'un éditeur à un formulaire donné.
+enum FormPermission {
+  READ
+  WRITE
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  /// Hash Argon2id calculé via Bun.password — jamais le mot de passe en clair.
+  passwordHash String
+  role         Role         @default(EDITOR)
+  displayName  String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  sessions     Session[]
+  ownedForms   Form[]       @relation("FormOwner")
+  formAccess   FormAccess[]
+
+  @@index([email])
+}
+
+/// Session serveur : le cookie HttpOnly contient uniquement un identifiant
+/// opaque dont le hash est stocké ici (aucun secret exploitable côté client).
+model Session {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  /// SHA-256 du token de session envoyé dans le cookie.
+  tokenHash  String   @unique
+  /// Secret utilisé pour le jeton anti-CSRF (double-submit).
+  csrfSecret String
+  userAgent  String?
+  ipHash     String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Attribution explicite d'un formulaire à un éditeur avec un niveau de droit.
+model FormAccess {
+  id         String         @id @default(uuid())
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  form       Form           @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId     String
+  permission FormPermission @default(READ)
+  createdAt  DateTime       @default(now())
+
+  @@unique([userId, formId])
+  @@index([formId])
+}

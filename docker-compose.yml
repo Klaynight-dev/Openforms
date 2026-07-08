@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: humanitour-db
+    restart: always
+    environment:
+      POSTGRES_USER: humanitour
+      POSTGRES_PASSWORD: humanitour_secure_pass
+      POSTGRES_DB: formulaire_humanitour
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U humanitour -d formulaire_humanitour"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: humanitour-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://humanitour:humanitour_secure_pass@db:5432/formulaire_humanitour?schema=public
+      PORT: 3000
+      NODE_ENV: production
+      FRONTEND_ORIGIN: http://localhost:5173
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-uzvA8UqS86fGkGv2Xq6d7S9lFf4b8G9vRzHhL6e2X1c=}
+      SESSION_SECRET: ${SESSION_SECRET:-CHANGE_ME_secret_long_et_aleatoire_de_session_humanitour_2026}
+      SESSION_TTL: 604800
+      COOKIE_SECURE: "false" # Passer à "true" si HTTPS actif
+      UPLOAD_DIR: /app/uploads
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.org}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMoi!2026}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    command: >
+      sh -c "bunx prisma migrate deploy && bun run prisma/seed.ts && bun run src/index.ts"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:3000}
+    container_name: humanitour-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    environment:
+      PORT: 5173
+      NODE_ENV: production
+
+volumes:
+  pgdata:
+  uploads:

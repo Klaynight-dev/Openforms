@@ -1,0 +1,86 @@
+import { Elysia, t } from "elysia";
+import { prisma } from "../services/prisma.ts";
+import { verifyPassword } from "../services/crypto.ts";
+import { createSession, destroySession } from "../lib/session.ts";
+import { authPlugin } from "../middleware/auth.ts";
+import { makeRateLimit, sessionCookieOptions } from "../middleware/security.ts";
+import { env } from "../config/env.ts";
+
+/** Extrait l'IP réelle en tenant compte d'un éventuel reverse-proxy de confiance. */
+function clientIp(request: Request): string | undefined {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0]?.trim();
+  return undefined;
+}
+
+export const authController = new Elysia({ prefix: "/api/v1/auth" })
+  // Anti brute-force : 20 requêtes / minute / IP sur l'espace d'authentification.
+  .use(
+    makeRateLimit({
+      max: 20,
+      duration: 60_000,
+      message: "Trop de tentatives. Réessayez dans une minute.",
+    }),
+  )
+  .use(authPlugin)
+
+  .post(
+    "/login",
+    async ({ body, cookie, set, request }) => {
+      const email = body.email.trim().toLowerCase();
+      const user = await prisma.user.findUnique({ where: { email } });
+
+      // Réponse identique que l'utilisateur existe ou non (anti-énumération).
+      const ok = user && user.isActive ? await verifyPassword(body.password, user.passwordHash) : false;
+      if (!user || !ok || !user.isActive) {
+        set.status = 401;
+        return { success: false, error: "Identifiants invalides." };
+      }
+
+      const { token, csrfSecret, expiresAt } = await createSession(user.id, {
+        ip: clientIp(request),
+        userAgent: request.headers.get("user-agent") ?? undefined,
+      });
+
+      const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
+      cookie.session.set({ value: token, ...sessionCookieOptions(maxAge) });
+      // Cookie CSRF lisible par le JS (double-submit) — non HttpOnly.
+      cookie.csrf.set({
+        value: csrfSecret,
+        httpOnly: false,
+        secure: env.cookieSecure,
+        sameSite: "lax",
+        path: "/",
+        maxAge,
+      });
+
+      return {
+        success: true,
+        user: { id: user.id, email: user.email, role: user.role, displayName: user.displayName },
+        csrfToken: csrfSecret,
+      };
+    },
+    {
+      body: t.Object({
+        email: t.String({ format: "email", maxLength: 320 }),
+        password: t.String({ minLength: 1, maxLength: 200 }),
+      }),
+    },
+  )
+
+  .post("/logout", async ({ cookie }) => {
+    const token = cookie.session?.value;
+    await destroySession(typeof token === "string" ? token : undefined);
+    cookie.session.remove();
+    cookie.csrf.remove();
+    return { success: true };
+  })
+
+  .get("/me", ({ auth }) => {
+    if (!auth) return { authenticated: false };
+    return {
+      authenticated: true,
+      user: auth.user,
+      csrfToken: auth.session.csrfSecret,
+    };
+  });

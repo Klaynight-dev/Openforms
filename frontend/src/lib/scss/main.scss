@@ -1,0 +1,31 @@
+// Variables & mixins SCSS partagés par les composants complexes
+// (Tableur, FormBuilder). Importer avec :  @use '../scss/main' as m;
+
+$brand: #673ab7;
+$brand-dark: #5c33a4;
+$gray-border: #dadce0;
+$gray-bg: #f8f9fa;
+$radius: 0.5rem;
+
+@mixin focus-ring {
+  outline: none;
+  border-color: $brand;
+  box-shadow: 0 0 0 3px rgba(103, 58, 183, 0.15);
+}
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin subtle-scroll {
+  &::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 6px;
+  }
+}

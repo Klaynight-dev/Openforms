@@ -134,3 +134,23 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# --- Formulaire_Humanitour ---
+# SvelteKit
+.svelte-kit/
+frontend/.svelte-kit/
+frontend/build/
+# Prisma generated client
+backend/prisma/generated/
+backend/src/generated/
+# Uploaded files (secure storage)
+backend/uploads/
+uploads/
+# Bun lockfile is committed by default; keep binary lock out of diffs if desired
+# bun.lockb
+# Env
+backend/.env
+frontend/.env
+# Bundle CA exporté localement pour contourner un proxy TLS d'entreprise
+corp-ca.pem
+**/corp-ca.pem

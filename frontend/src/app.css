@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Design tokens façon Google Forms ===== */
+:root {
+  --brand: #673ab7; /* violet Google Forms */
+  --brand-600: #5c33a4;
+  --brand-700: #4d2a8a;
+  --brand-50: #f3eefb;
+  --brand-100: #e9e2f8;
+  --surface-bg: #f0ebf8;
+  --line: #dadce0;
+  --ink: #202124; /* gris Google presque noir */
+  --muted: #5f6368; /* gris secondaire Google */
+  --danger: #d93025; /* rouge Google */
+  --radius: 8px;
+}
+
+html {
+  font-family: "Google Sans", "Roboto", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+* {
+  box-sizing: border-box;
+}
+
+/* ===== Boutons (Material) ===== */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition;
+  letter-spacing: 0.15px;
+}
+.btn-primary {
+  @apply btn text-white;
+  background: var(--brand);
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.2);
+}
+.btn-primary:hover {
+  background: var(--brand-600);
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+}
+.btn-secondary {
+  @apply btn bg-white;
+  color: var(--brand);
+  border: 1px solid var(--line);
+}
+.btn-secondary:hover {
+  background: var(--brand-50);
+}
+.btn-text {
+  @apply btn px-3;
+  color: var(--brand);
+  background: transparent;
+}
+.btn-text:hover {
+  background: var(--brand-50);
+}
+.btn-danger {
+  @apply btn text-white;
+  background: var(--danger);
+}
+
+/* ===== Champs (Material) ===== */
+.input {
+  @apply w-full rounded-md px-3 py-2 text-sm outline-none transition;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+.label {
+  @apply mb-1 block text-sm font-medium;
+  color: var(--ink);
+}
+
+/* ===== Cartes ===== */
+.card {
+  @apply rounded-lg bg-white p-5;
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.08);
+}
+
+/* Carte "formulaire Google" avec bandeau violet en haut */
+.gform-card {
+  @apply rounded-lg bg-white;
+  border: 1px solid var(--line);
+  border-top: 8px solid var(--brand);
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.1);
+}
+
+/* Puce / badge */
+.chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+.chip-muted {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  background: #f1f3f4;
+  color: var(--muted);
+}

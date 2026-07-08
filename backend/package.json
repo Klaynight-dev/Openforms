@@ -1,0 +1,29 @@
+{
+  "name": "@humanitour/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "NODE_ENV=production bun run src/index.ts",
+    "build": "bun build src/index.ts --target bun --outdir dist",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:seed": "bun run prisma/seed.ts"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.1.1",
+    "@elysiajs/swagger": "^1.1.6",
+    "@prisma/client": "^6.2.1",
+    "elysia": "^1.1.27",
+    "elysia-rate-limit": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prisma": "^6.2.1",
+    "typescript": "^5.7.3"
+  }
+}

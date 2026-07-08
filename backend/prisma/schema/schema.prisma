@@ -1,0 +1,19 @@
+// Fichier principal : datasource + générateur.
+// Le schéma est découpé en plusieurs fichiers dans ce dossier (fonctionnalité
+// "multi-file schema", GA depuis Prisma 6 — configurée via `prisma.schema`
+// dans backend/package.json qui pointe vers "prisma/schema").
+//
+//   prisma/schema/
+//     ├── schema.prisma    <- ce fichier (datasource + generator)
+//     ├── auth.prisma      <- utilisateurs, sessions, rôles, accès
+//     ├── form.prisma      <- formulaires
+//     └── response.prisma  <- réponses & fichiers uploadés
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}

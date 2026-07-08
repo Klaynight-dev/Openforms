@@ -1,0 +1,45 @@
+model Response {
+  id        String   @id @default(uuid())
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId    String
+
+  /// Réponses du répondant, indexées par la `key` du champ.
+  /// Si le formulaire a `encryptResponses = true`, ce champ contient
+  /// { "__enc": "<payload AES-256-GCM base64>" } au lieu du clair.
+  content   Json     @default("{}")
+
+  /// Valeurs des colonnes de métadonnées éditées dans le tableur admin.
+  metadata  Json     @default("{}")
+
+  /// Adresse IP : NULL si le formulaire est anonymisé, sinon hash tronqué.
+  ipHash    String?
+  userAgent String?
+
+  files     FileUpload[]
+
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([formId])
+  @@index([submittedAt])
+}
+
+/// Fichier téléversé via un champ de type "file". Stocké sur disque hors web-root,
+/// servi uniquement aux administrateurs autorisés via l'API.
+model FileUpload {
+  id           String   @id @default(uuid())
+  response     Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  responseId   String
+  /// Clé du champ de formulaire à l'origine du fichier.
+  fieldKey     String
+  originalName String
+  /// Nom aléatoire sur le disque (jamais le nom fourni par l'utilisateur).
+  storedName   String   @unique
+  mimeType     String
+  sizeBytes    Int
+  /// SHA-256 du contenu (déduplication / intégrité).
+  checksum     String
+  createdAt    DateTime @default(now())
+
+  @@index([responseId])
+}
