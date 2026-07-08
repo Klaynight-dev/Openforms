@@ -1,13 +1,13 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM oven/bun:1.1 AS builder
 
 WORKDIR /app
 
-# Copy lockfile and package configuration
-COPY package.json package-lock.json* ./
+# Copy package configuration
+COPY package.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies using Bun
+RUN bun install
 
 # Copy source code
 COPY . .
@@ -16,19 +16,19 @@ COPY . .
 ARG VITE_API_BASE=http://localhost:3535
 ENV VITE_API_BASE=$VITE_API_BASE
 
-# Build the application
-RUN npm run build
+# Build the SvelteKit application
+RUN bun run build
 
 # Production runner stage
-FROM node:20-alpine AS runner
+FROM oven/bun:1.1-slim AS runner
 
 WORKDIR /app
 
-# Copy production configurations
-COPY package.json package-lock.json* ./
+# Copy package configuration
+COPY package.json ./
 
 # Install only production dependencies
-RUN npm install --omit=dev
+RUN bun install --production
 
 # Copy build artifacts from builder
 COPY --from=builder /app/build ./build
@@ -38,4 +38,5 @@ ENV PORT=5173
 ENV NODE_ENV=production
 EXPOSE 5173
 
-CMD ["node", "build"]
+# SvelteKit adapter-node generates a standard entrypoint that Bun runs natively
+CMD ["bun", "run", "build/index.js"]
