@@ -1,4 +1,5 @@
 # Build stage
+# Cache-busting comment to force URL rebuild: v1.0.1
 FROM oven/bun:1.1 AS builder
 
 WORKDIR /app
