@@ -6,6 +6,7 @@ export default {
       colors: {
         // Violet Google Forms
         brand: {
+          DEFAULT: "#673ab7",
           50: "#f3eefb",
           100: "#e9e2f8",
           200: "#d3c5f0",

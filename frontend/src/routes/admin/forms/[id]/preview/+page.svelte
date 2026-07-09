@@ -367,7 +367,7 @@
             {/if}
           </div>
           <span class="flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted)]">
-            <IconShield size={15} /> Aperçu en direct
+            <IconShield size={15} /> Aperçu
           </span>
         </div>
       </form>
