@@ -315,7 +315,28 @@
 <div class="min-h-screen bg-[color:var(--surface-bg)] py-8">
   <main class="mx-auto max-w-2xl px-4">
     {#if loading}
-      <p class="text-center text-[color:var(--muted)]">Chargement…</p>
+      <div class="gform-card has-banner mb-5 animate-pulse">
+        <div class="w-full h-24 bg-slate-200 rounded-t-2xl"></div>
+        <div class="p-6 md:p-8">
+          <div class="h-8 bg-slate-200 rounded-md w-3/4 mb-4"></div>
+          <div class="h-4 bg-slate-200 rounded-md w-full mb-2"></div>
+          <div class="h-4 bg-slate-200 rounded-md w-5/6"></div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        {#each [1, 2, 3] as _}
+          <div class="rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm animate-pulse">
+            <div class="h-4 bg-slate-200 rounded-md w-1/3 mb-3"></div>
+            <div class="h-10 bg-slate-100 rounded-xl w-full"></div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="flex justify-between items-center mt-6 animate-pulse">
+        <div class="h-10 bg-slate-200 rounded-xl w-28"></div>
+        <div class="h-4 bg-slate-200 rounded-md w-40"></div>
+      </div>
     {:else if statusError === 401}
       <div class="grid place-items-center">
         <form onsubmit={handleLogin} class="gform-card w-full max-w-md p-8 shadow-sm">
@@ -361,7 +382,7 @@
         <p class="text-[color:var(--muted)]">Votre réponse a bien été enregistrée.</p>
       </div>
     {:else if translatedForm && currentPage}
-      <div class="gform-card mb-5">
+      <div class="gform-card has-banner mb-5">
         <div class="w-full h-24 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 relative overflow-hidden flex items-end justify-between p-4 rounded-t-2xl">
           <div class="absolute inset-0 bg-black/5"></div>
           <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10 blur-xl"></div>

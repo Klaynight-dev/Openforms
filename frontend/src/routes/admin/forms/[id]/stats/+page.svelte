@@ -374,9 +374,34 @@
 {/if}
 
 {#if loading}
-  <div class="flex items-center gap-3 text-[color:var(--muted)] py-12 justify-center">
-    <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" class="opacity-75"/></svg>
-    Chargement des statistiques…
+  <div class="animate-pulse space-y-6">
+    <!-- KPIs Cards Skeletons -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      {#each [1, 2, 3, 4] as _}
+        <div class="bg-white border border-[color:var(--line)] rounded-2xl p-5 h-28 flex flex-col justify-between">
+          <div class="h-4 bg-slate-200 rounded-md w-2/3"></div>
+          <div class="h-8 bg-slate-200 rounded-md w-1/3"></div>
+        </div>
+      {/each}
+    </div>
+
+    <!-- Chart Skeleton -->
+    <div class="bg-white border border-[color:var(--line)] rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <div class="h-6 bg-slate-200 rounded-md w-1/4"></div>
+        <div class="h-6 bg-slate-200 rounded-md w-16"></div>
+      </div>
+      <div class="h-52 bg-slate-50 rounded-xl w-full"></div>
+    </div>
+
+    <!-- Fill Rate Bar Chart Skeleton -->
+    <div class="bg-white border border-[color:var(--line)] rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <div class="h-6 bg-slate-200 rounded-md w-1/3"></div>
+        <div class="h-6 bg-slate-200 rounded-md w-16"></div>
+      </div>
+      <div class="h-40 bg-slate-50 rounded-xl w-full"></div>
+    </div>
   </div>
 {:else if error}
   <div class="card border-l-4 border-red-400 bg-red-50 text-[color:var(--danger)] p-4">{error}</div>

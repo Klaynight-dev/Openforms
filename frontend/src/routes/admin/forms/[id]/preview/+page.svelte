@@ -249,7 +249,7 @@
   <title>[Aperçu] {translatedForm?.title ?? "Formulaire"}</title>
 </svelte:head>
 
-<div class="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-xs font-bold py-2.5 px-4 shadow-md flex items-center justify-between">
+<div class="fixed top-0 left-0 right-0 z-50 bg-gray-900 text-white text-xs font-bold py-2.5 px-4 shadow-md flex items-center justify-between">
   <div class="flex items-center gap-2">
     <IconEye size={16} />
     <span>Mode Prévisualisation — Les réponses saisies ici ne seront pas enregistrées dans la base de données.</span>
@@ -265,7 +265,28 @@
 <div class="min-h-screen bg-[color:var(--surface-bg)] pt-16 pb-12">
   <main class="mx-auto max-w-2xl px-4">
     {#if loading}
-      <p class="text-center text-[color:var(--muted)] py-12">Chargement de la prévisualisation...</p>
+      <div class="gform-card has-banner mb-5 animate-pulse">
+        <div class="w-full h-24 bg-slate-200 rounded-t-2xl"></div>
+        <div class="p-6 md:p-8">
+          <div class="h-8 bg-slate-200 rounded-md w-3/4 mb-4"></div>
+          <div class="h-4 bg-slate-200 rounded-md w-full mb-2"></div>
+          <div class="h-4 bg-slate-200 rounded-md w-5/6"></div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        {#each [1, 2, 3] as _}
+          <div class="rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm animate-pulse">
+            <div class="h-4 bg-slate-200 rounded-md w-1/3 mb-3"></div>
+            <div class="h-10 bg-slate-100 rounded-xl w-full"></div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="flex justify-between items-center mt-6 animate-pulse">
+        <div class="h-10 bg-slate-200 rounded-xl w-28"></div>
+        <div class="h-4 bg-slate-200 rounded-md w-40"></div>
+      </div>
     {:else if loadError}
       <div class="gform-card p-8 text-center text-[color:var(--danger)]">
         <p class="font-bold mb-4">{loadError}</p>
@@ -282,7 +303,7 @@
         </div>
       </div>
     {:else if translatedForm && currentPage}
-      <div class="gform-card mb-5">
+      <div class="gform-card has-banner mb-5">
         <div class="w-full h-24 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 relative overflow-hidden flex items-end justify-between p-4 rounded-t-2xl">
           <div class="absolute inset-0 bg-black/5"></div>
           <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10 blur-xl"></div>

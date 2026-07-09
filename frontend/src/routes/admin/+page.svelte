@@ -543,7 +543,29 @@
     </div>
 
     {#if loading}
-      <p class="text-[color:var(--muted)]">Chargement…</p>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-pulse">
+        {#each [1, 2, 3, 4, 5, 6] as _}
+          <div class="card flex flex-col min-h-[190px] bg-white border border-[color:var(--line)] p-5">
+            <div class="flex items-start justify-between gap-2 mb-3">
+              <div class="h-5 bg-slate-200 rounded-md w-2/3"></div>
+              <div class="h-5 bg-slate-200 rounded-full w-16"></div>
+            </div>
+            <div class="flex-1 space-y-2 mb-4">
+              <div class="h-3 bg-slate-200 rounded-md w-full"></div>
+              <div class="h-3 bg-slate-200 rounded-md w-4/5"></div>
+            </div>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="h-4 bg-slate-200 rounded-md w-20"></div>
+              <div class="h-4 bg-slate-200 rounded-md w-16"></div>
+            </div>
+            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-slate-100">
+              <div class="h-8 bg-slate-100 rounded-lg flex-1"></div>
+              <div class="h-8 bg-slate-100 rounded-lg flex-1"></div>
+              <div class="h-8 bg-slate-100 rounded-lg w-8"></div>
+            </div>
+          </div>
+        {/each}
+      </div>
     {:else if error}
       <p class="text-[color:var(--danger)]">{error}</p>
     {:else if filteredForms.length === 0}

@@ -90,9 +90,25 @@
 <div class="min-h-screen bg-[color:var(--surface-bg)] flex flex-col">
   {#if activeTab === "preview"}
     {#if editorState.loading}
-      <div class="flex flex-col items-center justify-center py-20 text-[color:var(--muted)]">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[color:var(--brand)] mb-3"></div>
-        <p class="text-sm font-semibold">Chargement du formulaire...</p>
+      <div class="min-h-screen bg-[color:var(--surface-bg)] pt-16 pb-12">
+        <main class="mx-auto max-w-2xl px-4 animate-pulse space-y-6">
+          <div class="gform-card has-banner mb-5">
+            <div class="w-full h-24 bg-slate-200 rounded-t-2xl"></div>
+            <div class="p-6 md:p-8">
+              <div class="h-8 bg-slate-200 rounded-md w-3/4 mb-4"></div>
+              <div class="h-4 bg-slate-200 rounded-md w-full mb-2"></div>
+              <div class="h-4 bg-slate-200 rounded-md w-5/6"></div>
+            </div>
+          </div>
+          <div class="space-y-4">
+            {#each [1, 2, 3] as _}
+              <div class="rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm">
+                <div class="h-4 bg-slate-200 rounded-md w-1/3 mb-3"></div>
+                <div class="h-10 bg-slate-100 rounded-xl w-full"></div>
+              </div>
+            {/each}
+          </div>
+        </main>
       </div>
     {:else}
       {@render children()}
@@ -100,7 +116,7 @@
   {:else}
     <!-- Google Forms Header Bar -->
     <header class="bg-white border-b border-[color:var(--line)] sticky top-0 z-30 shadow-sm">
-      <div class="mx-auto max-w-7xl px-4 sm:px-6">
+      <div class="mx-auto max-w-none px-6 sm:px-10">
         <div class="flex items-center justify-between py-3">
           <!-- Left Section: Back, Title, and Save status -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -113,18 +129,23 @@
             </button>
             
             <div class="flex flex-col min-w-0">
-              <span class="text-sm font-bold truncate text-[color:var(--ink)]">
-                {editorState.form?.title || "Chargement..."}
-              </span>
-              <span class="text-[10px] text-[color:var(--muted)] flex items-center gap-1">
-                {#if editorState.saving}
-                  Enregistrement...
-                {:else if editorState.saved}
-                  <span class="text-green-600 flex items-center gap-0.5"><IconCheck size={12} weight="bold" /> Enregistré dans le cloud</span>
-                {:else if editorState.form}
-                  Modifications prêtes à être sauvegardées
-                {/if}
-              </span>
+              {#if editorState.loading}
+                <div class="h-4 bg-slate-200 rounded-md w-36 animate-pulse mb-1"></div>
+                <div class="h-3 bg-slate-100 rounded-md w-24 animate-pulse"></div>
+              {:else}
+                <span class="text-sm font-bold truncate text-[color:var(--ink)]">
+                  {editorState.form?.title || "Sans titre"}
+                </span>
+                <span class="text-[10px] text-[color:var(--muted)] flex items-center gap-1">
+                  {#if editorState.saving}
+                    Enregistrement...
+                  {:else if editorState.saved}
+                    <span class="text-green-600 flex items-center gap-0.5"><IconCheck size={12} weight="bold" /> Enregistré dans le cloud</span>
+                  {:else if editorState.form}
+                    Modifications prêtes à être sauvegardées
+                  {/if}
+                </span>
+              {/if}
             </div>
           </div>
 
@@ -234,9 +255,23 @@
     <!-- Page Content Container -->
     <main class="flex-1 w-full py-6">
       {#if editorState.loading}
-        <div class="flex flex-col items-center justify-center py-20 text-[color:var(--muted)]">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[color:var(--brand)] mb-3"></div>
-          <p class="text-sm font-semibold">Chargement du formulaire...</p>
+        <div class="mx-auto max-w-2xl px-4 py-6 space-y-6 animate-pulse">
+          <!-- Title / Desc Card Skeleton -->
+          <div class="rounded-2xl border border-[color:var(--line)] bg-white p-6 shadow-sm">
+            <div class="h-8 bg-slate-200 rounded-md w-1/3 mb-4"></div>
+            <div class="h-4 bg-slate-200 rounded-md w-full mb-2"></div>
+            <div class="h-4 bg-slate-200 rounded-md w-2/3"></div>
+          </div>
+          <!-- Field Skeletons -->
+          {#each [1, 2] as _}
+            <div class="rounded-2xl border border-[color:var(--line)] bg-white p-6 shadow-sm">
+              <div class="flex items-center justify-between gap-4 mb-4">
+                <div class="h-5 bg-slate-200 rounded-md w-1/4"></div>
+                <div class="h-8 bg-slate-100 rounded-lg w-32"></div>
+              </div>
+              <div class="h-10 bg-slate-50 rounded-xl w-full"></div>
+            </div>
+          {/each}
         </div>
       {:else}
         {@render children()}

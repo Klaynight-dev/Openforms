@@ -120,7 +120,29 @@
       <div class="card overflow-x-auto">
         <h2 class="mb-3 font-semibold">Comptes</h2>
         {#if loading}
-          <p class="text-gray-500">Chargement…</p>
+          <table class="w-full text-sm animate-pulse">
+            <thead class="text-left text-gray-500">
+              <tr><th class="py-1">Email</th><th>Rôle</th><th>Actif</th><th></th></tr>
+            </thead>
+            <tbody>
+              {#each [1, 2, 3, 4] as _}
+                <tr class="border-t border-slate-100">
+                  <td class="py-3 pr-4">
+                    <div class="h-4 bg-slate-200 rounded-md w-3/4"></div>
+                  </td>
+                  <td class="py-3">
+                    <div class="h-6 bg-slate-100 rounded-lg w-24"></div>
+                  </td>
+                  <td class="py-3">
+                    <div class="h-4 bg-slate-200 rounded-md w-12"></div>
+                  </td>
+                  <td class="py-3 text-right">
+                    <div class="inline-block h-6 bg-slate-100 rounded-lg w-12"></div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         {:else}
           <table class="w-full text-sm">
             <thead class="text-left text-gray-500">

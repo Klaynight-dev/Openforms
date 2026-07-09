@@ -45,7 +45,21 @@
 
   let selectedIndex = $state<number | null>(null);
   let dragIndex = $state<number | null>(null);
+  let dragOverIndex = $state<number | null>(null);
+  let dragOverPosition = $state<"top" | "bottom" | null>(null);
   let editingLocale = $state("fr");
+
+  let targetDZ = $derived.by(() => {
+    if (dragOverIndex === null || dragOverPosition === null) return null;
+    return dragOverPosition === "top" ? dragOverIndex : dragOverIndex + 1;
+  });
+
+  let isValidDrop = $derived(
+    dragIndex !== null &&
+    targetDZ !== null &&
+    targetDZ !== dragIndex &&
+    targetDZ !== dragIndex + 1
+  );
 
   $effect(() => {
     if (editingLocale !== "fr") {
@@ -98,14 +112,46 @@
   function onDragStart(i: number) {
     dragIndex = i;
   }
-  function onDrop(target: number) {
-    if (dragIndex === null || dragIndex === target) return;
+
+  function onDragOver(e: DragEvent, i: number) {
+    e.preventDefault();
+    if (dragIndex === null) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const position = relativeY < rect.height / 2 ? "top" : "bottom";
+    if (dragOverIndex !== i || dragOverPosition !== position) {
+      dragOverIndex = i;
+      dragOverPosition = position;
+    }
+  }
+
+  function onDragLeave() {
+    dragOverIndex = null;
+    dragOverPosition = null;
+  }
+
+  function onDragEnd() {
+    dragIndex = null;
+    dragOverIndex = null;
+    dragOverPosition = null;
+  }
+
+  function onDropCard(e: DragEvent, i: number) {
+    e.preventDefault();
+    if (dragIndex === null || targetDZ === null || !isValidDrop) {
+      onDragEnd();
+      return;
+    }
     const next = [...fields];
     const [moved] = next.splice(dragIndex, 1);
-    next.splice(target, 0, moved);
+    let insertIndex = targetDZ;
+    if (dragIndex < targetDZ) {
+      insertIndex = targetDZ - 1;
+    }
+    next.splice(insertIndex, 0, moved);
     fields = next;
-    selectedIndex = target;
-    dragIndex = null;
+    selectedIndex = insertIndex;
+    onDragEnd();
   }
 
   // --- Options editing ---
@@ -132,7 +178,7 @@
   }
 </script>
 
-<div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-2 pb-24 relative">
+<div class="flex flex-col md:flex-row gap-6 items-start max-w-none px-4 sm:px-6 pb-24 relative">
   <!-- Main canvas column -->
   <div class="flex-1 w-full space-y-5">
     
@@ -197,13 +243,27 @@
         class:card-active={isActive}
         draggable="true"
         ondragstart={() => onDragStart(i)}
-        ondragover={(e) => e.preventDefault()}
-        ondrop={() => onDrop(i)}
+        ondragover={(e) => onDragOver(e, i)}
+        ondragleave={onDragLeave}
+        ondragend={onDragEnd}
+        ondrop={(e) => onDropCard(e, i)}
         onclick={() => (selectedIndex = i)}
         onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
         role="button"
         tabindex="0"
       >
+        <!-- Drag indicator line -->
+        {#if dragIndex !== null && dragOverIndex === i && isValidDrop}
+          <div 
+            class="absolute left-0 right-0 h-1 bg-brand-500 z-50 pointer-events-none transition-all duration-150 animate-drop-line {dragOverPosition === 'top' ? 'top-0 -translate-y-1/2' : 'bottom-0 translate-y-1/2'}"
+          >
+            <!-- Left circle node -->
+            <div class="absolute -left-1.5 -top-1.5 w-4 h-4 rounded-full bg-brand-500 border-[3px] border-white shadow-md"></div>
+            <!-- Right circle node -->
+            <div class="absolute -right-1.5 -top-1.5 w-4 h-4 rounded-full bg-brand-500 border-[3px] border-white shadow-md"></div>
+          </div>
+        {/if}
+
         <!-- Drag handle -->
         <div class="flex justify-center py-1.5 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-400 transition">
           <IconDrag size={16} />
@@ -729,5 +789,15 @@
 
   .card-active {
     box-shadow: 0 10px 25px -5px rgba(103, 58, 183, 0.08), 0 8px 16px -6px rgba(103, 58, 183, 0.08);
+  }
+
+  .animate-drop-line {
+    animation: fadeIn 0.1s ease-out forwards;
+    box-shadow: 0 0 10px rgba(103, 58, 183, 0.5);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 </style>

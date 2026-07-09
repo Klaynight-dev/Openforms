@@ -217,9 +217,28 @@
 </div>
 
 {#if loading}
-  <div class="flex items-center justify-center py-12 text-slate-500 gap-2">
-    <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" class="opacity-75"/></svg>
-    Chargement…
+  <div class="no-print bg-white border border-[color:var(--line)] rounded-2xl p-6 shadow-sm animate-pulse">
+    <!-- View selector & action bar placeholder -->
+    <div class="flex justify-between items-center mb-6">
+      <div class="h-8 bg-slate-200 rounded-lg w-48"></div>
+      <div class="h-8 bg-slate-200 rounded-lg w-32"></div>
+    </div>
+    <!-- Table placeholder -->
+    <div class="space-y-4">
+      <div class="grid grid-cols-4 gap-4 pb-3 border-b border-slate-100">
+        {#each [1, 2, 3, 4] as _}
+          <div class="h-4 bg-slate-200 rounded-md"></div>
+        {/each}
+      </div>
+      {#each [1, 2, 3, 4, 5] as _}
+        <div class="grid grid-cols-4 gap-4 py-2 border-b border-slate-50">
+          <div class="h-3 bg-slate-200 rounded-md w-3/4"></div>
+          <div class="h-3 bg-slate-200 rounded-md w-5/6"></div>
+          <div class="h-3 bg-slate-200 rounded-md w-2/3"></div>
+          <div class="h-3 bg-slate-200 rounded-md w-1/2"></div>
+        </div>
+      {/each}
+    </div>
   </div>
 {:else if error}
   <p class="text-red-600 font-semibold p-4">{error}</p>
