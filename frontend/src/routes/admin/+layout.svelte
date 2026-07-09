@@ -25,7 +25,7 @@
     goto("/admin/login");
   }
 
-  let showChrome = $derived(auth.isAuthenticated && $page.url.pathname !== "/admin/login");
+  let showChrome = $derived(auth.isAuthenticated && $page.url.pathname !== "/admin/login" && !$page.url.pathname.includes("/preview"));
 </script>
 
 {#if !auth.ready}

@@ -1,7 +1,20 @@
 <script lang="ts">
   import type { FieldDefinition, MetaColumn, FieldType } from "../types.ts";
   import { FIELD_TYPE_META, metaFor, newField } from "../fieldTypes.ts";
-  import { FIELD_ICONS, IconDrag, IconDuplicate, IconTrash, IconPlus, IconClose, IconCanvas, IconSettings, IconSparkle } from "../icons.ts";
+  import { 
+    FIELD_ICONS, 
+    IconDrag, 
+    IconDuplicate, 
+    IconTrash, 
+    IconPlus, 
+    IconClose, 
+    IconCanvas, 
+    IconSettings, 
+    IconSparkle,
+    IconSection,
+    IconSave,
+    IconCheck
+  } from "../icons.ts";
 
   interface Settings {
     title: string;
@@ -12,6 +25,7 @@
     encryptResponses: boolean;
     visibility: string;
     allowedEmails: string[];
+    translations?: any;
   }
 
   let {
@@ -31,53 +45,56 @@
 
   let selectedIndex = $state<number | null>(null);
   let dragIndex = $state<number | null>(null);
-  let activeTab = $state<"canvas" | "palette" | "config">("canvas");
+  let editingLocale = $state("fr");
 
-  let allowedEmailsText = $derived((settings.allowedEmails ?? []).join("\n"));
+  $effect(() => {
+    if (editingLocale !== "fr") {
+      settings.translations ??= {};
+      settings.translations[editingLocale] ??= { title: "", description: "", fields: {} };
+      for (const field of fields) {
+        settings.translations[editingLocale].fields ??= {};
+        settings.translations[editingLocale].fields[field.key] ??= {
+          label: "",
+          description: "",
+          placeholder: "",
+        };
+      }
+    }
+  });
 
-  let selected = $derived(selectedIndex !== null ? fields[selectedIndex] : null);
   let precedingChoiceFields = $derived(
     selectedIndex !== null
       ? fields.slice(0, selectedIndex).filter((f) => ["radio", "select", "checkbox"].includes(f.type))
       : []
   );
 
-  // Switch to config panel automatically when a field is selected on mobile
-  $effect(() => {
-    if (selectedIndex !== null) {
-      activeTab = "config";
-    }
-  });
-
-  $effect(() => {
-    if (selected && (selected.type === "short_text" || selected.type === "paragraph" || selected.type === "number" || selected.type === "email") && !selected.validation) {
-      selected.validation = {};
-    }
-  });
-
   function addField(type: FieldType) {
     fields = [...fields, newField(type)];
     selectedIndex = fields.length - 1;
-  }
-
-  // Helper to ensure palette shows canvas tab after adding
-  function addFieldAndFocus(type: FieldType) {
-    addField(type);
-    activeTab = "canvas";
+    // Scroll active card into view
+    setTimeout(() => {
+      const activeEl = document.querySelector(".card-active");
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 100);
   }
 
   function removeField(i: number) {
     fields = fields.filter((_, idx) => idx !== i);
     selectedIndex = null;
-    activeTab = "canvas";
   }
 
   function duplicateField(i: number) {
-    const copy = { ...structuredClone($state.snapshot(fields[i])), key: `champ_${Date.now().toString(36)}` };
+    const copy = { 
+      ...structuredClone($state.snapshot(fields[i])), 
+      key: `champ_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}` 
+    };
     fields = [...fields.slice(0, i + 1), copy, ...fields.slice(i + 1)];
+    selectedIndex = i + 1;
   }
 
-  // --- Drag & drop pour réordonner ---
+  // --- Drag & drop for reordering ---
   function onDragStart(i: number) {
     dragIndex = i;
   }
@@ -91,604 +108,626 @@
     dragIndex = null;
   }
 
-  // --- Édition des options ---
-  function addOption() {
-    if (!selected) return;
-    const opts = selected.options ?? [];
+  // --- Options editing ---
+  function addOption(field: FieldDefinition) {
+    const opts = field.options ?? [];
     const name = `Option ${opts.length + 1}`;
-    selected.options = [...opts, { value: name, label: name }];
+    field.options = [...opts, { value: name, label: name }];
   }
-  function removeOption(idx: number) {
-    if (!selected?.options) return;
-    selected.options = selected.options.filter((_, i) => i !== idx);
-  }
-
-  // --- Colonnes de métadonnées (tableur) ---
-  function addMetaColumn() {
-    metaColumns = [
-      ...metaColumns,
-      { key: `meta_${Date.now().toString(36)}`, label: "Nouvelle colonne", kind: "text" },
-    ];
-  }
-  function removeMetaColumn(i: number) {
-    metaColumns = metaColumns.filter((_, idx) => idx !== i);
+  
+  function removeOption(field: FieldDefinition, idx: number) {
+    if (!field.options) return;
+    field.options = field.options.filter((_, i) => i !== idx);
   }
 
-  // Helpers grille (édition via textarea multiligne)
+  // Helpers grid
   function gridText(arr: string[] | undefined): string {
     return (arr ?? []).join("\n");
   }
-  function setGridRows(text: string) {
-    if (!selected) return;
-    selected.grid = { rows: text.split("\n").filter(Boolean), columns: selected.grid?.columns ?? [] };
+  function setGridRows(field: FieldDefinition, text: string) {
+    field.grid = { rows: text.split("\n").filter(Boolean), columns: field.grid?.columns ?? [] };
   }
-  function setGridCols(text: string) {
-    if (!selected) return;
-    selected.grid = { rows: selected.grid?.rows ?? [], columns: text.split("\n").filter(Boolean) };
+  function setGridCols(field: FieldDefinition, text: string) {
+    field.grid = { rows: field.grid?.rows ?? [], columns: text.split("\n").filter(Boolean) };
   }
 </script>
 
-<!-- Tab Switcher visible uniquement sur mobile -->
-<div class="flex md:hidden border border-[color:var(--line)] bg-white rounded-xl p-1 mb-4">
-  <button 
-    type="button" 
-    class="flex-1 py-2 text-xs font-semibold rounded-lg transition-all" 
-    class:bg-brand={activeTab === "palette"}
-    class:text-white={activeTab === "palette"}
-    class:text-[color:var(--muted)]={activeTab !== "palette"}
-    onclick={() => activeTab = "palette"}
-  >
-    <span class="flex items-center gap-1 justify-center"><IconPlus size={13} /> Champ</span>
-  </button>
-  <button 
-    type="button" 
-    class="flex-1 py-2 text-xs font-semibold rounded-lg transition-all" 
-    class:bg-brand={activeTab === "canvas"}
-    class:text-white={activeTab === "canvas"}
-    class:text-[color:var(--muted)]={activeTab !== "canvas"}
-    onclick={() => activeTab = "canvas"}
-  >
-    <span class="flex items-center gap-1 justify-center"><IconCanvas size={13} /> Canevas</span>
-  </button>
-  <button 
-    type="button" 
-    class="flex-1 py-2 text-xs font-semibold rounded-lg transition-all" 
-    class:bg-brand={activeTab === "config"}
-    class:text-white={activeTab === "config"}
-    class:text-[color:var(--muted)]={activeTab !== "config"}
-    onclick={() => activeTab = "config"}
-  >
-    <span class="flex items-center gap-1 justify-center"><IconSettings size={13} /> Options</span>
-  </button>
-</div>
-
-<div class="builder">
-  <!-- Palette -->
-  <aside class="palette" class:hidden-mobile={activeTab !== "palette"}>
-    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Ajouter un champ</h3>
-    {#each FIELD_TYPE_META as m}
-      {@const Icon = FIELD_ICONS[m.type]}
-      <button class="palette-item hover:scale-[1.02] transition-transform" onclick={() => addFieldAndFocus(m.type)} type="button">
-        <span class="icon text-brand"><Icon size={17} /></span>{m.label}
-      </button>
-    {/each}
-
-    <h3 class="mb-1 mt-6 text-xs font-bold uppercase tracking-wider text-slate-400">Colonnes tableur</h3>
-    <p class="mb-3 text-[10px] text-slate-400 leading-normal">Métadonnées internes ajoutées aux réponses.</p>
-    {#each metaColumns as col, i}
-      <div class="meta-col">
-        <input class="input !py-1 text-xs" bind:value={col.label} />
-        <select class="input !w-24 !py-1 text-xs" bind:value={col.kind}>
-          <option value="text">Texte</option>
-          <option value="number">Nombre</option>
-          <option value="formula">Formule</option>
+<div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-2 pb-24 relative">
+  <!-- Main canvas column -->
+  <div class="flex-1 w-full space-y-5">
+    
+    <!-- Translation language and Form Title card -->
+    <div class="bg-white rounded-2xl border border-[color:var(--line)] border-t-[10px] border-t-[color:var(--brand)] shadow-sm overflow-hidden p-6 relative">
+      <!-- Lang selector top right -->
+      <div class="flex items-center gap-2 justify-end mb-4 border-b border-slate-100 pb-3">
+        <span class="text-xs font-semibold text-[color:var(--muted)]">Langue de saisie :</span>
+        <select class="input !w-32 !py-1 text-xs" bind:value={editingLocale}>
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
         </select>
-        <button class="text-[color:var(--danger)] hover:scale-105 transition-transform" onclick={() => removeMetaColumn(i)} type="button" aria-label="Retirer"><IconClose size={14} /></button>
       </div>
-      {#if col.kind === "formula"}
-        <input class="input mb-3 !py-1 text-xs font-mono text-brand-700 bg-brand-50/50" placeholder="=note*2 ou CONCAT(nom)" bind:value={col.formula} />
-      {/if}
-    {/each}
-    <button class="btn-secondary mt-2 w-full text-xs" onclick={addMetaColumn} type="button">
-      <IconPlus size={14} weight="bold" /> Colonne
-    </button>
-  </aside>
 
-  <!-- Canevas -->
-  <section class="canvas" class:hidden-mobile={activeTab !== "canvas"}>
-    <div class="card mb-4 border-t-8 border-t-[color:var(--brand)] shadow-md">
-      <input class="mb-2 w-full border-0 text-2xl font-bold outline-none text-[color:var(--ink)] placeholder-slate-400" placeholder="Titre du formulaire" bind:value={settings.title} />
-      <textarea class="w-full border-0 text-sm text-[color:var(--muted)] outline-none resize-none placeholder-slate-400" rows="2" placeholder="Description (facultatif)" bind:value={settings.description}></textarea>
+      {#if editingLocale === "fr"}
+        <input 
+          class="w-full border-0 text-2xl font-bold outline-none text-[color:var(--ink)] placeholder-slate-400 focus:ring-0 mb-3 border-b border-transparent focus:border-slate-100 focus:pb-1 transition-all" 
+          placeholder="Titre du formulaire" 
+          bind:value={settings.title} 
+        />
+        <textarea 
+          class="w-full border-0 text-sm text-[color:var(--muted)] outline-none resize-none placeholder-slate-400 focus:ring-0 border-b border-transparent focus:border-slate-100 transition-all" 
+          rows="2" 
+          placeholder="Description du formulaire (facultatif)" 
+          bind:value={settings.description}
+        ></textarea>
+      {:else}
+        <input 
+          class="w-full border-0 text-2xl font-bold outline-none text-[color:var(--brand)] placeholder-slate-400 focus:ring-0 mb-3" 
+          placeholder={`Titre en ${editingLocale.toUpperCase()} (Traduction)`} 
+          bind:value={settings.translations[editingLocale].title} 
+        />
+        <textarea 
+          class="w-full border-0 text-sm text-brand-600 outline-none resize-none placeholder-slate-400 focus:ring-0" 
+          rows="2" 
+          placeholder={`Description en ${editingLocale.toUpperCase()} (Traduction)`} 
+          bind:value={settings.translations[editingLocale].description}
+        ></textarea>
+      {/if}
     </div>
 
+    <!-- Empty indicator -->
     {#if fields.length === 0}
       <div class="empty flex flex-col items-center justify-center p-12 text-slate-400 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
         <span class="mb-2 text-slate-300"><IconSparkle size={32} /></span>
         <p class="text-sm font-semibold mb-1">Votre formulaire est vide</p>
-        <p class="text-xs text-slate-400">Cliquez sur l'onglet "+ Champ" pour ajouter votre première question.</p>
+        <p class="text-xs text-slate-400">Cliquez sur le bouton + à droite pour ajouter votre première question.</p>
       </div>
     {/if}
 
+    <!-- Fields container list -->
     {#each fields as field, i (field.key)}
       {@const FieldIcon = FIELD_ICONS[field.type]}
-      {#if field.type === "section"}
-        <!-- Section divider card -->
-        <div
-          class="section-card group cursor-pointer transition-all duration-200"
-          class:selected={selectedIndex === i}
-          draggable="true"
-          role="button"
-          tabindex="0"
-          ondragstart={() => onDragStart(i)}
-          ondragover={(e) => e.preventDefault()}
-          ondrop={() => onDrop(i)}
-          onclick={() => (selectedIndex = i)}
-          onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
-        >
-          <div class="flex flex-col gap-1 w-full">
-            <div class="flex items-center gap-2">
-              <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity"><IconDrag size={16} /></span>
-              <FieldIcon size={16} class="text-indigo-500 shrink-0" />
-              <span class="flex-1 font-bold text-sm text-indigo-700 truncate">{field.label || "Nouvelle section"}</span>
-              {#if field.condition}<span class="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">Conditionnel</span>{/if}
-              <button class="ghost text-slate-400 hover:text-[color:var(--danger)] shrink-0" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
-            </div>
-            {#if field.description}
-              <div class="text-[11px] text-indigo-500/80 pl-8 mt-0.5 truncate max-w-lg">{field.description}</div>
-            {/if}
-          </div>
+      {@const isActive = selectedIndex === i}
+
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="bg-white rounded-xl border border-[color:var(--line)] shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden relative flex flex-col"
+        class:border-l-[6px]={isActive}
+        class:border-l-[color:var(--brand)]={isActive}
+        class:card-active={isActive}
+        draggable="true"
+        ondragstart={() => onDragStart(i)}
+        ondragover={(e) => e.preventDefault()}
+        ondrop={() => onDrop(i)}
+        onclick={() => (selectedIndex = i)}
+        onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
+        role="button"
+        tabindex="0"
+      >
+        <!-- Drag handle -->
+        <div class="flex justify-center py-1.5 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-400 transition">
+          <IconDrag size={16} />
         </div>
-      {:else}
-        <div
-          class="field-card group transition-all duration-200"
-          class:selected={selectedIndex === i}
-          draggable="true"
-          role="button"
-          tabindex="0"
-          ondragstart={() => onDragStart(i)}
-          ondragover={(e) => e.preventDefault()}
-          ondrop={() => onDrop(i)}
-          onclick={() => { selectedIndex = i; if (window.innerWidth < 768) activeTab = "config"; }}
-          onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
-        >
-          <div class="field-head">
-            <span class="drag-handle opacity-50 group-hover:opacity-100 transition-opacity" title="Glisser pour réordonner"><IconDrag size={16} /></span>
-            <span class="icon text-brand bg-brand-50 p-1.5 rounded-lg"><FieldIcon size={16} /></span>
-            <span class="flex-1 font-semibold text-sm text-[color:var(--ink)]">{field.label || "Question sans titre"}</span>
-            {#if field.condition}<span class="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">Conditionnel</span>{/if}
-            {#if field.required}<span class="req">requis</span>{/if}
-            <button class="ghost text-slate-400 hover:text-brand" onclick={(e) => { e.stopPropagation(); duplicateField(i); }} type="button" title="Dupliquer"><IconDuplicate size={16} /></button>
-            <button class="ghost text-slate-400 hover:text-[color:var(--danger)]" onclick={(e) => { e.stopPropagation(); removeField(i); }} type="button" title="Supprimer"><IconTrash size={16} /></button>
-          </div>
-          <div class="field-type font-mono uppercase">{metaFor(field.type).label}</div>
-        </div>
-      {/if}
-    {/each}
-  </section>
 
-  <!-- Panneau de configuration -->
-  <aside class="config" class:hidden-mobile={activeTab !== "config"}>
-    {#if selected}
-      <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Configuration</h3>
-        <button class="text-xs text-brand font-semibold md:hidden" onclick={() => activeTab = "canvas"}>OK</button>
-      </div>
-      <label class="label">Libellé</label>
-      <input class="input mb-3" bind:value={selected.label} />
+        <!-- Card content -->
+        <div class="p-6 pt-1 space-y-4">
+          {#if isActive}
+            <!-- ACTIVE CARD: EDITABLE -->
+            <div class="flex flex-col sm:flex-row gap-4 items-start">
+              <!-- Label Input -->
+              <div class="flex-1 w-full">
+                <label class="label text-[10px] text-slate-400 uppercase tracking-wide">Question</label>
+                {#if editingLocale === "fr"}
+                  <input 
+                    class="input font-bold" 
+                    bind:value={field.label} 
+                    placeholder="Question sans titre" 
+                  />
+                {:else}
+                  <input 
+                    class="input font-bold bg-brand-50/20 text-brand-700 placeholder-brand-300" 
+                    placeholder={field.label} 
+                    bind:value={settings.translations[editingLocale].fields[field.key].label} 
+                  />
+                {/if}
+              </div>
 
-      <label class="label">{selected.type === "section" ? "Texte / Description de la catégorie" : "Description"}</label>
-      {#if selected.type === "section"}
-        <textarea class="input mb-3 text-xs" rows="4" placeholder="Saisissez ici le texte explicatif de cette catégorie..." bind:value={selected.description}></textarea>
-      {:else}
-        <input class="input mb-3" bind:value={selected.description} />
-      {/if}
-
-      {#if selected.type !== "section" && selected.type !== "grid" && selected.type !== "file" && selected.type !== "checkbox_grid" && selected.type !== "linear_scale"}
-        <label class="label">Placeholder</label>
-        <input class="input mb-3" bind:value={selected.placeholder} />
-      {/if}
-
-      {#if selected.type !== "section"}
-        <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer">
-          <input type="checkbox" bind:checked={selected.required} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Champ requis
-        </label>
-      {/if}
-
-      {#if metaFor(selected.type).hasOptions}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <div class="label">Options de réponse</div>
-          {#each selected.options ?? [] as opt, oi}
-            <div class="opt-row flex items-center gap-1.5 mb-2">
-              <input
-                class="input !py-1 text-xs flex-1"
-                placeholder="Option"
-                bind:value={opt.label}
-                oninput={() => opt.value = opt.label}
-              />
-              <button class="text-[color:var(--danger)] hover:scale-105 transition-transform shrink-0" onclick={() => removeOption(oi)} type="button" aria-label="Retirer"><IconClose size={14} /></button>
+              <!-- Type Select dropdown -->
+              <div class="w-full sm:w-56 shrink-0">
+                <label class="label text-[10px] text-slate-400 uppercase tracking-wide">Type de réponse</label>
+                <select class="input text-xs" bind:value={field.type}>
+                  {#each FIELD_TYPE_META as m}
+                    <option value={m.type}>{m.label}</option>
+                  {/each}
+                </select>
+              </div>
             </div>
-          {/each}
-          <button class="btn-secondary mt-2 w-full text-xs" onclick={addOption} type="button"><IconPlus size={14} weight="bold" /> Option</button>
-        </div>
-      {/if}
 
-      {#if selected.type === "radio" || selected.type === "select"}
-        <label class="mb-4 flex items-center gap-2 text-sm font-semibold cursor-pointer border border-[color:var(--line)] rounded-lg px-3 py-2 hover:bg-slate-50 transition">
-          <input type="checkbox" bind:checked={selected.allowOther} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" />
-          <span class="flex-1">Option « Autre » avec champ texte</span>
-        </label>
-      {/if}
-
-
-      {#if selected.type === "file"}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <label class="label">Types acceptés (MIME séparés par virgules)</label>
-          <input class="input mb-3 text-xs" placeholder="image/*, application/pdf" value={(selected.accept ?? []).join(", ")} oninput={(e) => (selected.accept = (e.target as HTMLInputElement).value.split(",").map((s) => s.trim()).filter(Boolean))} />
-          <label class="label">Taille max (octets)</label>
-          <input class="input mb-3 text-xs" type="number" bind:value={selected.maxSizeBytes} />
-        </div>
-      {/if}
-
-      {#if selected.type === "linear_scale"}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <div class="label mb-2">Échelle</div>
-          <div class="grid grid-cols-2 gap-2 mb-2">
-            <div>
-              <label class="label">Valeur min</label>
-              <input class="input text-xs" type="number" min="0" max="10"
-                value={selected.scale?.min ?? 1}
-                oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.min = parseInt((e.target as HTMLInputElement).value) || 1; }} />
-            </div>
-            <div>
-              <label class="label">Valeur max</label>
-              <input class="input text-xs" type="number" min="2" max="10"
-                value={selected.scale?.max ?? 5}
-                oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.max = parseInt((e.target as HTMLInputElement).value) || 5; }} />
-            </div>
-          </div>
-          <label class="label">Libellé gauche (min)</label>
-          <input class="input mb-2 text-xs" placeholder="ex : Pas du tout d'accord"
-            value={selected.scale?.minLabel ?? ""}
-            oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.minLabel = (e.target as HTMLInputElement).value; }} />
-          <label class="label">Libellé droite (max)</label>
-          <input class="input text-xs" placeholder="ex : Tout à fait d'accord"
-            value={selected.scale?.maxLabel ?? ""}
-            oninput={(e) => { selected.scale ??= { min: 1, max: 5 }; selected.scale.maxLabel = (e.target as HTMLInputElement).value; }} />
-        </div>
-      {/if}
-
-      {#if (selected.type === "grid" || selected.type === "checkbox_grid") && selected.grid}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <label class="label">Lignes (une par ligne)</label>
-          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.rows)} oninput={(e) => setGridRows((e.target as HTMLTextAreaElement).value)}></textarea>
-          <label class="label">Colonnes (une par ligne)</label>
-          <textarea class="input mb-3 text-xs" rows="3" value={gridText(selected.grid.columns)} oninput={(e) => setGridCols((e.target as HTMLTextAreaElement).value)}></textarea>
-        </div>
-      {/if}
-
-      {#if selected.type === "short_text" || selected.type === "paragraph"}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="label">Long. min</label>
-              <input class="input text-xs" type="number" bind:value={selected.validation!.minLength} oninput={() => (selected.validation ??= {})} />
-            </div>
-            <div>
-              <label class="label">Long. max</label>
-              <input class="input text-xs" type="number" bind:value={selected.validation!.maxLength} />
-            </div>
-          </div>
-          <label class="label mt-3">Regex personnalisée</label>
-          <input class="input font-mono text-xs" placeholder="^[A-Z].*" bind:value={selected.validation!.pattern} />
-        </div>
-      {/if}
-
-      {#if selected.type === "number"}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="label">Min</label>
-              <input class="input text-xs" type="number" bind:value={selected.validation!.min} />
-            </div>
-            <div>
-              <label class="label">Max</label>
-              <input class="input text-xs" type="number" bind:value={selected.validation!.max} />
-            </div>
-          </div>
-        </div>
-      {/if}
-      <!-- Affichage Conditionnel -->
-      {#if selectedIndex !== null && selectedIndex > 0}
-        <div class="mb-4 pt-3 border-t border-slate-100">
-          <label class="mb-2 flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!selected.condition}
-              onchange={(e) => {
-                if ((e.target as HTMLInputElement).checked) {
-                  const firstChoice = precedingChoiceFields[0];
-                  selected.condition = {
-                    fieldKey: firstChoice?.key ?? "",
-                    value: firstChoice?.options?.[0]?.value ?? "",
-                  };
-                } else {
-                  selected.condition = undefined;
-                }
-                fields = [...fields];
-              }}
-              class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand"
-            />
-            Afficher sous condition
-          </label>
-
-          {#if selected.condition}
-            {#if precedingChoiceFields.length === 0}
-              <p class="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 mt-2">
-                Vous devez ajouter une question à choix (unique, multiple ou liste) avant ce champ pour créer une condition.
-              </p>
-            {:else}
-              {@const triggerField = selected.condition ? precedingChoiceFields.find((f) => f.key === selected.condition!.fieldKey) : undefined}
-              <div class="space-y-2 mt-2 pl-5 border-l-2 border-slate-100">
+            <!-- Description & Placeholder -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="label text-[10px] text-slate-400 uppercase">Description explicative</label>
+                {#if editingLocale === "fr"}
+                  <input 
+                    class="input text-xs" 
+                    bind:value={field.description} 
+                    placeholder="ex: Merci de saisir vos informations..." 
+                  />
+                {:else}
+                  <input 
+                    class="input text-xs" 
+                    placeholder={field.description} 
+                    bind:value={settings.translations[editingLocale].fields[field.key].description} 
+                  />
+                {/if}
+              </div>
+              
+              {#if field.type !== "section" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment"}
                 <div>
-                  <label class="label !text-[10px]">Si la question suivante :</label>
-                  <select
-                    class="input text-xs"
-                    value={selected.condition.fieldKey}
-                    onchange={(e) => {
-                      const key = (e.target as HTMLSelectElement).value;
-                      const trigger = precedingChoiceFields.find((f) => f.key === key);
-                      selected.condition = {
-                        fieldKey: key,
-                        value: trigger?.options?.[0]?.value ?? "",
-                      };
-                      fields = [...fields];
-                    }}
-                  >
-                    {#each precedingChoiceFields as f}
-                      <option value={f.key}>{f.label || f.key}</option>
-                    {/each}
-                  </select>
+                  <label class="label text-[10px] text-slate-400 uppercase">Placeholder (Indication)</label>
+                  {#if editingLocale === "fr"}
+                    <input 
+                      class="input text-xs" 
+                      bind:value={field.placeholder} 
+                      placeholder="ex: Entrez du texte..." 
+                    />
+                  {:else}
+                    <input 
+                      class="input text-xs" 
+                      placeholder={field.placeholder} 
+                      bind:value={settings.translations[editingLocale].fields[field.key].placeholder} 
+                    />
+                  {/if}
                 </div>
+              {/if}
+            </div>
 
-                {#if triggerField}
-                  <div>
-                    <label class="label !text-[10px]">Est égale à :</label>
-                    <select
-                      class="input text-xs"
-                      value={selected.condition.value}
-                      onchange={(e) => {
-                        if (selected.condition) {
-                          selected.condition.value = (e.target as HTMLSelectElement).value;
-                        }
-                        fields = [...fields];
-                      }}
+            <!-- Choice Options Editor -->
+            {#if metaFor(field.type).hasOptions}
+              <div class="pt-4 border-t border-slate-100">
+                <label class="label text-xs">Options de choix</label>
+                <div class="space-y-2">
+                  {#each field.options ?? [] as opt, oi}
+                    <div class="flex items-center gap-2">
+                      <span class="text-slate-300"><FieldIcon size={14} /></span>
+                      <input 
+                        class="input text-xs !py-1 flex-1" 
+                        placeholder={`Option ${oi + 1}`}
+                        bind:value={opt.label}
+                        oninput={() => opt.value = opt.label}
+                      />
+                      <button 
+                        type="button" 
+                        class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 shrink-0" 
+                        onclick={() => removeOption(field, oi)}
+                        title="Supprimer cette option"
+                      >
+                        <IconClose size={14} />
+                      </button>
+                    </div>
+                  {/each}
+                  
+                  <div class="flex items-center gap-2 pt-2">
+                    <button 
+                      type="button" 
+                      class="btn-secondary !py-1 px-3 text-xs"
+                      onclick={() => addOption(field)}
                     >
-                      {#each triggerField.options ?? [] as opt}
-                        <option value={opt.value}>{opt.label}</option>
-                      {/each}
-                      {#if triggerField.allowOther}
-                        <option value="__other__">Autre…</option>
-                      {/if}
+                      <IconPlus size={12} /> Ajouter une option
+                    </button>
+
+                    {#if field.type === "radio" || field.type === "checkbox"}
+                      <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          bind:checked={field.allowOther} 
+                          class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]" 
+                        />
+                        <span>Autoriser option « Autre »</span>
+                      </label>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            <!-- File Upload editor options -->
+            {#if field.type === "file"}
+              <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="label text-xs">Types MIME acceptés (séparés par virgules)</label>
+                  <input 
+                    class="input text-xs" 
+                    placeholder="image/*, application/pdf" 
+                    value={(field.accept ?? []).join(", ")} 
+                    oninput={(e) => (field.accept = (e.target as HTMLInputElement).value.split(",").map((s) => s.trim()).filter(Boolean))} 
+                  />
+                </div>
+                <div>
+                  <label class="label text-xs">Taille maximale autorisée (octets)</label>
+                  <input 
+                    class="input text-xs" 
+                    type="number" 
+                    bind:value={field.maxSizeBytes} 
+                    placeholder="ex: 10485760 (10 Mo)"
+                  />
+                </div>
+              </div>
+            {/if}
+
+            <!-- Linear Scale editor options -->
+            {#if field.type === "linear_scale"}
+              <div class="pt-4 border-t border-slate-100 space-y-3">
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="label text-xs">Valeur de départ</label>
+                    <select 
+                      class="input text-xs"
+                      value={field.scale?.min ?? 1}
+                      onchange={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.min = parseInt((e.target as HTMLSelectElement).value) || 1; }}
+                    >
+                      <option value={0}>0</option>
+                      <option value={1}>1</option>
                     </select>
+                  </div>
+                  <div>
+                    <label class="label text-xs">Valeur maximale</label>
+                    <select 
+                      class="input text-xs"
+                      value={field.scale?.max ?? 5}
+                      onchange={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.max = parseInt((e.target as HTMLSelectElement).value) || 5; }}
+                    >
+                      {#each Array(9) as _, idx}
+                        <option value={idx + 2}>{idx + 2}</option>
+                      {/each}
+                    </select>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="label text-xs">Libellé min (ex: Mauvais)</label>
+                    <input 
+                      class="input text-xs"
+                      placeholder="Optionnel"
+                      value={field.scale?.minLabel ?? ""}
+                      oninput={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.minLabel = (e.target as HTMLInputElement).value; }}
+                    />
+                  </div>
+                  <div>
+                    <label class="label text-xs">Libellé max (ex: Excellent)</label>
+                    <input 
+                      class="input text-xs"
+                      placeholder="Optionnel"
+                      value={field.scale?.maxLabel ?? ""}
+                      oninput={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.maxLabel = (e.target as HTMLInputElement).value; }}
+                    />
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            <!-- Grid editor options -->
+            {#if (field.type === "grid" || field.type === "checkbox_grid") && field.grid}
+              <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="label text-xs">Lignes (une par ligne)</label>
+                  <textarea 
+                    class="input text-xs font-mono" 
+                    rows="3" 
+                    value={gridText(field.grid.rows)} 
+                    oninput={(e) => setGridRows(field, (e.target as HTMLTextAreaElement).value)}
+                  ></textarea>
+                </div>
+                <div>
+                  <label class="label text-xs">Colonnes (une par ligne)</label>
+                  <textarea 
+                    class="input text-xs font-mono" 
+                    rows="3" 
+                    value={gridText(field.grid.columns)} 
+                    oninput={(e) => setGridCols(field, (e.target as HTMLTextAreaElement).value)}
+                  ></textarea>
+                </div>
+              </div>
+            {/if}
+
+            <!-- Advanced / Conditions Panel -->
+            {#if field.type !== "section"}
+              <div class="pt-4">
+                <details class="text-xs bg-slate-50 border border-slate-100 rounded-xl p-3">
+                  <summary class="font-bold text-slate-500 cursor-pointer select-none outline-none">Paramètres avancés (Validation, Conditions, Clé)</summary>
+                  
+                  <div class="mt-4 space-y-4">
+                    <!-- Text lengths & Number limits Validation -->
+                    {#if field.type === "short_text" || field.type === "paragraph"}
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="label !text-[10px]">Longueur minimale</label>
+                          <input class="input text-xs" type="number" bind:value={field.validation!.minLength} oninput={() => (field.validation ??= {})} />
+                        </div>
+                        <div>
+                          <label class="label !text-[10px]">Longueur maximale</label>
+                          <input class="input text-xs" type="number" bind:value={field.validation!.maxLength} />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="label !text-[10px]">Expression régulière de validation (Regex)</label>
+                        <input class="input text-xs font-mono" placeholder="ex: ^[A-Z].*" bind:value={field.validation!.pattern} />
+                      </div>
+                    {:else if field.type === "number"}
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="label !text-[10px]">Valeur minimale</label>
+                          <input class="input text-xs" type="number" bind:value={field.validation!.min} />
+                        </div>
+                        <div>
+                          <label class="label !text-[10px]">Valeur maximale</label>
+                          <input class="input text-xs" type="number" bind:value={field.validation!.max} />
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Conditional Display Logic -->
+                    {#if i > 0}
+                      <div class="border-t border-slate-200 pt-3">
+                        <label class="flex items-center gap-2 font-semibold cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={!!field.condition}
+                            onchange={(e) => {
+                              if ((e.target as HTMLInputElement).checked) {
+                                const firstChoice = precedingChoiceFields[0];
+                                field.condition = {
+                                  fieldKey: firstChoice?.key ?? "",
+                                  value: firstChoice?.options?.[0]?.value ?? "",
+                                };
+                              } else {
+                                field.condition = undefined;
+                              }
+                              fields = [...fields];
+                            }}
+                            class="h-4 w-4 rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
+                          />
+                          <span>Afficher ce champ sous condition</span>
+                        </label>
+
+                        {#if field.condition}
+                          {#if precedingChoiceFields.length === 0}
+                            <p class="text-[10px] text-amber-600 bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-2 font-medium">
+                              Vous devez avoir une question à choix unique/multiple ou déroulante placée avant cette question pour pouvoir configurer une condition.
+                            </p>
+                          {:else}
+                            {@const trigger = precedingChoiceFields.find((f) => f.key === field.condition!.fieldKey)}
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pl-4 border-l-2 border-slate-200">
+                              <div>
+                                <label class="label !text-[10px]">Si la question suivante :</label>
+                                <select
+                                  class="input text-xs"
+                                  value={field.condition.fieldKey}
+                                  onchange={(e) => {
+                                    const key = (e.target as HTMLSelectElement).value;
+                                    const f = precedingChoiceFields.find((cf) => cf.key === key);
+                                    field.condition = {
+                                      fieldKey: key,
+                                      value: f?.options?.[0]?.value ?? "",
+                                    };
+                                    fields = [...fields];
+                                  }}
+                                >
+                                  {#each precedingChoiceFields as f}
+                                    <option value={f.key}>{f.label || f.key}</option>
+                                  {/each}
+                                </select>
+                              </div>
+                              <div>
+                                <label class="label !text-[10px]">Est égale à :</label>
+                                <select
+                                  class="input text-xs"
+                                  value={field.condition.value}
+                                  onchange={(e) => {
+                                    if (field.condition) {
+                                      field.condition.value = (e.target as HTMLSelectElement).value;
+                                    }
+                                    fields = [...fields];
+                                  }}
+                                >
+                                  {#each trigger?.options ?? [] as opt}
+                                    <option value={opt.value}>{opt.label}</option>
+                                  {/each}
+                                  {#if trigger?.allowOther}
+                                    <option value="__other__">Autre...</option>
+                                  {/if}
+                                </select>
+                              </div>
+                            </div>
+                          {/if}
+                        {/if}
+                      </div>
+                    {/if}
+
+                    <!-- Advanced Key ID -->
+                    <div class="border-t border-slate-200 pt-3">
+                      <label class="label !text-[10px] text-slate-500">Clé d'exportation technique (Identifiant de colonne)</label>
+                      <input 
+                        class="input text-xs font-mono !py-1" 
+                        bind:value={field.key} 
+                        placeholder="champ_ex"
+                      />
+                      <p class="text-[9px] text-slate-400 mt-1">Identifiant unique utilisé dans les exports Excel/CSV et dans les formules. Modifier avec précaution.</p>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            {/if}
+
+            <!-- Card footer actions -->
+            <div class="flex items-center justify-end gap-4 pt-4 border-t border-slate-100 text-slate-400">
+              <button 
+                type="button" 
+                class="hover:text-[color:var(--brand)] p-1 rounded hover:bg-slate-50 transition" 
+                onclick={(e) => { e.stopPropagation(); duplicateField(i); }} 
+                title="Dupliquer la question"
+              >
+                <IconDuplicate size={18} />
+              </button>
+              <button 
+                type="button" 
+                class="hover:text-red-500 p-1 rounded hover:bg-slate-50 transition" 
+                onclick={(e) => { e.stopPropagation(); removeField(i); }} 
+                title="Supprimer la question"
+              >
+                <IconTrash size={18} />
+              </button>
+              <span class="w-[1px] h-6 bg-slate-200"></span>
+              
+              {#if field.type !== "section"}
+                <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 select-none cursor-pointer">
+                  <span>Obligatoire</span>
+                  <input 
+                    type="checkbox" 
+                    bind:checked={field.required} 
+                    class="h-4 w-4 rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]" 
+                  />
+                </label>
+              {/if}
+            </div>
+
+          {:else}
+            <!-- COLLAPSED CARD: NON-ACTIVE PREVIEW -->
+            <div class="flex flex-col gap-2">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-[color:var(--brand)] bg-violet-50 p-1.5 rounded-lg"><FieldIcon size={15} /></span>
+                  <span class="font-bold text-sm text-[color:var(--ink)]">
+                    {editingLocale === "fr" ? (field.label || "Question sans titre") : (settings.translations?.[editingLocale]?.fields?.[field.key]?.label || `[Traduit] ${field.label || "Question sans titre"}`)}
+                    {#if field.required && field.type !== "section"}<span class="text-red-500 ml-0.5">*</span>{/if}
+                  </span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 text-[10px] text-slate-400 font-semibold uppercase font-mono bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+                  {metaFor(field.type).label}
+                </div>
+              </div>
+
+              {#if field.description}
+                <p class="text-xs text-[color:var(--muted)] pl-8">{field.description}</p>
+              {/if}
+
+              <!-- Visual indicator of input field -->
+              <div class="pl-8 pt-2">
+                {#if field.type === "short_text"}
+                  <div class="h-8 border-b border-dashed border-slate-200 max-w-xs text-xs text-slate-300 flex items-center">Texte de réponse court</div>
+                {:else if field.type === "paragraph"}
+                  <div class="h-16 border border-dashed border-slate-200 rounded-lg p-2 text-xs text-slate-300">Texte de réponse long</div>
+                {:else if field.type === "email"}
+                  <div class="h-8 border-b border-dashed border-slate-200 max-w-xs text-xs text-slate-300 flex items-center">Ex: contact@email.com</div>
+                {:else if field.type === "number"}
+                  <div class="h-8 border-b border-dashed border-slate-200 max-w-xs text-xs text-slate-300 flex items-center">Saisir un nombre</div>
+                {:else if field.type === "radio" || field.type === "checkbox" || field.type === "select"}
+                  <div class="space-y-1.5">
+                    {#each field.options ?? [] as opt}
+                      <div class="flex items-center gap-2 text-xs text-slate-500">
+                        <span class="text-slate-300"><FieldIcon size={12} /></span>
+                        <span>{opt.label}</span>
+                      </div>
+                    {/each}
+                    {#if field.allowOther}
+                      <div class="flex items-center gap-2 text-xs text-slate-400 italic">
+                        <span class="text-slate-300"><FieldIcon size={12} /></span>
+                        <span>Autre...</span>
+                      </div>
+                    {/if}
+                  </div>
+                {:else if field.type === "file"}
+                  <div class="inline-flex items-center gap-1.5 border border-dashed border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-400">
+                    <FieldIcon size={14} /> Ajouter un fichier
+                  </div>
+                {:else if field.type === "linear_scale"}
+                  <div class="flex items-center gap-3 text-xs text-slate-400 max-w-md">
+                    <span>{field.scale?.minLabel || field.scale?.min || 1}</span>
+                    <div class="flex gap-2.5">
+                      {#each Array((field.scale?.max ?? 5) - (field.scale?.min ?? 1) + 1) as _}
+                        <span class="w-3.5 h-3.5 rounded-full border border-slate-300 bg-slate-50"></span>
+                      {/each}
+                    </div>
+                    <span>{field.scale?.maxLabel || field.scale?.max || 5}</span>
+                  </div>
+                {:else if field.type === "grid" || field.type === "checkbox_grid"}
+                  <div class="text-xs text-slate-400 flex items-center gap-1.5 border border-dashed border-slate-200 rounded-lg p-2 max-w-sm">
+                    <FieldIcon size={14} /> Grille matricielle ({(field.grid?.rows ?? []).length} lignes × {(field.grid?.columns ?? []).length} cols)
+                  </div>
+                {:else if field.type === "signature"}
+                  <div class="h-12 border border-dashed border-slate-200 rounded-lg flex items-center justify-center text-xs text-slate-300 max-w-xs">
+                    <FieldIcon size={14} class="mr-1.5" /> Zone de signature numérique
+                  </div>
+                {:else if field.type === "address"}
+                  <div class="h-8 border-b border-dashed border-slate-200 max-w-xs text-xs text-slate-300 flex items-center">
+                    <FieldIcon size={14} class="mr-1.5 text-slate-300" /> Saisir une adresse géographique
+                  </div>
+                {:else if field.type === "stripe_payment"}
+                  <div class="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-500 font-semibold shadow-sm">
+                    <FieldIcon size={14} class="text-blue-500" /> Régler avec Stripe
+                  </div>
+                {:else if field.type === "section"}
+                  <div class="w-full bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-indigo-700 font-bold text-xs flex items-center gap-2">
+                    <IconSection size={14} /> Délimitation de page — Saut de section
                   </div>
                 {/if}
               </div>
-            {/if}
+
+              {#if field.condition}
+                <div class="pl-8 pt-2">
+                  <span class="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">Affichage conditionnel actif</span>
+                </div>
+              {/if}
+            </div>
           {/if}
         </div>
-      {/if}
-
-      {#if selected.type !== "section"}
-        <details class="mt-4 pt-3 border-t border-slate-100 text-xs">
-          <summary class="cursor-pointer font-bold text-slate-400 hover:text-slate-600 select-none outline-none">Paramètres avancés</summary>
-          <div class="mt-3 space-y-3">
-            <div>
-              <label class="label">Clé (identifiant de colonne)</label>
-              <input class="input font-mono text-[11px] !py-1" bind:value={selected.key} />
-            </div>
-          </div>
-        </details>
-      {/if}
-    {:else}
-      <h3 class="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">Paramètres Généraux</h3>
-      <label class="mb-3 flex items-center gap-2.5 text-sm font-semibold cursor-pointer">
-        <input type="checkbox" bind:checked={settings.requireConsent} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Consentement obligatoire
-      </label>
-      {#if settings.requireConsent}
-        <label class="label">Texte de consentement</label>
-        <textarea class="input mb-4 text-xs" rows="3" bind:value={settings.consentText}></textarea>
-      {/if}
-      <label class="mb-3 flex items-center gap-2.5 text-sm font-semibold cursor-pointer">
-        <input type="checkbox" bind:checked={settings.isAnonymized} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Anonymisation (aucune IP)
-      </label>
-      <label class="mb-4 flex items-center gap-2.5 text-sm font-semibold cursor-pointer">
-        <input type="checkbox" bind:checked={settings.encryptResponses} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Chiffrer au repos
-      </label>
-
-      <div class="mb-4 pt-3 border-t border-slate-100">
-        <label class="label">Visibilité lors de la publication</label>
-        <select class="input mb-3 text-xs" bind:value={settings.visibility}>
-          <option value="PUBLIC">Publique (Tout le monde peut répondre)</option>
-          <option value="PRIVATE">Utilisateurs connectés uniquement</option>
-          <option value="RESTRICTED">Certaines personnes uniquement</option>
-        </select>
-        
-        {#if settings.visibility === "RESTRICTED"}
-          <label class="label">Adresses e-mail autorisées (une par ligne)</label>
-          <textarea
-            class="input text-xs font-mono"
-            rows="4"
-            placeholder="exemple@domaine.com"
-            value={allowedEmailsText}
-            oninput={(e) => {
-              settings.allowedEmails = (e.target as HTMLTextAreaElement).value
-                .split("\n")
-                .map((email) => email.trim())
-                .filter(Boolean);
-            }}
-          ></textarea>
-        {/if}
       </div>
+    {/each}
+  </div>
 
-      <p class="text-[11px] text-slate-400 leading-normal bg-slate-50 p-3 rounded-lg border border-slate-100">Sélectionnez une question dans le canevas pour configurer ses options de validation spécifiques.</p>
-    {/if}
-  </aside>
+  <!-- STICKY VERTICAL TOOLBAR (DESKTOP) -->
+  <div class="hidden md:flex flex-col gap-2 p-2 bg-white rounded-2xl shadow-sm border border-[color:var(--line)] sticky top-24 shrink-0">
+    <button 
+      onclick={() => addField("short_text")} 
+      class="p-3 text-slate-500 hover:text-[color:var(--brand)] hover:bg-slate-50 rounded-xl transition-all duration-200 flex items-center justify-center" 
+      title="Ajouter une question"
+    >
+      <IconPlus size={20} />
+    </button>
+    <button 
+      onclick={() => addField("section")} 
+      class="p-3 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all duration-200 flex items-center justify-center" 
+      title="Saut de page (Section)"
+    >
+      <IconSection size={20} />
+    </button>
+  </div>
+
+  <!-- FIXED BOTTOM TOOLBAR (MOBILE) -->
+  <div class="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-4 p-2 bg-white rounded-full shadow-xl border border-[color:var(--line)]">
+    <button 
+      onclick={() => addField("short_text")} 
+      class="p-3 text-slate-500 hover:text-[color:var(--brand)] hover:bg-slate-50 rounded-full transition" 
+      title="Ajouter une question"
+    >
+      <IconPlus size={20} />
+    </button>
+    <button 
+      onclick={() => addField("section")} 
+      class="p-3 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition" 
+      title="Saut de page"
+    >
+      <IconSection size={20} />
+    </button>
+  </div>
 </div>
 
 <style lang="scss">
+  // We don't need complex sticky layouts anymore since tailwind does it,
+  // but we can preserve standard scrolling styles.
   @use "../scss/main" as m;
 
-  .builder {
-    display: grid;
-    grid-template-columns: 240px 1fr 320px;
-    gap: 1.25rem;
-    align-items: start;
-  }
-  .palette,
-  .config {
-    position: sticky;
-    top: 5.5rem;
-    background: white;
-    border: 1px solid m.$gray-border;
-    border-radius: m.$radius;
-    padding: 1.25rem;
-    max-height: calc(100vh - 7rem);
-    overflow-y: auto;
-    @include m.subtle-scroll;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  }
-  .palette-item {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.45rem;
-    border: 1px solid m.$gray-border;
-    border-radius: 0.5rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    text-align: left;
-    background: white;
-    cursor: pointer;
-    transition: all 0.2s;
-    &:hover {
-      border-color: m.$brand;
-      box-shadow: 0 4px 6px -1px rgba(103, 58, 183, 0.08);
-      background: m.$gray-bg;
-    }
-    .icon {
-      font-size: 1rem;
-      display: flex;
-    }
-  }
-  .meta-col {
-    display: flex;
-    gap: 0.25rem;
-    align-items: center;
-    margin-bottom: 0.35rem;
-  }
-  .canvas {
-    min-height: 60vh;
-  }
-  .field-card {
-    background: white;
-    border: 1px solid m.$gray-border;
-    border-left: 4px solid transparent;
-    border-radius: m.$radius;
-    padding: 1rem 1.25rem;
-    margin-bottom: 0.75rem;
-    cursor: pointer;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
-    &:hover {
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-      border-left-color: m.$brand-dark;
-    }
-    &.selected {
-      border-left-color: m.$brand;
-      box-shadow: 0 10px 15px -3px rgba(103, 58, 183, 0.08);
-      background: m.$gray-bg;
-    }
-  }
-  .section-card {
-    background: #f8fafc;
-    border: 1px dashed #cbd5e1;
-    border-left: 4px solid #6366f1;
-    border-radius: m.$radius;
-    padding: 0.85rem 1.25rem;
-    margin-top: 1.5rem;
-    margin-bottom: 1.5rem;
-    cursor: pointer;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    &:hover {
-      border-color: #94a3b8;
-      background: #f1f5f9;
-    }
-    &.selected {
-      border-color: #6366f1;
-      box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.12);
-      background: #e2e8f0;
-    }
-  }
-  .field-head {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .drag-handle {
-    cursor: grab;
-    color: #9ca3af;
-  }
-  .field-type {
-    margin-left: 2.25rem;
-    font-size: 0.7rem;
-    color: #9ca3af;
-    font-weight: 600;
-  }
-  .req {
-    font-size: 0.65rem;
-    font-weight: 700;
-    color: white;
-    background: m.$brand;
-    padding: 0.15rem 0.45rem;
-    border-radius: 999px;
-  }
-  .ghost {
-    background: none;
-    border: none;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.15s;
-    &:hover {
-      opacity: 1;
-    }
-  }
-  .opt-row {
-    display: flex;
-    gap: 0.25rem;
-    align-items: center;
-    margin-bottom: 0.3rem;
-  }
-
-  // Styles Responsifs pour Mobile
-  @media (max-width: 768px) {
-    .builder {
-      grid-template-columns: 1fr !important;
-      gap: 0;
-    }
-    .palette,
-    .config {
-      position: relative !important;
-      top: 0 !important;
-      max-height: none !important;
-      overflow-y: visible !important;
-      border-radius: m.$radius !important;
-      margin-bottom: 1rem;
-      box-shadow: none !important;
-      border: 1px solid m.$gray-border;
-    }
-    .hidden-mobile {
-      display: none !important;
-    }
+  .card-active {
+    box-shadow: 0 10px 25px -5px rgba(103, 58, 183, 0.08), 0 8px 16px -6px rgba(103, 58, 183, 0.08);
   }
 </style>

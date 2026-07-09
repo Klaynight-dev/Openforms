@@ -14,7 +14,10 @@ export type FieldType =
   | "grid"
   | "linear_scale"
   | "checkbox_grid"
-  | "section";
+  | "section"
+  | "signature"
+  | "address"
+  | "stripe_payment";
 
 export interface FieldOption {
   value: string;
@@ -72,6 +75,14 @@ export interface FormSummary {
   consentText?: string | null;
   visibility: string;
   allowedEmails: string[];
+  notifyOwner?: boolean;
+  sendConfirmationEmail?: boolean;
+  confirmationEmailText?: string | null;
+  webhookUrl?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  maxResponses?: number | null;
+  translations?: any;
   ownerId: string;
   organizationId?: string | null;
   updatedAt: string;

@@ -16,6 +16,12 @@ export const FIELD_TYPES = [
   "datetime",
   "file",
   "grid",
+  "linear_scale",
+  "checkbox_grid",
+  "section",
+  "signature",
+  "address",
+  "stripe_payment",
 ] as const;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -209,10 +215,41 @@ export function validateSubmission(
         clean[field.key] = s;
         break;
       }
-      case "grid": {
-        // Objet { ligne: valeurColonne }.
+      case "grid":
+      case "checkbox_grid": {
         if (typeof raw !== "object" || Array.isArray(raw)) {
           errors.push({ key: field.key, message: `« ${field.label} » : réponse de grille invalide.` });
+          break;
+        }
+        clean[field.key] = raw;
+        break;
+      }
+      case "linear_scale": {
+        const n = Number(raw);
+        if (!Number.isFinite(n)) {
+          errors.push({ key: field.key, message: `« ${field.label} » : échelle invalide.` });
+          break;
+        }
+        clean[field.key] = n;
+        break;
+      }
+      case "signature": {
+        const s = String(raw);
+        if (field.required && (!s || s === "—" || s.length < 50)) {
+          errors.push({ key: field.key, message: `« ${field.label} » : signature requise.` });
+          break;
+        }
+        clean[field.key] = s;
+        break;
+      }
+      case "address": {
+        const s = String(raw);
+        clean[field.key] = s;
+        break;
+      }
+      case "stripe_payment": {
+        if (typeof raw !== "object" || Array.isArray(raw)) {
+          errors.push({ key: field.key, message: `« ${field.label} » : transaction de paiement invalide.` });
           break;
         }
         clean[field.key] = raw;

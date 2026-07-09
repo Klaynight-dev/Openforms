@@ -23,6 +23,7 @@
     IconTrend,
     IconPlus,
     IconUser,
+    IconDuplicate,
   } from "$lib/icons.ts";
   import * as echarts from "echarts";
   import type { Organization, OrganizationMember } from "$lib/types.ts";
@@ -270,6 +271,15 @@
       selected = next;
     } catch (e) {
       alert(e instanceof Error ? e.message : "Suppression impossible.");
+    }
+  }
+
+  async function duplicate(f: FormSummary) {
+    try {
+      const res = await api.duplicateForm(f.id);
+      forms = [res.form, ...forms];
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Duplication impossible.");
     }
   }
 
@@ -576,6 +586,13 @@
             <div class="mb-4 flex items-center gap-3 text-xs font-semibold text-[color:var(--muted)]">
               <span class="flex items-center gap-1"><IconTable size={14} /> {f._count?.responses ?? 0} réponse(s)</span>
               {#if f.isAnonymized}<span class="flex items-center gap-1"><IconLock size={14} /> Anonyme</span>{/if}
+              {#if f.visibility === "PUBLIC"}
+                <span class="flex items-center gap-1"><IconEye size={14} /> Public</span>
+              {:else if f.visibility === "PRIVATE"}
+                <span class="flex items-center gap-1"><IconLock size={14} /> Connecté</span>
+              {:else if f.visibility === "RESTRICTED"}
+                <span class="flex items-center gap-1 text-amber-600"><IconLock size={14} /> Restreint</span>
+              {/if}
             </div>
 
             <div
@@ -619,6 +636,14 @@
                         onclick={() => { openMenuId = null; togglePublish(f); }}
                       >
                         <IconEye size={14} /> {f.isPublished ? "Dépublier" : "Publier"}
+                      </button>
+                    {/if}
+                    {#if canCreateForm}
+                      <button
+                        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
+                        onclick={() => { openMenuId = null; duplicate(f); }}
+                      >
+                        <IconDuplicate size={14} /> Dupliquer
                       </button>
                     {/if}
                     {#if f.isPublished}

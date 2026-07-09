@@ -101,6 +101,8 @@ export const api = {
       { published },
     ),
   deleteForm: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/forms/${id}`),
+  duplicateForm: (id: string) =>
+    request<{ success: boolean; form: FormDetail }>("POST", `/api/v1/forms/${id}/duplicate`),
 
   // --- Réponses / tableur ---
   listResponses: (formId: string) =>
@@ -194,6 +196,14 @@ export interface FormPayload {
   organizationId?: string;
   visibility?: string;
   allowedEmails?: string[];
+  notifyOwner?: boolean;
+  sendConfirmationEmail?: boolean;
+  confirmationEmailText?: string;
+  webhookUrl?: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  maxResponses?: number | null;
+  translations?: any;
 }
 
 export interface SignedFileDescriptor {

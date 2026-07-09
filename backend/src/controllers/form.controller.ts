@@ -27,6 +27,14 @@ const FormSettings = {
   organizationId: t.Optional(t.String()),
   visibility: t.Optional(t.String()),
   allowedEmails: t.Optional(t.Array(t.String())),
+  notifyOwner: t.Optional(t.Boolean()),
+  sendConfirmationEmail: t.Optional(t.Boolean()),
+  confirmationEmailText: t.Optional(t.String({ maxLength: 5000 })),
+  webhookUrl: t.Optional(t.String({ maxLength: 1000 })),
+  startsAt: t.Optional(t.Union([t.String(), t.Null()])),
+  endsAt: t.Optional(t.Union([t.String(), t.Null()])),
+  maxResponses: t.Optional(t.Union([t.Integer(), t.Null()])),
+  translations: t.Optional(t.Any()),
 };
 
 export const formController = new Elysia({ prefix: "/api/v1/forms" })
@@ -142,6 +150,14 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           encryptResponses: body.encryptResponses ?? false,
           visibility: body.visibility ?? "PUBLIC",
           allowedEmails: body.allowedEmails ?? [],
+          notifyOwner: body.notifyOwner ?? false,
+          sendConfirmationEmail: body.sendConfirmationEmail ?? false,
+          confirmationEmailText: body.confirmationEmailText ?? null,
+          webhookUrl: body.webhookUrl ?? null,
+          startsAt: body.startsAt ? new Date(body.startsAt) : null,
+          endsAt: body.endsAt ? new Date(body.endsAt) : null,
+          maxResponses: body.maxResponses ?? null,
+          translations: body.translations ?? {},
           ownerId: auth!.user.id,
           organizationId: body.organizationId ?? null,
         },
@@ -200,6 +216,14 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           encryptResponses: body.encryptResponses,
           visibility: body.visibility,
           allowedEmails: body.allowedEmails,
+          notifyOwner: body.notifyOwner,
+          sendConfirmationEmail: body.sendConfirmationEmail,
+          confirmationEmailText: body.confirmationEmailText,
+          webhookUrl: body.webhookUrl,
+          startsAt: body.startsAt ? new Date(body.startsAt) : null,
+          endsAt: body.endsAt ? new Date(body.endsAt) : null,
+          maxResponses: body.maxResponses,
+          translations: body.translations,
         },
       });
       return { success: true, form: updated };
@@ -232,6 +256,71 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
       body: t.Object({ published: t.Boolean() }),
       requireRole: true,
     },
+  )
+
+  // --- Duplication (accès lecture minimum sur l'original + droits de création sur la cible) ---
+  .post(
+    "/:id/duplicate",
+    async ({ auth, params, set }) => {
+      const form = await prisma.form.findUnique({ where: { id: params.id } });
+      if (!form) {
+        set.status = 404;
+        return { success: false, error: "Formulaire introuvable." };
+      }
+      const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+      if (perm === "NONE") {
+        set.status = 403;
+        return { success: false, error: "Accès refusé." };
+      }
+
+      // Check if user is allowed to duplicate into the target organization
+      const organizationId = form.organizationId;
+      if (organizationId) {
+        const member = await prisma.organizationMember.findUnique({
+          where: { organizationId_userId: { organizationId, userId: auth!.user.id } },
+        });
+        if (!member && auth!.user.role !== "SUPER_ADMIN") {
+          set.status = 403;
+          return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
+        }
+      } else {
+        if (auth!.user.role !== "SUPER_ADMIN") {
+          set.status = 403;
+          return { success: false, error: "Création réservée aux administrateurs ou au sein d'une organisation." };
+        }
+      }
+
+      const baseTitle = `${form.title} (copie)`;
+      const newForm = await prisma.form.create({
+        data: {
+          slug: slugify(baseTitle),
+          title: baseTitle,
+          description: form.description,
+          schema: form.schema ?? [],
+          metaColumns: form.metaColumns ?? [],
+          requireConsent: form.requireConsent,
+          consentText: form.consentText,
+          isAnonymized: form.isAnonymized,
+          encryptResponses: form.encryptResponses,
+          visibility: form.visibility,
+          allowedEmails: form.allowedEmails,
+          notifyOwner: form.notifyOwner,
+          sendConfirmationEmail: form.sendConfirmationEmail,
+          confirmationEmailText: form.confirmationEmailText,
+          webhookUrl: form.webhookUrl,
+          startsAt: form.startsAt,
+          endsAt: form.endsAt,
+          maxResponses: form.maxResponses,
+          translations: form.translations ?? {},
+          isPublished: false, // reset to draft
+          ownerId: auth!.user.id,
+          organizationId: form.organizationId,
+        },
+      });
+
+      return { success: true, form: newForm };
+    },
+    { params: t.Object({ id: t.String() }), requireRole: true }
   )
 
   // --- Suppression (Super Admin, propriétaire, ou admin d'organisation) ---

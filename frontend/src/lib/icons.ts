@@ -63,6 +63,9 @@ import {
   ArrowDown,
   Minus,
   ArrowRight,
+  Pen,
+  MapPin,
+  CreditCard,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -116,6 +119,9 @@ export {
   ArrowUp as IconArrowUp,
   ArrowDown as IconArrowDown,
   Minus as IconMinus,
+  Pen as IconSignature,
+  MapPin as IconAddress,
+  CreditCard as IconCreditCard,
 };
 
 // --- Fallback Lucide ---
@@ -137,4 +143,7 @@ export const FIELD_ICONS: Record<FieldType, typeof TextT> = {
   linear_scale: SlidersHorizontal,
   checkbox_grid: GridNine,
   section: ArrowRight,
+  signature: Pen,
+  address: MapPin,
+  stripe_payment: CreditCard,
 };

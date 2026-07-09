@@ -4,6 +4,7 @@ import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { makeRateLimit } from "../middleware/security.ts";
 import { validateSubmission, type FieldDefinition } from "../lib/formSchema.ts";
 import { sealContent, openContent, hashIp, verifyDescriptor } from "../services/crypto.ts";
+import { sendEmail } from "../services/mailer.ts";
 
 function clientIp(request: Request): string | undefined {
   const fwd = request.headers.get("x-forwarded-for");
@@ -40,10 +41,33 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   .post(
     "/submit",
     async ({ body, set, request, auth }) => {
-      const form = await prisma.form.findUnique({ where: { id: body.formId } });
+      const form = await prisma.form.findUnique({
+        where: { id: body.formId },
+        include: { owner: { select: { email: true } } },
+      });
       if (!form || !form.isPublished) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable ou non publié." };
+      }
+
+      // Validation de la planification temporelle (début/fin)
+      const now = new Date();
+      if (form.startsAt && now < new Date(form.startsAt)) {
+        set.status = 403;
+        return { success: false, error: "Ce formulaire n'est pas encore ouvert aux réponses." };
+      }
+      if (form.endsAt && now > new Date(form.endsAt)) {
+        set.status = 403;
+        return { success: false, error: "Ce formulaire est clôturé." };
+      }
+
+      // Validation des quotas de soumission
+      if (form.maxResponses !== null) {
+        const count = await prisma.response.count({ where: { formId: form.id } });
+        if (count >= form.maxResponses) {
+          set.status = 403;
+          return { success: false, error: "Le quota maximum de réponses pour ce formulaire a été atteint." };
+        }
       }
 
       if (form.visibility === "PRIVATE") {
@@ -136,6 +160,49 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
           files: filesToCreate.length ? { create: filesToCreate } : undefined,
         },
       });
+
+      // 5. Notifications par email & Webhook
+      if (form.webhookUrl) {
+        fetch(form.webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "response.submitted",
+            formId: form.id,
+            responseId: response.id,
+            submittedAt: response.submittedAt,
+            values: clean,
+          }),
+        }).catch((err) => console.error("Webhook failure:", err));
+      }
+
+      if (form.notifyOwner && form.owner?.email) {
+        sendEmail({
+          to: form.owner.email,
+          subject: `[OpenForms] Nouvelle soumission pour "${form.title}"`,
+          text: `Une nouvelle réponse a été enregistrée pour votre formulaire "${form.title}".`,
+          html: `<p>Une nouvelle réponse a été enregistrée pour votre formulaire <strong>"${form.title}"</strong>.</p>`,
+        }).catch((err) => console.error("Owner notification failed:", err));
+      }
+
+      if (form.sendConfirmationEmail) {
+        const emailField = fields.find((f) => f.type === "email");
+        const respondentEmail = emailField ? (clean[emailField.key] as string) : undefined;
+        if (respondentEmail) {
+          const bodyText = form.confirmationEmailText || `Votre réponse au formulaire "${form.title}" a bien été enregistrée.`;
+          sendEmail({
+            to: respondentEmail,
+            subject: `Confirmation : ${form.title}`,
+            text: bodyText,
+            html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+              <h2 style="color:#673ab7;margin-top:0;">${form.title}</h2>
+              <p>${bodyText.replace(/\n/g, "<br>")}</p>
+              <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;"/>
+              <p style="font-size:11px;color:#999;">Cet email a été envoyé automatiquement par OpenForms.</p>
+            </div>`,
+          }).catch((err) => console.error("Confirmation email failed:", err));
+        }
+      }
 
       set.status = 201;
       return { success: true, message: "Réponse enregistrée avec succès.", responseId: response.id };

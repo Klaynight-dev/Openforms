@@ -13,6 +13,7 @@
     IconTrend,
     IconTable,
     IconCheck,
+    IconDownload,
   } from "$lib/icons.ts";
   import * as echarts from "echarts";
 
@@ -34,6 +35,58 @@
   let fillRateChartEl = $state<HTMLDivElement>();
   let fillRateChart: echarts.ECharts | null = null;
 
+  // Date range filtering
+  let filterStartDate = $state("");
+  let filterEndDate = $state("");
+
+  let filteredRows = $derived.by<ResponseRow[]>(() => {
+    if (!filterStartDate && !filterEndDate) return rows;
+    const start = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const end = filterEndDate ? new Date(filterEndDate).getTime() : Infinity;
+    return rows.filter((r) => {
+      const t = new Date(r.submittedAt).getTime();
+      return t >= start && t <= end;
+    });
+  });
+
+  let filteredActivity = $derived.by<{ date: string; count: number }[]>(() => {
+    const counts: Record<string, number> = {};
+    if (rows.length === 0) return [];
+    
+    // Find min and max date from rows
+    const dates = rows.map(r => new Date(r.submittedAt).getTime());
+    let minDate = new Date(Math.min(...dates));
+    let maxDate = new Date(Math.max(...dates));
+
+    // If date filters are set, respect them
+    if (filterStartDate) minDate = new Date(filterStartDate);
+    if (filterEndDate) maxDate = new Date(filterEndDate);
+
+    // Initialize buckets
+    let current = new Date(minDate);
+    current.setHours(0, 0, 0, 0);
+    const end = new Date(maxDate);
+    end.setHours(23, 59, 59, 999);
+
+    // Limit infinite loops
+    let safeCount = 0;
+    while (current <= end && safeCount < 366) {
+      const key = current.toISOString().slice(0, 10);
+      counts[key] = 0;
+      current.setDate(current.getDate() + 1);
+      safeCount++;
+    }
+
+    for (const r of filteredRows) {
+      const key = new Date(r.submittedAt).toISOString().slice(0, 10);
+      if (counts[key] !== undefined) {
+        counts[key] += 1;
+      }
+    }
+
+    return Object.entries(counts).map(([date, count]) => ({ date, count })).sort((a, b) => a.date.localeCompare(b.date));
+  });
+
   // ─── Computed analytics ─────────────────────────────────────────────
   let choiceFields = $derived(
     schema.filter((f) => ["radio", "select", "checkbox"].includes(f.type))
@@ -48,7 +101,7 @@
   function getChoiceDistribution(field: FieldDefinition): { label: string; count: number }[] {
     const counts: Record<string, number> = {};
     for (const opt of field.options ?? []) counts[opt.value] = 0;
-    for (const row of rows) {
+    for (const row of filteredRows) {
       const val = row.values[field.key];
       if (val == null) continue;
       const vals = Array.isArray(val) ? val : [val];
@@ -69,7 +122,7 @@
   }
 
   function getNumericStats(field: FieldDefinition) {
-    const vals = rows
+    const vals = filteredRows
       .map((r) => Number(r.values[field.key]))
       .filter((v) => !isNaN(v));
     if (vals.length === 0) return null;
@@ -95,7 +148,7 @@
       "is","it","this","that","was","are","for","with","as","at","be","by",
     ]);
     for (const field of fields) {
-      for (const row of rows) {
+      for (const row of filteredRows) {
         const val = row.values[field.key];
         if (!val) continue;
         const words = String(val)
@@ -115,12 +168,12 @@
   }
 
   function getFillRate(field: FieldDefinition): number {
-    if (rows.length === 0) return 0;
-    const filled = rows.filter((r) => {
+    if (filteredRows.length === 0) return 0;
+    const filled = filteredRows.filter((r) => {
       const v = r.values[field.key];
       return v !== null && v !== undefined && v !== "";
     }).length;
-    return Math.round((filled / rows.length) * 100);
+    return Math.round((filled / filteredRows.length) * 100);
   }
 
   let wordCloud = $derived(getWordCloud(textFields));
@@ -155,14 +208,31 @@
     Object.values(pieCharts).forEach((c) => c.dispose());
   });
 
+  // --- ECharts rendering & Redrawing ---
+  $effect(() => {
+    if (filteredRows && !loading) {
+      // Delay slightly to allow DOM updates
+      setTimeout(() => {
+        renderLineChart();
+        renderFillRateChart();
+        choiceFields.forEach((field) => {
+          const el = pieChartEls[field.key];
+          if (el) renderPieChart(el, field);
+        });
+      }, 50);
+    }
+  });
+
   function renderLineChart() {
     if (!lineChartEl) return;
-    lineChart = echarts.init(lineChartEl, null, { renderer: "svg" });
-    const dates = activity.map((a) => {
+    if (!lineChart) {
+      lineChart = echarts.init(lineChartEl, null, { renderer: "canvas" });
+    }
+    const dates = filteredActivity.map((a) => {
       const d = new Date(a.date);
       return `${d.getDate()}/${d.getMonth() + 1}`;
     });
-    const counts = activity.map((a) => a.count);
+    const counts = filteredActivity.map((a) => a.count);
     lineChart.setOption({
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value} réponse(s)</b>` },
       grid: { left: 12, right: 12, top: 12, bottom: 24, containLabel: true },
@@ -184,9 +254,18 @@
   function renderPieChart(el: HTMLDivElement, field: FieldDefinition) {
     const dist = getChoiceDistribution(field);
     const total = dist.reduce((s, d) => s + d.count, 0);
-    if (!el || total === 0) return;
-    const chart = echarts.init(el, null, { renderer: "svg" });
-    pieCharts[field.key] = chart;
+    if (!el) return;
+    
+    let chart = pieCharts[field.key];
+    if (!chart) {
+      chart = echarts.init(el, null, { renderer: "canvas" });
+      pieCharts[field.key] = chart;
+    }
+
+    if (total === 0) {
+      chart.clear();
+      return;
+    }
 
     const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
     chart.setOption({
@@ -204,7 +283,9 @@
 
   function renderFillRateChart() {
     if (!fillRateChartEl || fillRates.length === 0) return;
-    fillRateChart = echarts.init(fillRateChartEl, null, { renderer: "svg" });
+    if (!fillRateChart) {
+      fillRateChart = echarts.init(fillRateChartEl, null, { renderer: "canvas" });
+    }
     const sorted = [...fillRates].sort((a, b) => b.rate - a.rate);
     fillRateChart.setOption({
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value}%</b>` },
@@ -220,6 +301,26 @@
         barMaxWidth: 18,
       }],
     });
+  }
+
+  // --- Export graphiques en image ---
+  function exportChartImage(chartInstance: echarts.ECharts | null, filename: string) {
+    if (!chartInstance) return;
+    try {
+      const url = chartInstance.getDataURL({
+        type: "png",
+        pixelRatio: 2,
+        backgroundColor: "#ffffff"
+      });
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filename}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      alert("Erreur lors de l'exportation du graphique.");
+    }
   }
 
   // Bind pie chart elements dynamically via action
@@ -247,16 +348,30 @@
 
 <svelte:head><title>{formTitle ? `Stats — ${formTitle}` : "Statistiques"}</title></svelte:head>
 
-<!-- Back button -->
-<div class="mb-6 flex items-center gap-3">
-  <button class="btn-secondary !p-2" onclick={() => goto(`/admin/forms/${formId}/responses`)} aria-label="Retour">
-    <IconBack size={18} />
-  </button>
-  <div>
-    <p class="text-xs text-[color:var(--muted)] font-semibold uppercase tracking-wide">Formulaire</p>
-    <h1 class="text-xl font-bold text-[color:var(--ink)]">{formTitle || "Statistiques"}</h1>
+
+
+<!-- Date range selector -->
+{#if !loading && !error}
+  <div class="mb-6 bg-white border border-[color:var(--line)] rounded-2xl p-4 flex flex-wrap items-center gap-4 shadow-sm animate-fade-in">
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Du :</label>
+      <input class="input text-xs !w-40 !py-1" type="date" bind:value={filterStartDate} />
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Au :</label>
+      <input class="input text-xs !w-40 !py-1" type="date" bind:value={filterEndDate} />
+    </div>
+    {#if filterStartDate || filterEndDate}
+      <button
+        type="button"
+        class="text-xs text-brand font-bold hover:underline"
+        onclick={() => { filterStartDate = ""; filterEndDate = ""; }}
+      >
+        Réinitialiser le filtre
+      </button>
+    {/if}
   </div>
-</div>
+{/if}
 
 {#if loading}
   <div class="flex items-center gap-3 text-[color:var(--muted)] py-12 justify-center">
@@ -270,7 +385,7 @@
   <!-- ── KPI rapides ── -->
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
     <div class="card flex flex-col gap-1 items-center text-center py-5">
-      <span class="text-3xl font-black text-[color:var(--ink)]">{rows.length}</span>
+      <span class="text-3xl font-black text-[color:var(--ink)]">{filteredRows.length}</span>
       <span class="text-xs font-semibold text-[color:var(--muted)]">Réponses totales</span>
     </div>
     <div class="card flex flex-col gap-1 items-center text-center py-5">
@@ -279,37 +394,51 @@
     </div>
     <div class="card flex flex-col gap-1 items-center text-center py-5">
       <span class="text-3xl font-black text-[color:var(--ink)]">
-        {rows.length > 0 ? Math.round(fillRates.reduce((s,f) => s + f.rate, 0) / fillRates.length) : 0}%
+        {filteredRows.length > 0 ? Math.round(fillRates.reduce((s,f) => s + f.rate, 0) / fillRates.length) : 0}%
       </span>
       <span class="text-xs font-semibold text-[color:var(--muted)]">Taux de remplissage moyen</span>
     </div>
     <div class="card flex flex-col gap-1 items-center text-center py-5">
       <span class="text-3xl font-black text-[color:var(--ink)]">
-        {activity.filter(a => a.count > 0).length}
+        {filteredActivity.filter(a => a.count > 0).length}
       </span>
-      <span class="text-xs font-semibold text-[color:var(--muted)]">Jours actifs (30j)</span>
+      <span class="text-xs font-semibold text-[color:var(--muted)]">Jours actifs</span>
     </div>
   </div>
 
   <!-- ── Évolution des réponses ── -->
-  <div class="card mb-6">
+  <div class="card mb-6 animate-fade-in">
     <div class="flex items-center gap-2 mb-4">
       <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50 text-green-600">
         <IconChartLine size={18} />
       </span>
-      <h2 class="font-bold text-[color:var(--ink)]">Évolution des réponses (30 derniers jours)</h2>
+      <h2 class="font-bold text-[color:var(--ink)]">Évolution des réponses</h2>
+      <button
+        type="button"
+        class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
+        onclick={() => exportChartImage(lineChart, 'evolution_reponses')}
+      >
+        <IconDownload size={13} /> PNG
+      </button>
     </div>
     <div bind:this={lineChartEl} class="h-52 w-full"></div>
   </div>
 
   <!-- ── Taux de remplissage ── -->
   {#if schema.length > 0}
-    <div class="card mb-6">
+    <div class="card mb-6 animate-fade-in">
       <div class="flex items-center gap-2 mb-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
           <IconChartBar size={18} />
         </span>
         <h2 class="font-bold text-[color:var(--ink)]">Taux de remplissage par champ</h2>
+        <button
+          type="button"
+          class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
+          onclick={() => exportChartImage(fillRateChart, 'taux_remplissage')}
+        >
+          <IconDownload size={13} /> PNG
+        </button>
       </div>
       <div bind:this={fillRateChartEl} style="height: {Math.max(120, schema.length * 36)}px" class="w-full"></div>
     </div>
@@ -317,7 +446,7 @@
 
   <!-- ── Répartition choix multiples ── -->
   {#if choiceFields.length > 0}
-    <div class="mb-6">
+    <div class="mb-6 animate-fade-in">
       <h2 class="font-bold text-[color:var(--ink)] mb-4 flex items-center gap-2">
         <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
           <IconChartPie size={18} />
@@ -328,26 +457,37 @@
         {#each choiceFields as field (field.key)}
           {@const dist = getChoiceDistribution(field)}
           {@const total = dist.reduce((s, d) => s + d.count, 0)}
-          <div class="card">
-            <h3 class="font-semibold text-sm text-[color:var(--ink)] mb-3 truncate">{field.label}</h3>
-            {#if total === 0}
-              <p class="text-xs text-[color:var(--muted)] text-center py-4">Aucune réponse</p>
-            {:else}
-              <div
-                use:initPieChart={field}
-                class="h-40 w-full"
-              ></div>
-              <div class="mt-3 space-y-1.5">
-                {#each dist.slice(0, 4) as item, i}
-                  {@const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4"]}
-                  <div class="flex items-center gap-2 text-xs">
-                    <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{COLORS[i % COLORS.length]}"></span>
-                    <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
-                    <span class="font-bold text-[color:var(--muted)]">{total > 0 ? Math.round((item.count / total) * 100) : 0}%</span>
-                  </div>
-                {/each}
+          <div class="card flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
+                <button
+                  type="button"
+                  class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
+                  onclick={() => exportChartImage(pieCharts[field.key], 'repartition_' + field.key)}
+                >
+                  <IconDownload size={10} /> PNG
+                </button>
               </div>
-            {/if}
+              {#if total === 0}
+                <p class="text-xs text-[color:var(--muted)] text-center py-4">Aucune réponse</p>
+              {:else}
+                <div
+                  use:initPieChart={field}
+                  class="h-40 w-full"
+                ></div>
+                <div class="mt-3 space-y-1.5">
+                  {#each dist.slice(0, 4) as item, i}
+                    {@const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4"]}
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{COLORS[i % COLORS.length]}"></span>
+                      <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
+                      <span class="font-bold text-[color:var(--muted)]">{total > 0 ? Math.round((item.count / total) * 100) : 0}%</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           </div>
         {/each}
       </div>

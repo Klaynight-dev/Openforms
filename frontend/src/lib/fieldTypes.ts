@@ -24,6 +24,9 @@ export const FIELD_TYPE_META: FieldTypeMeta[] = [
   { type: "grid", label: "Grille (choix unique)", icon: "g", hasOptions: false, hasGrid: true, isFile: false },
   { type: "linear_scale", label: "Échelle linéaire", icon: "~", hasOptions: false, hasGrid: false, isFile: false },
   { type: "checkbox_grid", label: "Grille (choix multiple)", icon: "cg", hasOptions: false, hasGrid: true, isFile: false },
+  { type: "signature", label: "Signature numérique", icon: "✍️", hasOptions: false, hasGrid: false, isFile: false },
+  { type: "address", label: "Adresse géographique", icon: "📍", hasOptions: false, hasGrid: false, isFile: false },
+  { type: "stripe_payment", label: "Paiement Stripe", icon: "💳", hasOptions: false, hasGrid: false, isFile: false },
 ];
 
 export function metaFor(type: FieldType): FieldTypeMeta {

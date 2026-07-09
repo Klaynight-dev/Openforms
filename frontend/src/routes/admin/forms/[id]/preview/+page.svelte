@@ -2,20 +2,15 @@
   import { page } from "$app/stores";
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
-  import { api, ApiError, type SignedFileDescriptor } from "$api/client.ts";
+  import { api, type SignedFileDescriptor } from "$api/client.ts";
   import type { FormDetail, FieldDefinition } from "$lib/types.ts";
-  import { IconCheckCircle, IconLock, IconShield } from "$lib/icons.ts";
-  import { auth } from "$lib/stores/auth.svelte.ts";
+  import { IconCheckCircle, IconLock, IconShield, IconEye, IconBack } from "$lib/icons.ts";
+  import { goto } from "$app/navigation";
 
+  const id = $page.params.id as string;
   let form = $state<FormDetail | null>(null);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
-  let statusError = $state<number | null>(null);
-
-  let email = $state("");
-  let password = $state("");
-  let loginLoading = $state(false);
-  let loginError = $state<string | null>(null);
 
   let values = $state<Record<string, unknown>>({});
   let files = $state<Record<string, { file: SignedFileDescriptor; signature: string }[]>>({});
@@ -23,7 +18,6 @@
   let fieldErrors = $state<Record<string, string>>({});
   let submitting = $state(false);
   let submitted = $state(false);
-  let submitError = $state<string | null>(null);
 
   // Multi-pages / Sections
   interface Page {
@@ -162,55 +156,23 @@
 
   let currentPage = $derived(pages[currentPageIndex] ?? null);
 
-  async function loadForm() {
-    loading = true;
-    loadError = null;
-    statusError = null;
+  onMount(async () => {
     try {
-      if (!auth.ready) {
-        await auth.refresh();
-      }
-      const res = await api.getPublicForm($page.params.slug as string);
+      const res = await api.getForm(id);
       form = res.form;
     } catch (e: any) {
-      loadError = e instanceof Error ? e.message : "Formulaire introuvable.";
-      if (e instanceof ApiError) {
-        statusError = e.status;
-      }
+      loadError = e.message || "Impossible de charger le formulaire.";
     } finally {
       loading = false;
     }
-  }
-
-  onMount(() => {
-    loadForm();
   });
 
-  async function handleLogin(e: Event) {
-    e.preventDefault();
-    loginError = null;
-    loginLoading = true;
-    try {
-      await auth.login(email, password);
-      await loadForm();
-    } catch (err: any) {
-      loginError = err?.message ?? "Connexion impossible.";
-    } finally {
-      loginLoading = false;
-    }
-  }
-
-  async function handleLogout() {
-    await auth.logout();
-    await loadForm();
-  }
-
-  function validatePage(page: Page): boolean {
+  function validatePage(p: Page): boolean {
     const errs = { ...fieldErrors };
-    for (const f of page.fields) {
+    for (const f of p.fields) {
       delete errs[f.key];
     }
-    for (const f of page.fields) {
+    for (const f of p.fields) {
       const v = values[f.key];
       const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
       if (f.required && empty) {
@@ -218,7 +180,7 @@
       }
     }
     fieldErrors = errs;
-    return page.fields.every((f) => !errs[f.key]);
+    return p.fields.every((f) => !errs[f.key]);
   }
 
   function nextPage() {
@@ -250,11 +212,10 @@
     return Object.keys(errs).length === 0;
   }
 
-  async function submit(e: Event) {
+  function simulateSubmit(e: Event) {
     e.preventDefault();
-    submitError = null;
     if (form?.requireConsent && !consent) {
-      submitError = "Vous devez accepter le consentement pour soumettre.";
+      alert("Vous devez accepter le consentement pour soumettre.");
       return;
     }
     if (!validateAll()) {
@@ -268,97 +229,57 @@
       return;
     }
     submitting = true;
-    try {
-      const cleanValues: Record<string, unknown> = {};
-      for (const k of Object.keys(values)) {
-        if (visibleFieldKeys.has(k)) {
-          cleanValues[k] = values[k];
-        }
-      }
-      const cleanFiles: Record<string, any> = {};
-      for (const k of Object.keys(files)) {
-        if (visibleFieldKeys.has(k)) {
-          cleanFiles[k] = files[k];
-        }
-      }
-
-      const res = await api.submit({
-        formId: form!.id,
-        data: cleanValues,
-        consent,
-        files: Object.keys(cleanFiles).length ? cleanFiles : undefined,
-      });
-      if (res.success) submitted = true;
-      else submitError = "La soumission a échoué.";
-    } catch (err: any) {
-      submitError = err?.message ?? "Erreur lors de la soumission.";
-      if (Array.isArray(err?.details)) {
-        const errs: Record<string, string> = {};
-        for (const d of err.details) if (d.key) errs[d.key] = d.message;
-        fieldErrors = errs;
-        for (let i = 0; i < pages.length; i++) {
-          const hasError = pages[i].fields.some((f) => fieldErrors[f.key]);
-          if (hasError) {
-            currentPageIndex = i;
-            break;
-          }
-        }
-      }
-    } finally {
+    setTimeout(() => {
       submitting = false;
-    }
+      submitted = true;
+    }, 1000);
+  }
+
+  function resetSimulation() {
+    submitted = false;
+    values = {};
+    files = {};
+    consent = false;
+    fieldErrors = {};
+    currentPageIndex = 0;
   }
 </script>
 
-<svelte:head><title>{translatedForm?.title ?? "Formulaire"}</title></svelte:head>
+<svelte:head>
+  <title>[Aperçu] {translatedForm?.title ?? "Formulaire"}</title>
+</svelte:head>
 
-<div class="min-h-screen bg-[color:var(--surface-bg)] py-8">
+<div class="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-xs font-bold py-2.5 px-4 shadow-md flex items-center justify-between">
+  <div class="flex items-center gap-2">
+    <IconEye size={16} />
+    <span>Mode Prévisualisation — Les réponses saisies ici ne seront pas enregistrées dans la base de données.</span>
+  </div>
+  <button 
+    onclick={() => window.close()} 
+    class="bg-black/20 hover:bg-black/40 text-white rounded px-2.5 py-1 transition font-bold"
+  >
+    Fermer l'aperçu
+  </button>
+</div>
+
+<div class="min-h-screen bg-[color:var(--surface-bg)] pt-16 pb-12">
   <main class="mx-auto max-w-2xl px-4">
     {#if loading}
-      <p class="text-center text-[color:var(--muted)]">Chargement…</p>
-    {:else if statusError === 401}
-      <div class="grid place-items-center">
-        <form onsubmit={handleLogin} class="gform-card w-full max-w-md p-8 shadow-sm">
-          <div class="mb-6 text-center">
-            <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500 text-white">
-              <IconLock size={26} weight="fill" />
-            </div>
-            <h1 class="text-xl font-bold">Formulaire restreint</h1>
-            <p class="mt-1 text-sm text-[color:var(--muted)]">Veuillez vous connecter pour accéder à ce formulaire</p>
-          </div>
-          <label class="label" for="pub-email">Email</label>
-          <input id="pub-email" class="input mb-3" type="email" bind:value={email} required autocomplete="username" />
-          <label class="label" for="pub-pw">Mot de passe</label>
-          <input id="pub-pw" class="input mb-4" type="password" bind:value={password} required autocomplete="current-password" />
-          {#if loginError}
-            <p class="mb-3 flex items-center gap-1.5 text-sm text-[color:var(--danger)]">
-              {loginError}
-            </p>
-          {/if}
-          <button class="btn-primary w-full" type="submit" disabled={loginLoading}>
-            {loginLoading ? "Connexion…" : "Se connecter"}
-          </button>
-        </form>
-      </div>
-    {:else if statusError === 403}
-      <div class="gform-card p-8 text-center">
-        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 text-red-600">
-          <IconLock size={26} />
-        </div>
-        <h2 class="text-lg font-bold mb-2">Accès refusé</h2>
-        <p class="text-sm text-[color:var(--muted)] mb-4">{loadError}</p>
-        <p class="text-xs text-[color:var(--muted)] mb-4 bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-mono">Connecté en tant que : {auth.user?.email}</p>
-        <button class="btn-secondary w-full" onclick={handleLogout}>
-          Se déconnecter / Essayer un autre compte
-        </button>
-      </div>
+      <p class="text-center text-[color:var(--muted)] py-12">Chargement de la prévisualisation...</p>
     {:else if loadError}
-      <div class="gform-card p-8 text-center text-[color:var(--danger)]">{loadError}</div>
+      <div class="gform-card p-8 text-center text-[color:var(--danger)]">
+        <p class="font-bold mb-4">{loadError}</p>
+        <button class="btn-primary" onclick={() => goto(`/admin/forms/${id}`)}>Retour à l'éditeur</button>
+      </div>
     {:else if submitted}
       <div class="gform-card p-10 text-center animate-fade-in">
         <div class="mx-auto mb-3 text-brand-500 flex justify-center"><IconCheckCircle size={52} weight="fill" /></div>
-        <h1 class="mb-2 text-2xl font-bold">Merci !</h1>
-        <p class="text-[color:var(--muted)]">Votre réponse a bien été enregistrée.</p>
+        <h1 class="mb-2 text-2xl font-bold">Simulation réussie !</h1>
+        <p class="text-[color:var(--muted)] mb-6">Votre réponse simulée a bien été traitée et validée (hors base de données).</p>
+        <div class="flex justify-center gap-3">
+          <button class="btn-secondary text-xs" onclick={resetSimulation}>Recommencer la saisie</button>
+          <button class="btn-primary text-xs" onclick={() => window.close()}>Fermer l'aperçu</button>
+        </div>
       </div>
     {:else if translatedForm && currentPage}
       <div class="gform-card mb-5">
@@ -393,7 +314,7 @@
         </div>
       </div>
 
-      <form onsubmit={submit}>
+      <form onsubmit={simulateSubmit}>
         {#if pages.length > 1}
           <div class="mb-5 bg-white rounded-xl border border-[color:var(--line)] p-4 shadow-sm">
             <div class="flex justify-between items-center text-xs font-semibold text-[color:var(--muted)] mb-2">
@@ -428,10 +349,6 @@
           </label>
         {/if}
 
-        {#if submitError}
-          <p class="mb-4 text-sm font-semibold text-[color:var(--danger)]">{submitError}</p>
-        {/if}
-
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           <div class="flex items-center gap-3 w-full sm:w-auto">
             {#if !currentPage.isFirst}
@@ -445,12 +362,12 @@
               </button>
             {:else}
               <button class="btn-primary w-full sm:w-auto" type="submit" disabled={submitting}>
-                {submitting ? "Envoi…" : "Envoyer"}
+                {submitting ? "Validation..." : "Envoyer (Simulation)"}
               </button>
             {/if}
           </div>
           <span class="flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted)]">
-            <IconShield size={15} /> Sans tracker · Auto-hébergé · Open-source
+            <IconShield size={15} /> Aperçu en direct
           </span>
         </div>
       </form>
