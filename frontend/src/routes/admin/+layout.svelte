@@ -34,7 +34,7 @@
   <div class="min-h-screen overflow-x-hidden bg-[#f8f9fa]">
     {#if showChrome}
       <header class="sticky top-0 z-20 border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
-        <div class="mx-auto flex max-w-none items-center justify-between px-6 sm:px-10 py-3">
+        <div class="mx-auto flex max-w-7xl items-center justify-between px-4 md:px-0 py-3">
           <a href="/admin" class="flex items-center gap-2.5 font-bold text-[color:var(--ink)] text-lg min-w-0 shrink-0">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-md shadow-brand-500/20 shrink-0">
               <IconLeaf size={20} weight="fill" />
@@ -123,7 +123,7 @@
         </div>
       {/if}
     {/if}
-    <div class="mx-auto max-w-none px-6 sm:px-10 py-6">
+    <div class="mx-auto max-w-7xl px-4 md:px-0 py-6">
       {@render children()}
     </div>
   </div>

@@ -178,7 +178,7 @@
   }
 </script>
 
-<div class="flex flex-col md:flex-row gap-6 items-start max-w-none px-4 sm:px-6 pb-24 relative">
+<div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-4 md:px-0 pb-24 relative">
   <!-- Main canvas column -->
   <div class="flex-1 w-full space-y-5">
     

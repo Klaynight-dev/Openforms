@@ -116,7 +116,7 @@
   {:else}
     <!-- Google Forms Header Bar -->
     <header class="bg-white border-b border-[color:var(--line)] sticky top-0 z-30 shadow-sm">
-      <div class="mx-auto max-w-none px-6 sm:px-10">
+      <div class="mx-auto max-w-7xl px-4 md:px-0">
         <div class="flex items-center justify-between py-3">
           <!-- Left Section: Back, Title, and Save status -->
           <div class="flex items-center gap-3 min-w-0 flex-1">

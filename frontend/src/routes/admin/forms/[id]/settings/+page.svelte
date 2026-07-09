@@ -116,7 +116,7 @@
   });
 </script>
 
-<div class="max-w-none px-4 sm:px-6 space-y-6">
+<div class="max-w-2xl mx-auto px-4 md:px-0 space-y-6">
   <!-- RGPD & Consentment Card -->
   <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
     <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
