@@ -16,6 +16,8 @@
     consentText: "J'accepte que mes réponses soient traitées conformément au RGPD.",
     isAnonymized: false,
     encryptResponses: false,
+    visibility: "PUBLIC",
+    allowedEmails: [] as string[],
   });
   let saving = $state(false);
   let error = $state<string | null>(null);
@@ -40,6 +42,8 @@
         isAnonymized: settings.isAnonymized,
         encryptResponses: settings.encryptResponses,
         organizationId: orgId,
+        visibility: settings.visibility,
+        allowedEmails: settings.allowedEmails,
       });
       goto(`/admin/forms/${res.form.id}`);
     } catch (e) {

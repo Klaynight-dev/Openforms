@@ -10,6 +10,8 @@
     consentText: string;
     isAnonymized: boolean;
     encryptResponses: boolean;
+    visibility: string;
+    allowedEmails: string[];
   }
 
   let {
@@ -22,12 +24,16 @@
       consentText: "",
       isAnonymized: false,
       encryptResponses: false,
+      visibility: "PUBLIC",
+      allowedEmails: [] as string[],
     } as Settings),
   } = $props();
 
   let selectedIndex = $state<number | null>(null);
   let dragIndex = $state<number | null>(null);
   let activeTab = $state<"canvas" | "palette" | "config">("canvas");
+
+  let allowedEmailsText = $derived((settings.allowedEmails ?? []).join("\n"));
 
   let selected = $derived(selectedIndex !== null ? fields[selectedIndex] : null);
   let precedingChoiceFields = $derived(
@@ -392,7 +398,7 @@
         </div>
       {/if}
       <!-- Affichage Conditionnel -->
-      {#if selectedIndex > 0}
+      {#if selectedIndex !== null && selectedIndex > 0}
         <div class="mb-4 pt-3 border-t border-slate-100">
           <label class="mb-2 flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
             <input
@@ -421,7 +427,7 @@
                 Vous devez ajouter une question à choix (unique, multiple ou liste) avant ce champ pour créer une condition.
               </p>
             {:else}
-              {@const triggerField = precedingChoiceFields.find((f) => f.key === selected.condition.fieldKey)}
+              {@const triggerField = selected.condition ? precedingChoiceFields.find((f) => f.key === selected.condition!.fieldKey) : undefined}
               <div class="space-y-2 mt-2 pl-5 border-l-2 border-slate-100">
                 <div>
                   <label class="label !text-[10px]">Si la question suivante :</label>
@@ -449,8 +455,11 @@
                     <label class="label !text-[10px]">Est égale à :</label>
                     <select
                       class="input text-xs"
-                      bind:value={selected.condition.value}
-                      onchange={() => {
+                      value={selected.condition.value}
+                      onchange={(e) => {
+                        if (selected.condition) {
+                          selected.condition.value = (e.target as HTMLSelectElement).value;
+                        }
                         fields = [...fields];
                       }}
                     >
@@ -495,6 +504,32 @@
       <label class="mb-4 flex items-center gap-2.5 text-sm font-semibold cursor-pointer">
         <input type="checkbox" bind:checked={settings.encryptResponses} class="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand" /> Chiffrer au repos
       </label>
+
+      <div class="mb-4 pt-3 border-t border-slate-100">
+        <label class="label">Visibilité lors de la publication</label>
+        <select class="input mb-3 text-xs" bind:value={settings.visibility}>
+          <option value="PUBLIC">Publique (Tout le monde peut répondre)</option>
+          <option value="PRIVATE">Utilisateurs connectés uniquement</option>
+          <option value="RESTRICTED">Certaines personnes uniquement</option>
+        </select>
+        
+        {#if settings.visibility === "RESTRICTED"}
+          <label class="label">Adresses e-mail autorisées (une par ligne)</label>
+          <textarea
+            class="input text-xs font-mono"
+            rows="4"
+            placeholder="exemple@domaine.com"
+            value={allowedEmailsText}
+            oninput={(e) => {
+              settings.allowedEmails = (e.target as HTMLTextAreaElement).value
+                .split("\n")
+                .map((email) => email.trim())
+                .filter(Boolean);
+            }}
+          ></textarea>
+        {/if}
+      </div>
+
       <p class="text-[11px] text-slate-400 leading-normal bg-slate-50 p-3 rounded-lg border border-slate-100">Sélectionnez une question dans le canevas pour configurer ses options de validation spécifiques.</p>
     {/if}
   </aside>

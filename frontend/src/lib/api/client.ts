@@ -192,6 +192,8 @@ export interface FormPayload {
   isAnonymized?: boolean;
   encryptResponses?: boolean;
   organizationId?: string;
+  visibility?: string;
+  allowedEmails?: string[];
 }
 
 export interface SignedFileDescriptor {

@@ -25,6 +25,8 @@ const FormSettings = {
   isAnonymized: t.Optional(t.Boolean()),
   encryptResponses: t.Optional(t.Boolean()),
   organizationId: t.Optional(t.String()),
+  visibility: t.Optional(t.String()),
+  allowedEmails: t.Optional(t.Array(t.String())),
 };
 
 export const formController = new Elysia({ prefix: "/api/v1/forms" })
@@ -33,12 +35,33 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   // --- Définition publique d'un formulaire publié (remplissage, sans auth) ---
   .get(
     "/public/:slug",
-    async ({ params, set }) => {
+    async ({ params, set, auth }) => {
       const form = await prisma.form.findUnique({ where: { slug: params.slug } });
       if (!form || !form.isPublished) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
+
+      if (form.visibility === "PRIVATE") {
+        if (!auth) {
+          set.status = 401;
+          return { success: false, error: "Ce formulaire est réservé aux membres connectés." };
+        }
+      } else if (form.visibility === "RESTRICTED") {
+        if (!auth) {
+          set.status = 401;
+          return { success: false, error: "Ce formulaire est restreint. Veuillez vous connecter." };
+        }
+        const userEmail = auth.user.email;
+        const hasAccess = form.allowedEmails.some(
+          (email) => email.toLowerCase() === userEmail.toLowerCase()
+        );
+        if (!hasAccess) {
+          set.status = 403;
+          return { success: false, error: "Vous n'êtes pas autorisé à accéder à ce formulaire." };
+        }
+      }
+
       return {
         success: true,
         form: {
@@ -50,6 +73,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           requireConsent: form.requireConsent,
           consentText: form.consentText,
           isAnonymized: form.isAnonymized,
+          visibility: form.visibility,
         },
       };
     },
@@ -116,6 +140,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           consentText: body.consentText,
           isAnonymized: body.isAnonymized ?? false,
           encryptResponses: body.encryptResponses ?? false,
+          visibility: body.visibility ?? "PUBLIC",
+          allowedEmails: body.allowedEmails ?? [],
           ownerId: auth!.user.id,
           organizationId: body.organizationId ?? null,
         },
@@ -172,6 +198,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           consentText: body.consentText,
           isAnonymized: body.isAnonymized,
           encryptResponses: body.encryptResponses,
+          visibility: body.visibility,
+          allowedEmails: body.allowedEmails,
         },
       });
       return { success: true, form: updated };

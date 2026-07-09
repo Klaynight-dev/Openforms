@@ -19,6 +19,8 @@
     consentText: "",
     isAnonymized: false,
     encryptResponses: false,
+    visibility: "PUBLIC",
+    allowedEmails: [] as string[],
   });
 
   let loading = $state(true);
@@ -39,6 +41,8 @@
         consentText: res.form.consentText ?? "",
         isAnonymized: res.form.isAnonymized,
         encryptResponses: res.form.encryptResponses,
+        visibility: res.form.visibility ?? "PUBLIC",
+        allowedEmails: res.form.allowedEmails ?? [],
       };
     } catch (e) {
       error = e instanceof Error ? e.message : "Formulaire introuvable.";
@@ -61,6 +65,8 @@
         consentText: settings.consentText || undefined,
         isAnonymized: settings.isAnonymized,
         encryptResponses: settings.encryptResponses,
+        visibility: settings.visibility,
+        allowedEmails: settings.allowedEmails,
       });
       saved = true;
       setTimeout(() => (saved = false), 2000);

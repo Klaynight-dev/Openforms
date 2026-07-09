@@ -39,11 +39,31 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   )
   .post(
     "/submit",
-    async ({ body, set, request }) => {
+    async ({ body, set, request, auth }) => {
       const form = await prisma.form.findUnique({ where: { id: body.formId } });
       if (!form || !form.isPublished) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable ou non publié." };
+      }
+
+      if (form.visibility === "PRIVATE") {
+        if (!auth) {
+          set.status = 401;
+          return { success: false, error: "Ce formulaire est réservé aux membres connectés." };
+        }
+      } else if (form.visibility === "RESTRICTED") {
+        if (!auth) {
+          set.status = 401;
+          return { success: false, error: "Ce formulaire est restreint. Veuillez vous connecter." };
+        }
+        const userEmail = auth.user.email;
+        const hasAccess = form.allowedEmails.some(
+          (email) => email.toLowerCase() === userEmail.toLowerCase()
+        );
+        if (!hasAccess) {
+          set.status = 403;
+          return { success: false, error: "Vous n'êtes pas autorisé à soumettre des réponses à ce formulaire." };
+        }
       }
 
       // 1. Consentement explicite obligatoire (RGPD).

@@ -70,6 +70,10 @@ export interface FormSummary {
   encryptResponses: boolean;
   requireConsent: boolean;
   consentText?: string | null;
+  visibility: string;
+  allowedEmails: string[];
+  ownerId: string;
+  organizationId?: string | null;
   updatedAt: string;
   _count?: { responses: number };
 }
@@ -77,7 +81,6 @@ export interface FormSummary {
 export interface FormDetail extends FormSummary {
   schema: FieldDefinition[];
   metaColumns: MetaColumn[];
-  ownerId: string;
   access?: FormAccessEntry[];
 }
 

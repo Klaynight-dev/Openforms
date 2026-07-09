@@ -2,13 +2,20 @@
   import { page } from "$app/stores";
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
-  import { api, type SignedFileDescriptor } from "$api/client.ts";
+  import { api, ApiError, type SignedFileDescriptor } from "$api/client.ts";
   import type { FormDetail, FieldDefinition } from "$lib/types.ts";
   import { IconCheckCircle, IconLock, IconShield } from "$lib/icons.ts";
+  import { auth } from "$lib/stores/auth.svelte.ts";
 
   let form = $state<FormDetail | null>(null);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
+  let statusError = $state<number | null>(null);
+
+  let email = $state("");
+  let password = $state("");
+  let loginLoading = $state(false);
+  let loginError = $state<string | null>(null);
 
   let values = $state<Record<string, unknown>>({});
   let files = $state<Record<string, { file: SignedFileDescriptor; signature: string }[]>>({});
@@ -124,16 +131,48 @@
 
   let currentPage = $derived(pages[currentPageIndex] ?? null);
 
-  onMount(async () => {
+  async function loadForm() {
+    loading = true;
+    loadError = null;
+    statusError = null;
     try {
+      if (!auth.ready) {
+        await auth.refresh();
+      }
       const res = await api.getPublicForm($page.params.slug as string);
       form = res.form;
-    } catch (e) {
+    } catch (e: any) {
       loadError = e instanceof Error ? e.message : "Formulaire introuvable.";
+      if (e instanceof ApiError) {
+        statusError = e.status;
+      }
     } finally {
       loading = false;
     }
+  }
+
+  onMount(() => {
+    loadForm();
   });
+
+  async function handleLogin(e: Event) {
+    e.preventDefault();
+    loginError = null;
+    loginLoading = true;
+    try {
+      await auth.login(email, password);
+      await loadForm();
+    } catch (err: any) {
+      loginError = err?.message ?? "Connexion impossible.";
+    } finally {
+      loginLoading = false;
+    }
+  }
+
+  async function handleLogout() {
+    await auth.logout();
+    await loadForm();
+  }
 
   function validatePage(page: Page): boolean {
     const errs = { ...fieldErrors };
@@ -246,6 +285,42 @@
   <main class="mx-auto max-w-2xl px-4">
     {#if loading}
       <p class="text-center text-[color:var(--muted)]">Chargement…</p>
+    {:else if statusError === 401}
+      <div class="grid place-items-center">
+        <form onsubmit={handleLogin} class="gform-card w-full max-w-md p-8 shadow-sm">
+          <div class="mb-6 text-center">
+            <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500 text-white">
+              <IconLock size={26} weight="fill" />
+            </div>
+            <h1 class="text-xl font-bold">Formulaire restreint</h1>
+            <p class="mt-1 text-sm text-[color:var(--muted)]">Veuillez vous connecter pour accéder à ce formulaire</p>
+          </div>
+          <label class="label" for="pub-email">Email</label>
+          <input id="pub-email" class="input mb-3" type="email" bind:value={email} required autocomplete="username" />
+          <label class="label" for="pub-pw">Mot de passe</label>
+          <input id="pub-pw" class="input mb-4" type="password" bind:value={password} required autocomplete="current-password" />
+          {#if loginError}
+            <p class="mb-3 flex items-center gap-1.5 text-sm text-[color:var(--danger)]">
+              {loginError}
+            </p>
+          {/if}
+          <button class="btn-primary w-full" type="submit" disabled={loginLoading}>
+            {loginLoading ? "Connexion…" : "Se connecter"}
+          </button>
+        </form>
+      </div>
+    {:else if statusError === 403}
+      <div class="gform-card p-8 text-center">
+        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 text-red-600">
+          <IconLock size={26} />
+        </div>
+        <h2 class="text-lg font-bold mb-2">Accès refusé</h2>
+        <p class="text-sm text-[color:var(--muted)] mb-4">{loadError}</p>
+        <p class="text-xs text-[color:var(--muted)] mb-4 bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-mono">Connecté en tant que : {auth.user?.email}</p>
+        <button class="btn-secondary w-full" onclick={handleLogout}>
+          Se déconnecter / Essayer un autre compte
+        </button>
+      </div>
     {:else if loadError}
       <div class="gform-card p-8 text-center text-[color:var(--danger)]">{loadError}</div>
     {:else if submitted}
