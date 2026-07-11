@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
   import { api, ApiError, type SignedFileDescriptor } from "$api/client.ts";
-  import type { FormDetail, FieldDefinition } from "$lib/types.ts";
+  import { JUSTIFICATION_SUFFIX, type FormDetail, type FieldDefinition } from "$lib/types.ts";
   import { IconCheckCircle, IconLock, IconShield } from "$lib/icons.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
 
@@ -271,7 +271,8 @@
     try {
       const cleanValues: Record<string, unknown> = {};
       for (const k of Object.keys(values)) {
-        if (visibleFieldKeys.has(k)) {
+        const baseKey = k.endsWith(JUSTIFICATION_SUFFIX) ? k.slice(0, -JUSTIFICATION_SUFFIX.length) : k;
+        if (visibleFieldKeys.has(baseKey)) {
           cleanValues[k] = values[k];
         }
       }
@@ -436,6 +437,10 @@
               {field}
               formId={translatedForm.id}
               bind:value={values[field.key]}
+              bind:justification={
+                () => values[`${field.key}${JUSTIFICATION_SUFFIX}`] as string | undefined,
+                (v) => { values[`${field.key}${JUSTIFICATION_SUFFIX}`] = v; }
+              }
               error={fieldErrors[field.key]}
               onFiles={(refs) => (files[field.key] = refs)}
             />

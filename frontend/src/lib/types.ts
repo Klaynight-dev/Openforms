@@ -1,5 +1,8 @@
 // Types partagés côté frontend, alignés sur les schémas Typebox du backend.
 
+/** Suffixe de clé utilisé pour stocker le texte de justification lié à un champ à choix (aligné sur le backend). */
+export const JUSTIFICATION_SUFFIX = "__justification";
+
 export type FieldType =
   | "short_text"
   | "paragraph"
@@ -46,6 +49,7 @@ export interface FieldDefinition {
   required: boolean;
   options?: FieldOption[];
   allowOther?: boolean;
+  requireJustification?: boolean;
   condition?: FieldCondition;
   validation?: FieldValidation;
   accept?: string[];
@@ -134,6 +138,8 @@ export interface User {
   displayName: string | null;
   isActive?: boolean;
   createdAt?: string;
+  /** `false` tant que l'utilisateur n'a pas défini son mot de passe via le lien d'invitation. */
+  hasPassword?: boolean;
 }
 
 export type Permission = "NONE" | "READ" | "WRITE";

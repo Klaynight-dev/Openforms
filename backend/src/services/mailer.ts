@@ -59,3 +59,18 @@ export async function sendEmail({
     throw err;
   }
 }
+
+/** Envoie le lien permettant à un compte fraîchement créé de définir son mot de passe. */
+export async function sendInviteEmail(to: string, link: string) {
+  return sendEmail({
+    to,
+    subject: "Votre compte OpenForms — définissez votre mot de passe",
+    text: `Un compte OpenForms a été créé pour vous. Définissez votre mot de passe via ce lien (valable 48h) : ${link}`,
+    html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+      <h2 style="color:#673ab7;margin-top:0;">Bienvenue sur OpenForms</h2>
+      <p>Un compte a été créé pour vous. Cliquez sur le lien ci-dessous pour définir votre mot de passe :</p>
+      <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#673ab7;color:#fff;border-radius:6px;text-decoration:none;">Définir mon mot de passe</a></p>
+      <p style="font-size:12px;color:#999;">Ce lien est valable 48 heures. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+    </div>`,
+  });
+}

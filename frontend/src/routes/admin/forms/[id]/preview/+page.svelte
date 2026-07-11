@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
   import { api, type SignedFileDescriptor } from "$api/client.ts";
-  import type { FormDetail, FieldDefinition } from "$lib/types.ts";
+  import { JUSTIFICATION_SUFFIX, type FormDetail, type FieldDefinition } from "$lib/types.ts";
   import { IconCheckCircle, IconLock, IconShield, IconEye, IconBack } from "$lib/icons.ts";
   import { goto } from "$app/navigation";
 
@@ -357,6 +357,7 @@
               {field}
               formId={translatedForm.id}
               bind:value={values[field.key]}
+              bind:justification={values[`${field.key}${JUSTIFICATION_SUFFIX}`]}
               error={fieldErrors[field.key]}
               onFiles={(refs) => (files[field.key] = refs)}
             />

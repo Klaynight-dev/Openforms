@@ -59,6 +59,7 @@ export const FieldDefinitionSchema = t.Object({
   required: t.Boolean({ default: false }),
   options: t.Optional(t.Array(OptionSchema, { maxItems: 200 })),
   allowOther: t.Optional(t.Boolean()),
+  requireJustification: t.Optional(t.Boolean()),
   condition: ConditionSchema,
   validation: ValidationSchema,
   /** Champ "file" : types MIME acceptés + taille max en octets. */
@@ -88,6 +89,10 @@ export const MetaColumnSchema = t.Object({
 export type MetaColumn = Static<typeof MetaColumnSchema>;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Suffixe de clé utilisé pour stocker le texte de justification lié à un champ à choix. */
+export const JUSTIFICATION_SUFFIX = "__justification";
+const JUSTIFIABLE_TYPES = new Set<FieldType>(["radio", "select", "checkbox", "grid", "checkbox_grid"]);
 
 export interface ValidationError {
   key: string;
@@ -259,6 +264,13 @@ export function validateSubmission(
         // La valeur est une référence d'upload résolue en amont ; on la conserve.
         clean[field.key] = raw;
         break;
+      }
+    }
+
+    if (field.requireJustification && JUSTIFIABLE_TYPES.has(field.type)) {
+      const justRaw = data[`${field.key}${JUSTIFICATION_SUFFIX}`];
+      if (typeof justRaw === "string" && justRaw.trim()) {
+        clean[`${field.key}${JUSTIFICATION_SUFFIX}`] = justRaw.trim().slice(0, 2000);
       }
     }
   }

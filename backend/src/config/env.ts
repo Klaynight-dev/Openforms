@@ -51,6 +51,11 @@ export const env = {
     .map((o) => o.trim())
     .filter(Boolean),
 
+  /** Origine publique du frontend utilisée pour construire les liens envoyés par email (invitation, etc.). */
+  get appUrl(): string {
+    return optional("APP_URL", this.frontendOrigins[0] ?? "http://localhost:5173");
+  },
+
   encryptionKey,
   sessionSecret: required("SESSION_SECRET"),
   sessionTtlSeconds: int("SESSION_TTL", 60 * 60 * 24 * 7),

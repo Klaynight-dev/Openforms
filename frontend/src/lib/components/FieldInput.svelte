@@ -6,12 +6,14 @@
   let {
     field,
     value = $bindable(),
+    justification = $bindable(),
     error,
     formId,
     onFiles,
   }: {
     field: FieldDefinition;
     value: unknown;
+    justification?: unknown;
     error?: string;
     formId: string;
     onFiles?: (refs: { file: SignedFileDescriptor; signature: string }[]) => void;
@@ -592,6 +594,20 @@
           </button>
         </div>
       {/if}
+    </div>
+  {/if}
+
+  {#if field.requireJustification && (field.type === "select" || field.type === "radio" || field.type === "checkbox" || field.type === "grid" || field.type === "checkbox_grid")}
+    <div class="mt-2">
+      <label class="label !text-[10px] text-slate-400 uppercase tracking-wide" for={`${field.key}-justification`}>Justification</label>
+      <textarea
+        id={`${field.key}-justification`}
+        class="input text-sm"
+        rows="2"
+        placeholder="Justifiez votre réponse..."
+        value={typeof justification === "string" ? justification : ""}
+        oninput={(e) => (justification = (e.target as HTMLTextAreaElement).value)}
+      ></textarea>
     </div>
   {/if}
 

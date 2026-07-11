@@ -15,9 +15,9 @@
   $effect(() => {
     if (!auth.ready) return;
     const path = $page.url.pathname;
-    const isAuthPage = path === "/admin/login" || path === "/admin/register";
+    const isAuthPage = path === "/admin/login" || path === "/admin/register" || path === "/admin/set-password";
     if (!auth.isAuthenticated && !isAuthPage) goto("/admin/login");
-    if (auth.isAuthenticated && isAuthPage) goto("/admin");
+    if (auth.isAuthenticated && isAuthPage && path !== "/admin/set-password") goto("/admin");
   });
 
   async function logout() {
@@ -26,12 +26,20 @@
   }
 
   let showChrome = $derived(auth.isAuthenticated && $page.url.pathname !== "/admin/login" && !$page.url.pathname.includes("/preview"));
+
+  // Les pages d'édition de formulaire ont leur propre en-tête collant : on retire le
+  // padding vertical du conteneur parent pour qu'il soit accolé à l'en-tête global.
+  let isFormEditor = $derived(
+    $page.url.pathname.startsWith("/admin/forms/") &&
+    $page.url.pathname !== "/admin/forms/new" &&
+    !$page.url.pathname.includes("/preview")
+  );
 </script>
 
 {#if !auth.ready}
   <div class="grid h-screen place-items-center text-[color:var(--muted)]">Chargement…</div>
 {:else}
-  <div class="min-h-screen overflow-x-hidden bg-[#f8f9fa]">
+  <div class="min-h-screen overflow-x-hidden bg-[color:var(--surface-bg)]">
     {#if showChrome}
       <header class="sticky top-0 z-20 border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
         <div class="mx-auto flex max-w-7xl items-center justify-between px-4 md:px-0 py-3">
@@ -123,7 +131,7 @@
         </div>
       {/if}
     {/if}
-    <div class="mx-auto max-w-7xl px-4 md:px-0 py-6">
+    <div class="mx-auto max-w-7xl px-4 md:px-0" class:py-6={!isFormEditor} class:pb-6={isFormEditor}>
       {@render children()}
     </div>
   </div>

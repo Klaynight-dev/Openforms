@@ -40,6 +40,12 @@ class AuthState {
     return res.user;
   }
 
+  async acceptInvite(token: string, password: string) {
+    const res = await api.acceptInvite(token, password);
+    this.user = res.user;
+    return res.user;
+  }
+
   async logout() {
     await api.logout().catch(() => {});
     this.user = null;

@@ -378,14 +378,23 @@
 
                     {#if field.type === "radio" || field.type === "checkbox"}
                       <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          bind:checked={field.allowOther} 
-                          class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]" 
+                        <input
+                          type="checkbox"
+                          bind:checked={field.allowOther}
+                          class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
                         />
                         <span>Autoriser option « Autre »</span>
                       </label>
                     {/if}
+
+                    <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+                      <input
+                        type="checkbox"
+                        bind:checked={field.requireJustification}
+                        class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
+                      />
+                      <span>Demander de justifier la réponse (texte libre)</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -471,21 +480,31 @@
               <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label class="label text-xs">Lignes (une par ligne)</label>
-                  <textarea 
-                    class="input text-xs font-mono" 
-                    rows="3" 
-                    value={gridText(field.grid.rows)} 
+                  <textarea
+                    class="input text-xs font-mono"
+                    rows="3"
+                    value={gridText(field.grid.rows)}
                     oninput={(e) => setGridRows(field, (e.target as HTMLTextAreaElement).value)}
                   ></textarea>
                 </div>
                 <div>
                   <label class="label text-xs">Colonnes (une par ligne)</label>
-                  <textarea 
-                    class="input text-xs font-mono" 
-                    rows="3" 
-                    value={gridText(field.grid.columns)} 
+                  <textarea
+                    class="input text-xs font-mono"
+                    rows="3"
+                    value={gridText(field.grid.columns)}
                     oninput={(e) => setGridCols(field, (e.target as HTMLTextAreaElement).value)}
                   ></textarea>
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      bind:checked={field.requireJustification}
+                      class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
+                    />
+                    <span>Demander de justifier la réponse (texte libre)</span>
+                  </label>
                 </div>
               </div>
             {/if}
@@ -502,26 +521,70 @@
                       <div class="grid grid-cols-2 gap-3">
                         <div>
                           <label class="label !text-[10px]">Longueur minimale</label>
-                          <input class="input text-xs" type="number" bind:value={field.validation!.minLength} oninput={() => (field.validation ??= {})} />
+                          <input
+                            class="input text-xs"
+                            type="number"
+                            value={field.validation?.minLength ?? ""}
+                            oninput={(e) => {
+                              field.validation ??= {};
+                              const val = (e.target as HTMLInputElement).value;
+                              field.validation.minLength = val === "" ? undefined : Number(val);
+                            }}
+                          />
                         </div>
                         <div>
                           <label class="label !text-[10px]">Longueur maximale</label>
-                          <input class="input text-xs" type="number" bind:value={field.validation!.maxLength} />
+                          <input
+                            class="input text-xs"
+                            type="number"
+                            value={field.validation?.maxLength ?? ""}
+                            oninput={(e) => {
+                              field.validation ??= {};
+                              const val = (e.target as HTMLInputElement).value;
+                              field.validation.maxLength = val === "" ? undefined : Number(val);
+                            }}
+                          />
                         </div>
                       </div>
                       <div>
                         <label class="label !text-[10px]">Expression régulière de validation (Regex)</label>
-                        <input class="input text-xs font-mono" placeholder="ex: ^[A-Z].*" bind:value={field.validation!.pattern} />
+                        <input
+                          class="input text-xs font-mono"
+                          placeholder="ex: ^[A-Z].*"
+                          value={field.validation?.pattern ?? ""}
+                          oninput={(e) => {
+                            field.validation ??= {};
+                            field.validation.pattern = (e.target as HTMLInputElement).value;
+                          }}
+                        />
                       </div>
                     {:else if field.type === "number"}
                       <div class="grid grid-cols-2 gap-3">
                         <div>
                           <label class="label !text-[10px]">Valeur minimale</label>
-                          <input class="input text-xs" type="number" bind:value={field.validation!.min} />
+                          <input
+                            class="input text-xs"
+                            type="number"
+                            value={field.validation?.min ?? ""}
+                            oninput={(e) => {
+                              field.validation ??= {};
+                              const val = (e.target as HTMLInputElement).value;
+                              field.validation.min = val === "" ? undefined : Number(val);
+                            }}
+                          />
                         </div>
                         <div>
                           <label class="label !text-[10px]">Valeur maximale</label>
-                          <input class="input text-xs" type="number" bind:value={field.validation!.max} />
+                          <input
+                            class="input text-xs"
+                            type="number"
+                            value={field.validation?.max ?? ""}
+                            oninput={(e) => {
+                              field.validation ??= {};
+                              const val = (e.target as HTMLInputElement).value;
+                              field.validation.max = val === "" ? undefined : Number(val);
+                            }}
+                          />
                         </div>
                       </div>
                     {/if}

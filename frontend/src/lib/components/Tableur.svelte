@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { FieldDefinition, MetaColumn, ResponseRow } from "../types.ts";
+  import { JUSTIFICATION_SUFFIX, type FieldDefinition, type MetaColumn, type ResponseRow } from "../types.ts";
   import { api } from "../api/client.ts";
   import { evaluateRowFormula, evaluateAggregate } from "../formulaEngine.ts";
   import {
@@ -49,13 +49,26 @@
   let columns = $derived<Column[]>([
     ...fields
       .filter((f) => f.type !== "file")
-      .map((f) => ({
-        key: f.key,
-        label: f.label,
-        source: "field" as const,
-        editable: canEdit && f.type !== "grid",
-        numeric: f.type === "number",
-      })),
+      .flatMap((f): Column[] => {
+        const col: Column = {
+          key: f.key,
+          label: f.label,
+          source: "field" as const,
+          editable: canEdit && f.type !== "grid",
+          numeric: f.type === "number",
+        };
+        if (!f.requireJustification) return [col];
+        return [
+          col,
+          {
+            key: `${f.key}${JUSTIFICATION_SUFFIX}`,
+            label: `${f.label} (justification)`,
+            source: "field" as const,
+            editable: false,
+            numeric: false,
+          },
+        ];
+      }),
     ...metaColumns.map((m) => ({
       key: m.key,
       label: m.label,

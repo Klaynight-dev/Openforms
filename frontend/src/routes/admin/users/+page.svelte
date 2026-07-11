@@ -3,7 +3,7 @@
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import type { User, FormSummary, FormAccessEntry } from "$lib/types.ts";
-  import { IconKey, IconTrash, IconClose, IconCheck, IconPlus } from "$lib/icons.ts";
+  import { IconKey, IconTrash, IconClose, IconCheck, IconPlus, IconSend, IconDuplicate } from "$lib/icons.ts";
 
   let users = $state<User[]>([]);
   let forms = $state<FormSummary[]>([]);
@@ -11,8 +11,10 @@
   let error = $state<string | null>(null);
 
   // Formulaire de création
-  let nu = $state({ email: "", password: "", role: "EDITOR", displayName: "" });
+  let nu = $state({ email: "", role: "EDITOR", displayName: "" });
   let creating = $state(false);
+  let inviteLink = $state<string | null>(null);
+  let copied = $state(false);
 
   // Gestion des accès
   let selectedFormId = $state("");
@@ -36,14 +38,39 @@
     e.preventDefault();
     creating = true;
     error = null;
+    inviteLink = null;
+    copied = false;
     try {
       const res = await api.createUser(nu);
       users = [...users, res.user];
-      nu = { email: "", password: "", role: "EDITOR", displayName: "" };
+      inviteLink = res.inviteLink;
+      nu = { email: "", role: "EDITOR", displayName: "" };
     } catch (err) {
       error = err instanceof Error ? err.message : "Création impossible.";
     } finally {
       creating = false;
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      copied = true;
+      setTimeout(() => (copied = false), 2000);
+    } catch {
+      /* clipboard indisponible — le lien reste affiché pour copie manuelle */
+    }
+  }
+
+  async function resendInvite(u: User) {
+    try {
+      const res = await api.resendInvite(u.id);
+      inviteLink = res.inviteLink;
+      copied = false;
+      alert(`Lien d'invitation renvoyé à ${u.email} et affiché ci-dessous.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Échec.");
     }
   }
 
@@ -146,7 +173,7 @@
         {:else}
           <table class="w-full text-sm">
             <thead class="text-left text-gray-500">
-              <tr><th class="py-1">Email</th><th>Rôle</th><th>Actif</th><th></th></tr>
+              <tr><th class="py-1">Email</th><th>Rôle</th><th>Statut</th><th></th></tr>
             </thead>
             <tbody>
               {#each users as u (u.id)}
@@ -159,12 +186,22 @@
                     </select>
                   </td>
                   <td>
-                    <button class="inline-flex items-center gap-1 text-xs {u.isActive ? 'text-brand-600' : 'text-gray-400'}" onclick={() => toggleActive(u)}>
-                      {#if u.isActive}<IconCheck size={13} weight="bold" /> actif{:else}désactivé{/if}
-                    </button>
+                    {#if u.hasPassword === false}
+                      <span class="inline-flex items-center gap-1 text-xs text-amber-600" title="En attente de définition du mot de passe">
+                        <IconSend size={13} weight="bold" /> invitation envoyée
+                      </span>
+                    {:else}
+                      <button class="inline-flex items-center gap-1 text-xs {u.isActive ? 'text-brand-600' : 'text-gray-400'}" onclick={() => toggleActive(u)}>
+                        {#if u.isActive}<IconCheck size={13} weight="bold" /> actif{:else}désactivé{/if}
+                      </button>
+                    {/if}
                   </td>
                   <td class="text-right">
-                    <button class="text-[color:var(--muted)] hover:text-[color:var(--ink)]" onclick={() => resetPassword(u)} aria-label="Réinitialiser le mot de passe"><IconKey size={16} /></button>
+                    {#if u.hasPassword === false}
+                      <button class="text-[color:var(--muted)] hover:text-[color:var(--ink)]" onclick={() => resendInvite(u)} aria-label="Renvoyer l'invitation"><IconSend size={16} /></button>
+                    {:else}
+                      <button class="text-[color:var(--muted)] hover:text-[color:var(--ink)]" onclick={() => resetPassword(u)} aria-label="Réinitialiser le mot de passe"><IconKey size={16} /></button>
+                    {/if}
                     {#if u.id !== auth.user?.id}
                       <button class="ml-2 text-[color:var(--danger)]" onclick={() => removeUser(u)} aria-label="Supprimer"><IconTrash size={16} /></button>
                     {/if}
@@ -176,19 +213,32 @@
         {/if}
       </div>
 
+      {#if inviteLink}
+        <div class="card mt-4 border border-brand-100 bg-brand-50/50">
+          <h2 class="mb-2 flex items-center gap-1.5 font-semibold text-brand-700"><IconSend size={16} /> Lien d'invitation</h2>
+          <p class="mb-2 text-xs text-[color:var(--muted)]">Envoyez ce lien à la personne concernée pour qu'elle définisse son mot de passe (valable 48h).</p>
+          <div class="flex items-center gap-2">
+            <input class="input flex-1 text-xs" readonly value={inviteLink} onclick={(e) => (e.target as HTMLInputElement).select()} />
+            <button type="button" class="btn-secondary shrink-0 text-xs" onclick={copyInviteLink}>
+              <IconDuplicate size={14} /> {copied ? "Copié !" : "Copier"}
+            </button>
+          </div>
+        </div>
+      {/if}
+
       <!-- Création -->
       <form onsubmit={createUser} class="card mt-4">
         <h2 class="mb-3 font-semibold">Créer un compte</h2>
+        <p class="mb-3 text-xs text-[color:var(--muted)]">Un lien d'invitation sera généré (et envoyé par email) pour que la personne définisse elle-même son mot de passe.</p>
         <div class="grid gap-3 sm:grid-cols-2">
           <input class="input" type="email" placeholder="Email" bind:value={nu.email} required />
           <input class="input" type="text" placeholder="Nom affiché (facultatif)" bind:value={nu.displayName} />
-          <input class="input" type="password" placeholder="Mot de passe (min. 10)" bind:value={nu.password} required minlength="10" />
           <select class="input" bind:value={nu.role}>
             <option value="EDITOR">Éditeur</option>
             <option value="SUPER_ADMIN">Super Admin</option>
           </select>
         </div>
-        <button class="btn-primary mt-3" type="submit" disabled={creating}><IconPlus size={17} weight="bold" /> {creating ? "…" : "Créer"}</button>
+        <button class="btn-primary mt-3" type="submit" disabled={creating}><IconPlus size={17} weight="bold" /> {creating ? "…" : "Créer et inviter"}</button>
       </form>
     </div>
 

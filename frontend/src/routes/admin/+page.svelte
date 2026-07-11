@@ -754,7 +754,7 @@
               {inviting ? "Invitation…" : "Inviter"}
             </button>
           </div>
-          <p class="text-[10px] text-[color:var(--muted)]">L'utilisateur invité doit déjà posséder un compte Humanitour.</p>
+          <p class="text-[10px] text-[color:var(--muted)]">Si cette adresse ne possède pas encore de compte, un lien d'invitation lui sera envoyé par email pour qu'elle définisse son mot de passe.</p>
         </div>
       {/if}
 

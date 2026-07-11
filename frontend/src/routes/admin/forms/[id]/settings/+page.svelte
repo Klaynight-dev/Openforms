@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext } from "svelte";
+  import { getContext, onMount } from "svelte";
   import { api } from "$api/client.ts";
   import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings } from "$lib/icons.ts";
   import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders } from "phosphor-svelte";
@@ -16,6 +16,7 @@
 
   // Local settings copy bound to inputs
   let settings = $state({
+    slug: "",
     requireConsent: true,
     consentText: "",
     isAnonymized: false,
@@ -34,6 +35,7 @@
   // Sync state once the form loads in the parent layout
   $effect(() => {
     if (editorState.form) {
+      settings.slug = editorState.form.slug;
       settings.requireConsent = editorState.form.requireConsent;
       settings.consentText = editorState.form.consentText ?? "";
       settings.isAnonymized = editorState.form.isAnonymized;
@@ -53,6 +55,31 @@
   // Allowed emails text helper
   let allowedEmailsText = $derived((settings.allowedEmails ?? []).join("\n"));
 
+  // --- Lien personnalisé ---
+  let origin = $state("");
+  onMount(() => {
+    origin = window.location.origin;
+  });
+  let slugCopied = $state(false);
+  let publicUrl = $derived(`${origin || ""}/f/${settings.slug || ""}`);
+
+  // Normalize input as the admin types: lowercase, spaces/invalid chars -> hyphen
+  function onSlugInput(e: Event) {
+    const raw = (e.target as HTMLInputElement).value;
+    settings.slug = raw
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/-{2,}/g, "-");
+  }
+
+  async function copyPublicUrl() {
+    await navigator.clipboard.writeText(publicUrl);
+    slugCopied = true;
+    setTimeout(() => { slugCopied = false; }, 2000);
+  }
+
   // Date formatting helper
   function formatDate(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -71,8 +98,9 @@
   async function save() {
     if (!editorState.form) return;
     
-    await api.updateForm(editorState.form.id, {
+    const res = await api.updateForm(editorState.form.id, {
       title: editorState.form.title,
+      slug: settings.slug,
       description: editorState.form.description ?? undefined,
       schema: editorState.form.schema,
       metaColumns: editorState.form.metaColumns,
@@ -92,6 +120,8 @@
     });
 
     // Update the parent's form object to keep layout title and details in sync
+    editorState.form.slug = res.form.slug;
+    settings.slug = res.form.slug;
     editorState.form.requireConsent = settings.requireConsent;
     editorState.form.consentText = settings.consentText;
     editorState.form.isAnonymized = settings.isAnonymized;
@@ -117,6 +147,47 @@
 </script>
 
 <div class="max-w-2xl mx-auto px-4 md:px-0 space-y-6">
+  <!-- Custom URL Card -->
+  <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
+    <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+      <div class="p-2 rounded-lg bg-violet-50 text-[color:var(--brand)]"><IconLink size={20} /></div>
+      <div>
+        <h3 class="font-bold text-sm text-[color:var(--ink)]">Lien personnalisé</h3>
+        <p class="text-[11px] text-[color:var(--muted)]">Choisissez l'adresse publique utilisée pour partager ce formulaire</p>
+      </div>
+    </div>
+    <div class="p-6 space-y-3">
+      <label class="label text-xs" for="slug-input">Lien public</label>
+      <div class="flex items-stretch rounded-xl border border-[color:var(--line)] overflow-hidden focus-within:ring-2 focus-within:ring-[color:var(--brand)] focus-within:border-transparent">
+        <span class="px-3 flex items-center bg-slate-50 text-xs text-[color:var(--muted)] font-mono border-r border-[color:var(--line)] shrink-0 max-w-[45%] truncate">
+          {origin || "https://votre-domaine"}/f/
+        </span>
+        <input
+          id="slug-input"
+          type="text"
+          class="flex-1 min-w-0 px-3 py-2 text-xs font-mono outline-none"
+          placeholder="mon-formulaire"
+          value={settings.slug}
+          oninput={onSlugInput}
+        />
+        <button
+          type="button"
+          class="btn-text !px-3 !rounded-none border-l border-[color:var(--line)] shrink-0"
+          title="Copier le lien"
+          onclick={copyPublicUrl}
+        >
+          {#if slugCopied}
+            <IconCheck size={16} class="text-green-600" />
+          {:else}
+            <IconLink size={16} />
+          {/if}
+        </button>
+      </div>
+      <p class="text-[10px] text-[color:var(--muted)] break-all">{publicUrl}</p>
+      <p class="text-[10px] text-[color:var(--muted)]">3 à 80 caractères : minuscules, chiffres et tirets uniquement.</p>
+    </div>
+  </div>
+
   <!-- RGPD & Consentment Card -->
   <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
     <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">

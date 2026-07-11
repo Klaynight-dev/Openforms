@@ -15,8 +15,37 @@ function slugify(title: string): string {
   return `${base || "formulaire"}-${randomToken(4).toLowerCase().replace(/[^a-z0-9]/g, "")}`;
 }
 
+/** Mots réservés par le routage front (/f/:slug) ou pouvant prêter à confusion. */
+const RESERVED_SLUGS = new Set(["admin", "api", "f", "public", "new", "login", "register", "docs"]);
+
+const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** Valide et normalise un slug personnalisé, ou lève une erreur lisible côté client. */
+async function ensureCustomSlug(
+  rawSlug: string,
+  currentFormId: string | null,
+): Promise<{ ok: true; slug: string } | { ok: false; error: string }> {
+  const slug = rawSlug.trim().toLowerCase();
+  if (!SLUG_PATTERN.test(slug) || slug.length < 3 || slug.length > 80) {
+    return {
+      ok: false,
+      error:
+        "Le lien personnalisé doit contenir entre 3 et 80 caractères : minuscules, chiffres et tirets uniquement (pas au début/à la fin, pas de tirets consécutifs).",
+    };
+  }
+  if (RESERVED_SLUGS.has(slug)) {
+    return { ok: false, error: "Ce lien personnalisé est réservé et ne peut pas être utilisé." };
+  }
+  const existing = await prisma.form.findUnique({ where: { slug } });
+  if (existing && existing.id !== currentFormId) {
+    return { ok: false, error: "Ce lien personnalisé est déjà utilisé par un autre formulaire." };
+  }
+  return { ok: true, slug };
+}
+
 const FormSettings = {
   title: t.String({ minLength: 1, maxLength: 300 }),
+  slug: t.Optional(t.String({ minLength: 3, maxLength: 80 })),
   description: t.Optional(t.String({ maxLength: 2000 })),
   schema: FormSchemaArray,
   metaColumns: t.Optional(t.Array(MetaColumnSchema, { maxItems: 100 })),
@@ -203,9 +232,21 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         set.status = 403;
         return { success: false, error: "Édition non autorisée." };
       }
+
+      let nextSlug = form.slug;
+      if (body.slug !== undefined && body.slug.trim().toLowerCase() !== form.slug) {
+        const result = await ensureCustomSlug(body.slug, form.id);
+        if (!result.ok) {
+          set.status = 409;
+          return { success: false, error: result.error };
+        }
+        nextSlug = result.slug;
+      }
+
       const updated = await prisma.form.update({
         where: { id: params.id },
         data: {
+          slug: nextSlug,
           title: body.title,
           description: body.description,
           schema: body.schema,

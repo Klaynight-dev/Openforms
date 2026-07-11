@@ -1,7 +1,9 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin } from "../middleware/auth.ts";
-import { hashPassword } from "../services/crypto.ts";
+import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
+import { sendInviteEmail } from "../services/mailer.ts";
+import { env } from "../config/env.ts";
 
 function slugify(name: string): string {
   const base = name
@@ -138,17 +140,20 @@ export const organizationController = new Elysia({ prefix: "/api/v1/organization
 
       const email = body.email.trim().toLowerCase();
       let targetUser = await prisma.user.findUnique({ where: { email } });
-      
+
       if (!targetUser) {
-        const defaultPassword = "ChangeMoi!2026";
         targetUser = await prisma.user.create({
           data: {
             email,
-            passwordHash: await hashPassword(defaultPassword),
+            passwordHash: null,
             role: "EDITOR",
             displayName: email.split("@")[0],
           },
         });
+
+        const { token } = await createPasswordSetupToken(targetUser.id);
+        const inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
+        await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
       }
 
       const alreadyMember = await prisma.organizationMember.findUnique({

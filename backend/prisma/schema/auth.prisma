@@ -16,19 +16,36 @@ model User {
   id           String       @id @default(uuid())
   email        String       @unique
   /// Hash Argon2id calculé via Bun.password — jamais le mot de passe en clair.
-  passwordHash String
+  /// `null` tant que le titulaire n'a pas défini son mot de passe via le lien d'invitation.
+  passwordHash String?
   role         Role         @default(EDITOR)
   displayName  String?
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  sessions      Session[]
-  ownedForms    Form[]               @relation("FormOwner")
-  formAccess    FormAccess[]
-  organizations OrganizationMember[]
+  sessions            Session[]
+  ownedForms          Form[]               @relation("FormOwner")
+  formAccess          FormAccess[]
+  organizations       OrganizationMember[]
+  passwordSetupTokens PasswordSetupToken[]
 
   @@index([email])
+}
+
+/// Jeton à usage unique envoyé par email permettant de définir (ou
+/// réinitialiser) le mot de passe d'un compte créé sans mot de passe.
+model PasswordSetupToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  /// SHA-256 du jeton envoyé dans le lien — jamais stocké en clair.
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 /// Session serveur : le cookie HttpOnly contient uniquement un identifiant

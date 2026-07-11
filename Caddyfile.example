@@ -1,0 +1,44 @@
+# Exemple de configuration Caddy pour exposer OpenForms sur plusieurs domaines
+# (humanitour.fr et klaynight.fr) avec HTTPS automatique (Let's Encrypt).
+#
+# Prérequis :
+#   1. Des enregistrements DNS de type A (et AAAA si IPv6) pour chacun des
+#      domaines/sous-domaines ci-dessous, pointant vers l'IP publique du
+#      serveur qui exécute Caddy. Ceci se configure chez votre registrar/DNS
+#      (OVH, Cloudflare, etc.) — aucune commande ne peut le faire depuis ce dépôt.
+#   2. Les ports 80 et 443 ouverts sur ce serveur.
+#   3. La stack docker-compose.yml de ce dépôt démarrée sur la même machine
+#      (backend sur le port 3535, frontend sur le port 5173).
+#
+# Utilisation :
+#   cp Caddyfile.example Caddyfile
+#   caddy run --config Caddyfile
+# (ou lancez Caddy comme service systemd / conteneur avec ce fichier monté)
+#
+# Chaque domaine sert le même frontend + la même API : le routage par chemin
+# (/api/*, /docs*) garde la session (cookie) "same-site" quel que soit le
+# domaine utilisé par le visiteur.
+
+humanitour.fr, www.humanitour.fr {
+	handle /api/* {
+		reverse_proxy localhost:3535
+	}
+	handle /docs* {
+		reverse_proxy localhost:3535
+	}
+	handle {
+		reverse_proxy localhost:5173
+	}
+}
+
+klaynight.fr, www.klaynight.fr {
+	handle /api/* {
+		reverse_proxy localhost:3535
+	}
+	handle /docs* {
+		reverse_proxy localhost:3535
+	}
+	handle {
+		reverse_proxy localhost:5173
+	}
+}

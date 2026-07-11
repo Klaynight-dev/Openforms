@@ -32,11 +32,11 @@ services:
       DATABASE_URL: postgresql://humanitour:humanitour_secure_pass@db:5432/formulaire_humanitour?schema=public
       PORT: 3535
       NODE_ENV: production
-      FRONTEND_ORIGIN: http://localhost:5173
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-https://humanitour.fr,https://www.humanitour.fr,https://klaynight.fr,https://www.klaynight.fr,http://localhost:5173}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-uzvA8UqS86fGkGv2Xq6d7S9lFf4b8G9vRzHhL6e2X1c=}
       SESSION_SECRET: ${SESSION_SECRET:-CHANGE_ME_secret_long_et_aleatoire_de_session_humanitour_2026}
       SESSION_TTL: 604800
-      COOKIE_SECURE: "false" # Passer à "true" si HTTPS actif
+      COOKIE_SECURE: "true" # Passer à "true" si HTTPS actif
       UPLOAD_DIR: /app/uploads
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.org}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMoi!2026}

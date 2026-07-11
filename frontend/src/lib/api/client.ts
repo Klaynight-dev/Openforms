@@ -83,6 +83,13 @@ export const api = {
   logout: () => request<{ success: boolean }>("POST", "/api/v1/auth/logout"),
   me: () =>
     request<{ authenticated: boolean; user?: User; csrfToken?: string }>("GET", "/api/v1/auth/me"),
+  verifyInvite: (token: string) =>
+    request<{ valid: boolean; email?: string }>("GET", `/api/v1/auth/invite/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string, password: string) =>
+    request<{ success: boolean; user: User; csrfToken: string }>("POST", "/api/v1/auth/accept-invite", {
+      token,
+      password,
+    }),
 
   // --- Formulaires ---
   listForms: () => request<{ success: boolean; forms: FormSummary[] }>("GET", "/api/v1/forms"),
@@ -131,8 +138,10 @@ export const api = {
 
   // --- Utilisateurs & accès ---
   listUsers: () => request<{ success: boolean; users: User[] }>("GET", "/api/v1/users"),
-  createUser: (data: { email: string; password: string; role: string; displayName?: string }) =>
-    request<{ success: boolean; user: User }>("POST", "/api/v1/users", data),
+  createUser: (data: { email: string; role: string; displayName?: string }) =>
+    request<{ success: boolean; user: User; inviteLink: string }>("POST", "/api/v1/users", data),
+  resendInvite: (id: string) =>
+    request<{ success: boolean; inviteLink: string }>("POST", `/api/v1/users/${id}/invite`),
   updateUser: (id: string, data: Partial<{ role: string; displayName: string; isActive: boolean; password: string }>) =>
     request<{ success: boolean; user: User }>("PATCH", `/api/v1/users/${id}`, data),
   deleteUser: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/users/${id}`),
@@ -186,6 +195,7 @@ export const api = {
 
 export interface FormPayload {
   title: string;
+  slug?: string;
   description?: string;
   schema: FieldDefinition[];
   metaColumns?: MetaColumn[];

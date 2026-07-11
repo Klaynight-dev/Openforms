@@ -2,6 +2,13 @@ import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin } from "../middleware/auth.ts";
 import { hashPassword } from "../services/crypto.ts";
+import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
+import { sendInviteEmail } from "../services/mailer.ts";
+import { env } from "../config/env.ts";
+
+function buildInviteLink(token: string): string {
+  return `${env.appUrl}/admin/set-password?token=${token}`;
+}
 
 export const usersController = new Elysia({ prefix: "/api/v1" })
   .use(authPlugin)
@@ -12,14 +19,17 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
     async () => {
       const users = await prisma.user.findMany({
         orderBy: { createdAt: "asc" },
-        select: { id: true, email: true, role: true, displayName: true, isActive: true, createdAt: true },
+        select: { id: true, email: true, role: true, displayName: true, isActive: true, createdAt: true, passwordHash: true },
       });
-      return { success: true, users };
+      return {
+        success: true,
+        users: users.map(({ passwordHash, ...u }) => ({ ...u, hasPassword: passwordHash !== null })),
+      };
     },
     { requireRole: ["SUPER_ADMIN"] },
   )
 
-  // --- Création d'un compte (éditeur ou super-admin) ---
+  // --- Création d'un compte (éditeur ou super-admin) : email seul, mot de passe défini via lien d'invitation ---
   .post(
     "/users",
     async ({ body, set }) => {
@@ -32,7 +42,7 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
       const user = await prisma.user.create({
         data: {
           email,
-          passwordHash: await hashPassword(body.password),
+          passwordHash: null,
           role: body.role,
           displayName: body.displayName,
         },
@@ -51,17 +61,39 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
         });
       }
 
-      return { success: true, user };
+      const { token } = await createPasswordSetupToken(user.id);
+      const inviteLink = buildInviteLink(token);
+      await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
+
+      return { success: true, user: { ...user, hasPassword: false }, inviteLink };
     },
     {
       body: t.Object({
         email: t.String({ format: "email", maxLength: 320 }),
-        password: t.String({ minLength: 10, maxLength: 200 }),
         role: t.Union([t.Literal("SUPER_ADMIN"), t.Literal("EDITOR")]),
         displayName: t.Optional(t.String({ maxLength: 120 })),
       }),
       requireRole: ["SUPER_ADMIN"],
     },
+  )
+
+  // --- (Ré)envoi du lien d'invitation / de réinitialisation de mot de passe ---
+  .post(
+    "/users/:id/invite",
+    async ({ params, set }) => {
+      const target = await prisma.user.findUnique({ where: { id: params.id } });
+      if (!target) {
+        set.status = 404;
+        return { success: false, error: "Utilisateur introuvable." };
+      }
+
+      const { token } = await createPasswordSetupToken(target.id);
+      const inviteLink = buildInviteLink(token);
+      await sendInviteEmail(target.email, inviteLink).catch((err) => console.error("Invite email failed:", err));
+
+      return { success: true, inviteLink };
+    },
+    { params: t.Object({ id: t.String() }), requireRole: ["SUPER_ADMIN"] },
   )
 
   // --- Mise à jour d'un compte ---
@@ -76,9 +108,10 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
           isActive: body.isActive,
           ...(body.password ? { passwordHash: await hashPassword(body.password) } : {}),
         },
-        select: { id: true, email: true, role: true, displayName: true, isActive: true },
+        select: { id: true, email: true, role: true, displayName: true, isActive: true, passwordHash: true },
       });
-      return { success: true, user };
+      const { passwordHash, ...rest } = user;
+      return { success: true, user: { ...rest, hasPassword: passwordHash !== null } };
     },
     {
       params: t.Object({ id: t.String() }),
