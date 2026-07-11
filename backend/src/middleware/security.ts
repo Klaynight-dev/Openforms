@@ -72,7 +72,7 @@ export function sessionCookieOptions(maxAgeSeconds: number) {
   return {
     httpOnly: true,
     secure: env.cookieSecure,
-    sameSite: "lax" as const,
+    sameSite: env.cookieSameSite,
     path: "/",
     maxAge: maxAgeSeconds,
   };

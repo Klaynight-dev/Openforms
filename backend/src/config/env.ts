@@ -59,7 +59,13 @@ export const env = {
   encryptionKey,
   sessionSecret: required("SESSION_SECRET"),
   sessionTtlSeconds: int("SESSION_TTL", 60 * 60 * 24 * 7),
-  cookieSecure: bool("COOKIE_SECURE", false),
+  cookieSecure: bool("COOKIE_SECURE", optional("NODE_ENV", "development") === "production") || optional("COOKIE_SAME_SITE", "lax").toLowerCase() === "none",
+  cookieSameSite: (() => {
+    const val = optional("COOKIE_SAME_SITE", "lax").toLowerCase();
+    if (val === "none") return "none" as const;
+    if (val === "strict") return "strict" as const;
+    return "lax" as const;
+  })(),
 
   uploadDir: optional("UPLOAD_DIR", "./uploads"),
   maxUploadBytes: int("MAX_UPLOAD_BYTES", 10 * 1024 * 1024),

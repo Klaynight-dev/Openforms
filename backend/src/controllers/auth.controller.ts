@@ -51,7 +51,7 @@ export const authController = new Elysia({ prefix: "/api/v1/auth" })
         value: csrfSecret,
         httpOnly: false,
         secure: env.cookieSecure,
-        sameSite: "lax",
+        sameSite: env.cookieSameSite,
         path: "/",
         maxAge,
       });
@@ -114,7 +114,7 @@ export const authController = new Elysia({ prefix: "/api/v1/auth" })
         value: csrfSecret,
         httpOnly: false,
         secure: env.cookieSecure,
-        sameSite: "lax",
+        sameSite: env.cookieSameSite,
         path: "/",
         maxAge,
       });
@@ -174,7 +174,7 @@ export const authController = new Elysia({ prefix: "/api/v1/auth" })
         value: csrfSecret,
         httpOnly: false,
         secure: env.cookieSecure,
-        sameSite: "lax",
+        sameSite: env.cookieSameSite,
         path: "/",
         maxAge,
       });
