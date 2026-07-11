@@ -11,8 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio",
-    "db:seed": "bun run prisma/seed.ts"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.1.1",

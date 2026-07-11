@@ -42,3 +42,20 @@ klaynight.fr, www.klaynight.fr {
 		reverse_proxy localhost:5173
 	}
 }
+
+# Variante « sous-domaine séparé » (frontend et API sur deux hosts distincts).
+# Ici l'appel devient cross-origin : FRONTEND_ORIGIN (backend) doit lister
+# https://forms.klaynight.fr et VITE_API_BASE (frontend, au build) doit valoir
+# https://api-forms.klaynight.fr — voir la section correspondante du README.
+forms.klaynight.fr {
+	reverse_proxy localhost:5173
+}
+
+api-forms.klaynight.fr {
+	handle /docs* {
+		reverse_proxy localhost:3535
+	}
+	handle {
+		reverse_proxy localhost:3535
+	}
+}

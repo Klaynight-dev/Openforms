@@ -85,9 +85,10 @@ docker compose up --build -d
 
 Cette commande va :
 1. Démarrer une base de données PostgreSQL prête à l'emploi.
-2. Compiler et démarrer le backend ElysiaJS (Bun).
-3. Lancer automatiquement les migrations de base de données Prisma et charger les données de démonstration (`db:seed`).
-4. Compiler et lancer le frontend SvelteKit (Node.js).
+2. Compiler et démarrer le backend ElysiaJS (Bun), en appliquant automatiquement les migrations Prisma au démarrage.
+3. Compiler et lancer le frontend SvelteKit (Node.js).
+
+> **Premier compte Super Admin** : la création de compte se fait désormais uniquement par invitation (un Super Admin existant invite par email). Sur une base de données neuve, il n'existe donc aucun compte au départ — créez le premier Super Admin via `bun run db:studio` (Prisma Studio) en insérant une ligne `User` (`role: SUPER_ADMIN`, `isActive: true`), puis générez-lui un lien de définition de mot de passe.
 
 ### 3. Accès
 * **Frontend** : [http://localhost:5173](http://localhost:5173)
@@ -129,17 +130,15 @@ bun install
 
 > **Note sur le proxy TLS :** Si vous travaillez derrière un proxy d'entreprise qui bloque la validation SSL de `bun install`, vous pouvez installer les packages en utilisant `npm install` (les répertoires `node_modules` resteront compatibles avec le runtime Bun).
 
-Préparez la base de données (génération du client Prisma, migrations et seed) :
+Préparez la base de données (génération du client Prisma et migrations) :
 ```bash
 # Générer le client Prisma
 bun run db:generate
 
 # Lancer les migrations
 bun run db:migrate
-
-# Insérer le Super Admin et le formulaire de démo
-bun run db:seed
 ```
+Voir la note plus haut pour créer le premier compte Super Admin (par Prisma Studio, faute de compte existant pour envoyer une invitation).
 
 Démarrez les serveurs de développement en parallèle :
 ```bash
@@ -168,8 +167,6 @@ bun run dev
 | `COOKIE_SECURE` | Cookies envoyés uniquement via HTTPS | `false` (`true` en production) |
 | `UPLOAD_DIR` | Dossier de stockage des fichiers envoyés | `./uploads` |
 | `MAX_UPLOAD_BYTES`| Taille limite par fichier envoyé (en octets) | `10485760` (10 Mo) |
-| `SEED_ADMIN_EMAIL`| Email du compte Super Admin généré au premier lancement | `admin@example.org` |
-| `SEED_ADMIN_PASSWORD`| Mot de passe du compte Super Admin généré | `ChangeMoi!2026` |
 
 ### Frontend (`frontend/.env` ou variables d'environnement système)
 
@@ -205,7 +202,7 @@ L'instance peut être servie simultanément sur plusieurs domaines publics (ex: 
 
 1. **DNS** : chez votre registrar/DNS, créez un enregistrement `A` (et `AAAA` si IPv6) pour chaque domaine/sous-domaine (`humanitour.fr`, `www.humanitour.fr`, `klaynight.fr`, `www.klaynight.fr`) pointant vers l'IP publique du serveur. Cette étape ne peut pas être faite depuis ce dépôt.
 2. **Reverse-proxy** : utilisez [`Caddyfile.example`](Caddyfile.example) comme point de départ. Il route `/api/*` et `/docs*` vers le backend et le reste vers le frontend, **pour chacun des domaines**, afin que l'API reste "same-origin" partout.
-3. **`FRONTEND_ORIGIN`** (backend) : liste déjà par défaut `https://humanitour.fr,https://www.humanitour.fr,https://klaynight.fr,https://www.klaynight.fr,https://forms.klaynight.fr` dans `docker-compose.yml` — ajustez si vous ajoutez d'autres domaines.
+3. **`FRONTEND_ORIGIN`** (backend) : liste déjà par défaut `https://humanitour.fr,https://www.humanitour.fr,https://klaynight.fr,https://www.klaynight.fr,https://forms.klaynight.fr,https://forms.humanitour.fr` dans `docker-compose.yml` — ajustez si vous ajoutez d'autres domaines.
 4. **`VITE_API_BASE`** (frontend, au build) : avec un routage par chemin same-origin comme ci-dessus, buildez avec `VITE_API_BASE=""` (vide) pour que le frontend appelle l'API en chemin relatif (`/api/v1/...`), quel que soit le domaine visité.
 5. **`COOKIE_SECURE=true`** en production (HTTPS obligatoire pour que les cookies de session traversent correctement chaque domaine).
 

@@ -63,9 +63,6 @@ export const env = {
 
   uploadDir: optional("UPLOAD_DIR", "./uploads"),
   maxUploadBytes: int("MAX_UPLOAD_BYTES", 10 * 1024 * 1024),
-
-  seedAdminEmail: optional("SEED_ADMIN_EMAIL", "admin@example.org"),
-  seedAdminPassword: optional("SEED_ADMIN_PASSWORD", "ChangeMoi!2026"),
 } as const;
 
 export type Env = typeof env;
