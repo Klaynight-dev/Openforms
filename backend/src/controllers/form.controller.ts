@@ -120,20 +120,24 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   // --- Liste des formulaires accessibles à l'utilisateur courant ---
   .get(
     "/",
-    async ({ auth }) => {
+    async ({ auth, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       let where = {};
-      if (auth!.user.role !== "SUPER_ADMIN") {
+      if (auth.user.role !== "SUPER_ADMIN") {
         const userOrgs = await prisma.organizationMember.findMany({
-          where: { userId: auth!.user.id },
+          where: { userId: auth.user.id },
           select: { organizationId: true },
         });
         const orgIds = userOrgs.map((o) => o.organizationId);
 
         where = {
           OR: [
-            { ownerId: auth!.user.id },
+            { ownerId: auth.user.id },
             { organizationId: { in: orgIds } },
-            { access: { some: { userId: auth!.user.id } } },
+            { access: { some: { userId: auth.user.id } } },
           ],
         };
       }
@@ -151,16 +155,20 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .post(
     "/",
     async ({ auth, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       if (body.organizationId) {
         const member = await prisma.organizationMember.findUnique({
-          where: { organizationId_userId: { organizationId: body.organizationId, userId: auth!.user.id } },
+          where: { organizationId_userId: { organizationId: body.organizationId, userId: auth.user.id } },
         });
         if (!member) {
           set.status = 403;
           return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
         }
       } else {
-        if (auth!.user.role !== "SUPER_ADMIN") {
+        if (auth.user.role !== "SUPER_ADMIN") {
           set.status = 403;
           return { success: false, error: "Création réservée aux administrateurs ou au sein d'une organisation." };
         }
@@ -187,7 +195,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           endsAt: body.endsAt ? new Date(body.endsAt) : null,
           maxResponses: body.maxResponses ?? null,
           translations: body.translations ?? {},
-          ownerId: auth!.user.id,
+          ownerId: auth.user.id,
           organizationId: body.organizationId ?? null,
         },
       });
@@ -200,6 +208,10 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .get(
     "/:id",
     async ({ auth, params, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       const form = await prisma.form.findUnique({
         where: { id: params.id },
         include: { access: { include: { user: { select: { id: true, email: true, displayName: true } } } } },
@@ -208,7 +220,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
-      const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
       if (perm === "NONE") {
         set.status = 403;
         return { success: false, error: "Accès refusé." };
@@ -222,12 +234,16 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .put(
     "/:id",
     async ({ auth, params, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
-      const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
       if (perm !== "WRITE") {
         set.status = 403;
         return { success: false, error: "Édition non autorisée." };
@@ -276,12 +292,16 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .post(
     "/:id/publish",
     async ({ auth, params, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
-      const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
       if (perm !== "WRITE") {
         set.status = 403;
         return { success: false, error: "Action non autorisée." };
@@ -303,12 +323,16 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .post(
     "/:id/duplicate",
     async ({ auth, params, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
-      const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
       if (perm === "NONE") {
         set.status = 403;
         return { success: false, error: "Accès refusé." };
@@ -318,14 +342,14 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
       const organizationId = form.organizationId;
       if (organizationId) {
         const member = await prisma.organizationMember.findUnique({
-          where: { organizationId_userId: { organizationId, userId: auth!.user.id } },
+          where: { organizationId_userId: { organizationId, userId: auth.user.id } },
         });
-        if (!member && auth!.user.role !== "SUPER_ADMIN") {
+        if (!member && auth.user.role !== "SUPER_ADMIN") {
           set.status = 403;
           return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
         }
       } else {
-        if (auth!.user.role !== "SUPER_ADMIN") {
+        if (auth.user.role !== "SUPER_ADMIN") {
           set.status = 403;
           return { success: false, error: "Création réservée aux administrateurs ou au sein d'une organisation." };
         }
@@ -354,7 +378,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           maxResponses: form.maxResponses,
           translations: form.translations ?? {},
           isPublished: false, // reset to draft
-          ownerId: auth!.user.id,
+          ownerId: auth.user.id,
           organizationId: form.organizationId,
         },
       });
@@ -368,17 +392,21 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   .delete(
     "/:id",
     async ({ params, auth, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
 
-      let canDelete = auth!.user.role === "SUPER_ADMIN" || form.ownerId === auth!.user.id;
+      let canDelete = auth.user.role === "SUPER_ADMIN" || form.ownerId === auth.user.id;
 
       if (!canDelete && form.organizationId) {
         const member = await prisma.organizationMember.findUnique({
-          where: { organizationId_userId: { organizationId: form.organizationId, userId: auth!.user.id } },
+          where: { organizationId_userId: { organizationId: form.organizationId, userId: auth.user.id } },
         });
         if (member && (member.role === "OWNER" || member.role === "ADMIN")) {
           canDelete = true;
