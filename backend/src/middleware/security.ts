@@ -47,6 +47,7 @@ export function makeRateLimit(options: { max: number; duration: number; message:
   return rateLimit({
     duration: options.duration,
     max: options.max,
+    scoping: "scoped",
     generator: (request, server) => {
       const fwd = request.headers.get("x-forwarded-for");
       if (fwd) return fwd.split(",")[0]?.trim();

@@ -36,7 +36,8 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-uzvA8UqS86fGkGv2Xq6d7S9lFf4b8G9vRzHhL6e2X1c=}
       SESSION_SECRET: ${SESSION_SECRET:-CHANGE_ME_secret_long_et_aleatoire_de_session_humanitour_2026}
       SESSION_TTL: 604800
-      COOKIE_SECURE: "true" # Passer à "true" si HTTPS actif
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-none}
       UPLOAD_DIR: /app/uploads
     volumes:
       - uploads:/app/uploads
