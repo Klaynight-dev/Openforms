@@ -51,7 +51,12 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:3535}
+        # Vide = appels API en relatif (/api/...) sur le domaine chargé.
+        # Le reverse-proxy (Caddy) route /api/* vers le backend sur CHAQUE domaine,
+        # ce qui garde le cookie de session "same-site" (first-party) partout —
+        # indispensable pour forms.humanitour.fr dont l'API est sur un autre domaine.
+        # NE PAS remettre une URL absolue d'API cross-domaine ici.
+        VITE_API_BASE: ${VITE_API_BASE:-}
     container_name: humanitour-frontend
     restart: always
     depends_on:

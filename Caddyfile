@@ -1,0 +1,30 @@
+# Configuration Caddy de production pour Formulaire Humanitour.
+#
+# Principe : sur CHAQUE domaine de frontend, on route /api/* et /docs* vers le
+# backend (localhost:3535) et tout le reste vers le frontend (localhost:5173).
+# Ainsi l'API est servie sous le MÊME domaine que la page → le cookie de session
+# reste "same-site" (first-party) et fonctionne dans tous les navigateurs,
+# y compris Safari/Firefox qui bloquent les cookies tiers par défaut.
+#
+# Prérequis :
+#   - DNS (type A/AAAA) de forms.humanitour.fr et forms.klaynight.fr pointant
+#     vers l'IP de ce serveur.
+#   - Ports 80 et 443 ouverts.
+#   - La stack docker-compose démarrée sur cette machine (backend :3535, frontend :5173).
+#   - Le frontend construit avec VITE_API_BASE VIDE (appels /api en relatif).
+#
+# Déploiement :
+#   cp Caddyfile /etc/caddy/Caddyfile   (ou monter ce fichier dans le conteneur Caddy)
+#   caddy reload --config Caddyfile
+
+forms.humanitour.fr, forms.klaynight.fr {
+	handle /api/* {
+		reverse_proxy localhost:3535
+	}
+	handle /docs* {
+		reverse_proxy localhost:3535
+	}
+	handle {
+		reverse_proxy localhost:5173
+	}
+}
