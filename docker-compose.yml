@@ -38,6 +38,8 @@ services:
       SESSION_TTL: 604800
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-none}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-no-reply@humanitour.fr}
       UPLOAD_DIR: /app/uploads
     volumes:
       - uploads:/app/uploads
