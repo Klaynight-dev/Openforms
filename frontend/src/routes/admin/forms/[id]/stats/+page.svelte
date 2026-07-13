@@ -15,7 +15,9 @@
     IconCheck,
     IconDownload,
   } from "$lib/icons.ts";
-  import * as echarts from "echarts";
+  // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
+  import type { ECharts } from "echarts";
+  let echarts: typeof import("echarts") | null = null;
 
   const formId = $derived($page.params.id as string);
 
@@ -29,11 +31,11 @@
 
   // ECharts instances
   let lineChartEl = $state<HTMLDivElement>();
-  let lineChart: echarts.ECharts | null = null;
+  let lineChart: ECharts | null = null;
   let pieChartEls: Record<string, HTMLDivElement> = {};
-  let pieCharts: Record<string, echarts.ECharts> = {};
+  let pieCharts: Record<string, ECharts> = {};
   let fillRateChartEl = $state<HTMLDivElement>();
-  let fillRateChart: echarts.ECharts | null = null;
+  let fillRateChart: ECharts | null = null;
 
   // Date range filtering
   let filterStartDate = $state("");
@@ -182,10 +184,12 @@
   // ─── Data loading ────────────────────────────────────────────────────
   onMount(async () => {
     try {
-      const [statsRes, responseRes] = await Promise.all([
+      const [statsRes, responseRes, echartsMod] = await Promise.all([
         api.getFormStatsSummary(formId),
         api.listResponses(formId),
+        import("echarts"),
       ]);
+      echarts = echartsMod;
       formTitle = statsRes.summary.title;
       activity = statsRes.summary.activity;
       schema = responseRes.form.schema as FieldDefinition[];
@@ -224,7 +228,7 @@
   });
 
   function renderLineChart() {
-    if (!lineChartEl) return;
+    if (!echarts || !lineChartEl) return;
     if (!lineChart) {
       lineChart = echarts.init(lineChartEl, null, { renderer: "canvas" });
     }
@@ -254,7 +258,7 @@
   function renderPieChart(el: HTMLDivElement, field: FieldDefinition) {
     const dist = getChoiceDistribution(field);
     const total = dist.reduce((s, d) => s + d.count, 0);
-    if (!el) return;
+    if (!echarts || !el) return;
     
     let chart = pieCharts[field.key];
     if (!chart) {
@@ -282,7 +286,7 @@
   }
 
   function renderFillRateChart() {
-    if (!fillRateChartEl || fillRates.length === 0) return;
+    if (!echarts || !fillRateChartEl || fillRates.length === 0) return;
     if (!fillRateChart) {
       fillRateChart = echarts.init(fillRateChartEl, null, { renderer: "canvas" });
     }
@@ -304,7 +308,7 @@
   }
 
   // --- Export graphiques en image ---
-  function exportChartImage(chartInstance: echarts.ECharts | null, filename: string) {
+  function exportChartImage(chartInstance: ECharts | null, filename: string) {
     if (!chartInstance) return;
     try {
       const url = chartInstance.getDataURL({

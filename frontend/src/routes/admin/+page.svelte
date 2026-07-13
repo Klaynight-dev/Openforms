@@ -25,8 +25,11 @@
     IconUser,
     IconDuplicate,
   } from "$lib/icons.ts";
-  import * as echarts from "echarts";
+  // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
+  import type { ECharts } from "echarts";
   import type { Organization, OrganizationMember } from "$lib/types.ts";
+
+  let echarts: typeof import("echarts") | null = null;
 
   let forms = $state<FormSummary[]>([]);
   let loading = $state(true);
@@ -37,7 +40,7 @@
   let stats = $state<GlobalStats | null>(null);
   let statsLoading = $state(false);
   let lineChartEl = $state<HTMLDivElement>();
-  let lineChart: echarts.ECharts | null = null;
+  let lineChart: ECharts | null = null;
 
   // Organisations
   let organizations = $state<Organization[]>([]);
@@ -190,7 +193,7 @@
         const res = await api.getGlobalStats();
         stats = res.stats;
         await new Promise((r) => setTimeout(r, 50));
-        renderActivityChart();
+        await renderActivityChart();
       } catch {
         // Stats non critiques, on ignore l'erreur
       } finally {
@@ -199,8 +202,9 @@
     }
   }
 
-  function renderActivityChart() {
+  async function renderActivityChart() {
     if (!lineChartEl || !stats) return;
+    echarts ??= await import("echarts");
     lineChart = echarts.init(lineChartEl, null, { renderer: "svg" });
     const dates = stats.activity.map((a) => {
       const d = new Date(a.date);
