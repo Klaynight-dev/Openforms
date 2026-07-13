@@ -1,5 +1,5 @@
+# syntax=docker/dockerfile:1
 # Build stage
-# Cache-busting comment to force URL rebuild: v1.0.1
 FROM oven/bun:1.1 AS builder
 
 WORKDIR /app
@@ -7,18 +7,22 @@ WORKDIR /app
 # Copy package configuration
 COPY package.json ./
 
-# Install dependencies using Bun
-RUN bun install
+# Install dependencies (cache BuildKit du store bun : pas de re-téléchargement
+# ni de ré-extraction des paquets d'un build à l'autre).
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install
 
 # Copy source code
 COPY . .
 
-# Build-time environment variable for Vite
-ARG VITE_API_BASE=http://localhost:3535
+# Variable de build Vite. VIDE = appels API en relatif (/api/...) sur le domaine
+# chargé -> cookie de session "same-site" (first-party) sur forms.humanitour.fr
+# ET forms.klaynight.fr. NE PAS remettre une URL d'API cross-domaine.
+# (Surchargeable via un build-arg, mais le défaut doit rester vide.)
+ARG VITE_API_BASE=
 ENV VITE_API_BASE=$VITE_API_BASE
 
-# Build the SvelteKit application
-RUN bun run build
+# Build SvelteKit (cache Vite conservé entre builds).
+RUN --mount=type=cache,target=/app/node_modules/.vite bun run build
 
 # Production runner stage
 FROM oven/bun:1.1-slim AS runner
@@ -28,8 +32,8 @@ WORKDIR /app
 # Copy package configuration
 COPY package.json ./
 
-# Install only production dependencies
-RUN bun install --production
+# Install only production dependencies (même cache que le builder).
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --production
 
 # Copy build artifacts from builder
 COPY --from=builder /app/build ./build

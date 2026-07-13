@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build stage
 FROM oven/bun:1.1 AS builder
 
@@ -6,14 +7,14 @@ WORKDIR /app
 # Copy package configuration
 COPY package.json ./
 
-# Install dependencies
-RUN bun install
+# Install dependencies (cache BuildKit du store bun).
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install
 
 # Copy source code and prisma schema
 COPY . .
 
-# Generate Prisma Client
-RUN bunx prisma generate
+# Generate Prisma Client (cache des moteurs Prisma téléchargés).
+RUN --mount=type=cache,target=/root/.cache bunx prisma generate
 
 # Production runner stage
 FROM oven/bun:1.1 AS runner
