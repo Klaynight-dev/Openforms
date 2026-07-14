@@ -167,15 +167,19 @@
     window.print();
   }
 
-  function formatValue(v: unknown): string {
+  function formatValue(v: unknown, field?: FieldDefinition): string {
     if (v == null || v === "") return "—";
+    const optionLabel = (s: string) => field?.options?.find((o) => o.value === s)?.label ?? s;
+    if (Array.isArray(v)) {
+      return v.map((item) => (typeof item === "object" ? JSON.stringify(item) : optionLabel(String(item)))).join(", ");
+    }
     if (typeof v === "object") {
       if ((v as any).paid) {
         return `Payé : ${(v as any).amount} € (ID: ${(v as any).transactionId})`;
       }
       return JSON.stringify(v);
     }
-    return String(v);
+    return optionLabel(String(v));
   }
 </script>
 
@@ -300,7 +304,7 @@
                       {new Date(row.submittedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </p>
                     <h4 class="text-sm font-extrabold text-[color:var(--ink)] truncate mb-1">
-                      {labelField ? formatValue(row.values[labelField.key]) : "Réponse #" + row.id.slice(0, 5)}
+                      {labelField ? formatValue(row.values[labelField.key], labelField) : "Réponse #" + row.id.slice(0, 5)}
                     </h4>
                     {#if emailField && row.values[emailField.key]}
                       <p class="text-xs text-[color:var(--muted)] truncate mb-2">{row.values[emailField.key]}</p>
@@ -351,7 +355,7 @@
                 <span class="text-[9px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full">#{r.id.slice(0, 5)}</span>
               </div>
               <p class="text-xs font-black truncate">
-                {labelField ? formatValue(r.values[labelField.key]) : "Soumission anonyme"}
+                {labelField ? formatValue(r.values[labelField.key], labelField) : "Soumission anonyme"}
               </p>
             </button>
           {/each}
@@ -428,7 +432,7 @@
                         {/if}
                       {:else}
                         <p class="text-sm font-medium text-[color:var(--ink)] leading-relaxed whitespace-pre-line">
-                          {formatValue(val)}
+                          {formatValue(val, field)}
                         </p>
                       {/if}
                     </div>

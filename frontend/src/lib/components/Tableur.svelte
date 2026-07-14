@@ -99,6 +99,15 @@
     }
   });
 
+  // Correspondance valeur -> intitulé pour les champs à options (radio, checkbox, select).
+  let optionLabels = $derived<Record<string, Record<string, string>>>(
+    Object.fromEntries(
+      fields
+        .filter((f) => f.options?.length)
+        .map((f) => [f.key, Object.fromEntries(f.options!.map((o) => [o.value, o.label]))]),
+    ),
+  );
+
   // Valeur brute d'une cellule (champ, méta ou formule calculée par ligne).
   function rawValue(row: ResponseRow, col: Column): unknown {
     if (col.source === "field") return row.values[col.key];
@@ -108,7 +117,7 @@
     return row.metadata[col.key];
   }
 
-  function formatCell(value: unknown): string {
+  function formatCell(value: unknown, labels?: Record<string, string>): string {
     if (value === null || value === undefined) return "";
     if (Array.isArray(value)) {
       return value.map((v) => {
@@ -116,14 +125,19 @@
         const s = String(v);
         if (s.startsWith("__other__:")) return s.slice(10);
         if (s === "__other__") return "Autre";
-        return v;
+        return labels?.[s] ?? s;
       }).join(", ");
     }
     if (typeof value === "object") return JSON.stringify(value);
     const s = String(value);
     if (s.startsWith("__other__:")) return s.slice(10);
     if (s === "__other__") return "Autre";
-    return s;
+    return labels?.[s] ?? s;
+  }
+
+  // Valeur affichée d'une cellule : les valeurs d'options sont remplacées par leur intitulé.
+  function displayCell(row: ResponseRow, col: Column): string {
+    return formatCell(rawValue(row, col), optionLabels[col.key]);
   }
 
   // --- Filtrage + tri (réactif) ---
@@ -132,7 +146,7 @@
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       data = data.filter((row) =>
-        columns.some((c) => formatCell(rawValue(row, c)).toLowerCase().includes(q)),
+        columns.some((c) => displayCell(row, c).toLowerCase().includes(q)),
       );
     }
     for (const [key, filter] of Object.entries(columnFilters)) {
@@ -140,7 +154,7 @@
       if (!f) continue;
       const col = columns.find((c) => c.key === key);
       if (!col) continue;
-      data = data.filter((row) => formatCell(rawValue(row, col)).toLowerCase().includes(f));
+      data = data.filter((row) => displayCell(row, col).toLowerCase().includes(f));
     }
     if (sortKey && sortDir) {
       const col = columns.find((c) => c.key === sortKey);
@@ -152,7 +166,7 @@
           const nb = Number(vb);
           let cmp: number;
           if (Number.isFinite(na) && Number.isFinite(nb)) cmp = na - nb;
-          else cmp = formatCell(va).localeCompare(formatCell(vb));
+          else cmp = displayCell(a, col).localeCompare(displayCell(b, col));
           return sortDir === "asc" ? cmp : -cmp;
         });
       }
@@ -174,7 +188,7 @@
   function startEdit(row: ResponseRow, col: Column) {
     if (!col.editable) return;
     editing = { rowId: row.id, key: col.key };
-    editValue = formatCell(rawValue(row, col));
+    editValue = displayCell(row, col);
   }
 
   async function commitEdit() {
@@ -187,6 +201,11 @@
 
     let value: unknown = editValue;
     if (col.numeric) value = editValue === "" ? null : Number(editValue);
+    else {
+      // Si l'utilisateur a saisi l'intitulé d'une option, on stocke la valeur correspondante.
+      const match = Object.entries(optionLabels[col.key] ?? {}).find(([, label]) => label === editValue);
+      if (match) value = match[0];
+    }
 
     // Mise à jour optimiste locale.
     if (col.source === "field") row.values[col.key] = value;
@@ -268,7 +287,7 @@
     ];
     for (const row of viewRows) {
       const record: Record<string, unknown> = { _ts: new Date(row.submittedAt).toLocaleString() };
-      for (const c of columns) record[c.key] = formatCell(rawValue(row, c));
+      for (const c of columns) record[c.key] = displayCell(row, c);
       ws.addRow(record);
     }
     ws.getRow(1).font = { bold: true };
@@ -280,7 +299,7 @@
     const header = ["Soumis le", ...columns.map((c) => c.label)];
     const lines = [header.map(csvCell).join(",")];
     for (const row of viewRows) {
-      const cells = [new Date(row.submittedAt).toLocaleString(), ...columns.map((c) => formatCell(rawValue(row, c)))];
+      const cells = [new Date(row.submittedAt).toLocaleString(), ...columns.map((c) => displayCell(row, c))];
       lines.push(cells.map(csvCell).join(","));
     }
     downloadBlob(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), `${formTitle}.csv`);
@@ -329,7 +348,12 @@
         const excelRow = ws.getRow(i);
         for (const [colNumber, col] of Object.entries(headerToCol)) {
           const cellVal = excelRow.getCell(Number(colNumber)).value;
-          const value = col.numeric ? Number(cellVal) : String(cellVal ?? "");
+          let value: unknown = col.numeric ? Number(cellVal) : String(cellVal ?? "");
+          if (!col.numeric) {
+            // Les exports contiennent l'intitulé des options : on stocke la valeur correspondante.
+            const match = Object.entries(optionLabels[col.key] ?? {}).find(([, label]) => label === value);
+            if (match) value = match[0];
+          }
           if (col.source === "field") target.values[col.key] = value;
           else target.metadata[col.key] = value;
           await api.updateCell(target.id, col.source === "field" ? "field" : "meta", col.key, value);
@@ -501,7 +525,7 @@
                     use:focus
                   />
                 {:else}
-                  <span class="cell-content">{formatCell(rawValue(row, col))}</span>
+                  <span class="cell-content">{displayCell(row, col)}</span>
                 {/if}
               </td>
             {/each}
@@ -577,7 +601,7 @@
                     onclick={() => { if (col.editable) startEdit(row, col); }}
                     title={col.editable ? "Cliquez pour modifier" : ""}
                   >
-                    {formatCell(rawValue(row, col)) || "—"}
+                    {displayCell(row, col) || "—"}
                   </div>
                 {/if}
               </div>
