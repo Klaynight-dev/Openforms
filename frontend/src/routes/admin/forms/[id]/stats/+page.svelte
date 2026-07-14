@@ -14,10 +14,17 @@
     IconTable,
     IconCheck,
     IconDownload,
+    IconCheckboxGrid,
+    IconFormula,
   } from "$lib/icons.ts";
   // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
   import type { ECharts } from "echarts";
   let echarts: typeof import("echarts") | null = null;
+
+  // Palette catégorielle partagée (ordre fixe) + rampe séquentielle verte (heatmaps).
+  const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
+  const HEAT_COLORS = ["#f0fdf4", "#86efac", "#22c55e", "#15803d"];
+  const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
   const formId = $derived($page.params.id as string);
 
@@ -36,6 +43,24 @@
   let pieCharts: Record<string, ECharts> = {};
   let fillRateChartEl = $state<HTMLDivElement>();
   let fillRateChart: ECharts | null = null;
+  let dayHourEl = $state<HTMLDivElement>();
+  let dayHourChart: ECharts | null = null;
+  let weekdayEl = $state<HTMLDivElement>();
+  let weekdayChart: ECharts | null = null;
+  let hourEl = $state<HTMLDivElement>();
+  let hourChart: ECharts | null = null;
+  let crossChartEl = $state<HTMLDivElement>();
+  let crossChart: ECharts | null = null;
+  let histCharts: Record<string, ECharts> = {};
+  let gridCharts: Record<string, ECharts> = {};
+
+  // Mode d'affichage de la courbe d'évolution
+  let evolutionMode = $state<"daily" | "cumulative">("daily");
+
+  // Tableau croisé : champs sélectionnés + mode d'affichage
+  let crossRowKey = $state("");
+  let crossColKey = $state("");
+  let crossMode = $state<"count" | "row" | "col" | "total">("count");
 
   // Date range filtering
   let filterStartDate = $state("");
@@ -123,21 +148,100 @@
     }).sort((a, b) => b.count - a.count);
   }
 
-  function getNumericStats(field: FieldDefinition) {
-    const vals = filteredRows
-      .map((r) => Number(r.values[field.key]))
+  /** Valeurs numériques d'un champ (les vides sont exclus, pas convertis en 0). */
+  function numericValues(field: FieldDefinition): number[] {
+    return filteredRows
+      .map((r) => r.values[field.key])
+      .filter((v) => v != null && v !== "")
+      .map(Number)
       .filter((v) => !isNaN(v));
+  }
+
+  /** Quantile par interpolation linéaire sur un tableau trié. */
+  function quantile(sorted: number[], q: number): number {
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    return sorted[base + 1] !== undefined
+      ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+      : sorted[base];
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  function getNumericStats(field: FieldDefinition) {
+    const vals = numericValues(field);
     if (vals.length === 0) return null;
     const sorted = [...vals].sort((a, b) => a - b);
     const sum = vals.reduce((a, b) => a + b, 0);
-    const mid = Math.floor(sorted.length / 2);
+    const avg = sum / vals.length;
+    const variance = vals.reduce((s, v) => s + (v - avg) ** 2, 0) / vals.length;
     return {
       count: vals.length,
       min: sorted[0],
       max: sorted[sorted.length - 1],
-      avg: Math.round((sum / vals.length) * 100) / 100,
-      median: sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid],
+      sum: round2(sum),
+      avg: round2(avg),
+      median: round2(quantile(sorted, 0.5)),
+      q1: round2(quantile(sorted, 0.25)),
+      q3: round2(quantile(sorted, 0.75)),
+      stdDev: round2(Math.sqrt(variance)),
     };
+  }
+
+  /** Histogramme auto-binné d'un champ numérique (1 barre par échelon pour les échelles). */
+  function getHistogram(field: FieldDefinition): { labels: string[]; counts: number[] } | null {
+    const vals = numericValues(field);
+    if (vals.length === 0) return null;
+    if (field.type === "linear_scale") {
+      const min = field.scale?.min ?? 1;
+      const max = field.scale?.max ?? 5;
+      const labels: string[] = [];
+      const counts: number[] = [];
+      for (let i = min; i <= max; i++) {
+        labels.push(String(i));
+        counts.push(vals.filter((v) => v === i).length);
+      }
+      return { labels, counts };
+    }
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    if (min === max) return { labels: [String(min)], counts: [vals.length] };
+    const binCount = Math.min(10, Math.max(4, Math.ceil(Math.sqrt(vals.length))));
+    const width = (max - min) / binCount;
+    const counts = Array(binCount).fill(0);
+    for (const v of vals) {
+      counts[Math.min(binCount - 1, Math.floor((v - min) / width))]++;
+    }
+    const fmt = (n: number) => String(Math.round(n * 10) / 10);
+    const labels = counts.map((_, i) => `${fmt(min + i * width)}–${fmt(min + (i + 1) * width)}`);
+    return { labels, counts };
+  }
+
+  /** Corrélation de Pearson entre deux champs numériques (paires complètes uniquement). */
+  function pearson(a: FieldDefinition, b: FieldDefinition): { r: number; n: number } | null {
+    const pairs: [number, number][] = [];
+    for (const row of filteredRows) {
+      const va = row.values[a.key];
+      const vb = row.values[b.key];
+      if (va == null || va === "" || vb == null || vb === "") continue;
+      const na = Number(va);
+      const nb = Number(vb);
+      if (isNaN(na) || isNaN(nb)) continue;
+      pairs.push([na, nb]);
+    }
+    if (pairs.length < 3) return null;
+    const n = pairs.length;
+    const ma = pairs.reduce((s, p) => s + p[0], 0) / n;
+    const mb = pairs.reduce((s, p) => s + p[1], 0) / n;
+    let num = 0, da = 0, db = 0;
+    for (const [x, y] of pairs) {
+      num += (x - ma) * (y - mb);
+      da += (x - ma) ** 2;
+      db += (y - mb) ** 2;
+    }
+    if (da === 0 || db === 0) return null;
+    return { r: num / Math.sqrt(da * db), n };
   }
 
   function getWordCloud(fields: FieldDefinition[]): { word: string; count: number }[] {
@@ -181,6 +285,180 @@
   let wordCloud = $derived(getWordCloud(textFields));
   let fillRates = $derived(schema.map((f) => ({ label: f.label, rate: getFillRate(f) })));
 
+  // ─── Analyse temporelle croisée ─────────────────────────────────────
+  /** Matrice 7 jours × 24 heures des soumissions (lundi = ligne 0). */
+  let dayHourMatrix = $derived.by<number[][]>(() => {
+    const matrix = Array.from({ length: 7 }, () => Array(24).fill(0));
+    for (const r of filteredRows) {
+      const d = new Date(r.submittedAt);
+      matrix[(d.getDay() + 6) % 7][d.getHours()]++;
+    }
+    return matrix;
+  });
+
+  let weekdayDist = $derived(dayHourMatrix.map((row) => row.reduce((a, b) => a + b, 0)));
+  let hourDist = $derived(
+    Array.from({ length: 24 }, (_, h) => dayHourMatrix.reduce((s, row) => s + row[h], 0))
+  );
+
+  let peakDay = $derived.by(() => {
+    let best: { date: string; count: number } | null = null;
+    for (const a of filteredActivity) {
+      if (a.count > 0 && (!best || a.count > best.count)) best = a;
+    }
+    return best;
+  });
+
+  let peakHour = $derived.by(() => {
+    const max = Math.max(...hourDist);
+    if (max === 0) return null;
+    return { hour: hourDist.indexOf(max), count: max };
+  });
+
+  let avgPerActiveDay = $derived.by(() => {
+    const activeDays = filteredActivity.filter((a) => a.count > 0).length;
+    if (activeDays === 0) return 0;
+    return Math.round((filteredRows.length / activeDays) * 10) / 10;
+  });
+
+  /** % de réponses où tous les champs obligatoires sont remplis. */
+  let completionRate = $derived.by(() => {
+    const required = schema.filter((f) => f.required && f.type !== "section");
+    if (required.length === 0 || filteredRows.length === 0) return null;
+    const complete = filteredRows.filter((r) =>
+      required.every((f) => {
+        const v = r.values[f.key];
+        return v != null && v !== "" && (!Array.isArray(v) || v.length > 0);
+      })
+    ).length;
+    return Math.round((complete / filteredRows.length) * 100);
+  });
+
+  // ─── Tableau croisé dynamique ───────────────────────────────────────
+  let crossFields = $derived(
+    schema.filter((f) => ["radio", "select", "checkbox", "linear_scale"].includes(f.type))
+  );
+
+  $effect(() => {
+    if (crossFields.length >= 2 && !crossRowKey) {
+      crossRowKey = crossFields[0].key;
+      crossColKey = crossFields[1].key;
+    }
+  });
+
+  /** Valeurs d'un champ croisable normalisées en tableau ("Autre" regroupé). */
+  function extractChoiceValues(row: ResponseRow, field: FieldDefinition): string[] {
+    const val = row.values[field.key];
+    if (val == null || val === "") return [];
+    const arr = Array.isArray(val) ? val : [val];
+    return arr
+      .map((v) => (String(v).startsWith("__other__") ? "__other__" : String(v)))
+      .filter((s) => s !== "");
+  }
+
+  /** Catégories (valeur + libellé) d'un champ croisable, dans l'ordre défini. */
+  function choiceCategories(field: FieldDefinition): { value: string; label: string }[] {
+    if (field.type === "linear_scale") {
+      const min = field.scale?.min ?? 1;
+      const max = field.scale?.max ?? 5;
+      return Array.from({ length: max - min + 1 }, (_, i) => ({
+        value: String(min + i),
+        label: String(min + i),
+      }));
+    }
+    const cats = (field.options ?? []).map((o) => ({ value: o.value, label: o.label }));
+    if (field.allowOther) cats.push({ value: "__other__", label: "Autre" });
+    return cats;
+  }
+
+  let crossTab = $derived.by(() => {
+    const rowField = crossFields.find((f) => f.key === crossRowKey);
+    const colField = crossFields.find((f) => f.key === crossColKey);
+    if (!rowField || !colField || rowField.key === colField.key) return null;
+
+    const rowCats = choiceCategories(rowField);
+    const colCats = choiceCategories(colField);
+    const rowIndex = new Map(rowCats.map((c, i) => [c.value, i]));
+    const colIndex = new Map(colCats.map((c, i) => [c.value, i]));
+
+    // Valeurs observées hors options (données libres) : ajoutées en fin
+    for (const row of filteredRows) {
+      for (const v of extractChoiceValues(row, rowField)) {
+        if (!rowIndex.has(v)) { rowIndex.set(v, rowCats.length); rowCats.push({ value: v, label: v }); }
+      }
+      for (const v of extractChoiceValues(row, colField)) {
+        if (!colIndex.has(v)) { colIndex.set(v, colCats.length); colCats.push({ value: v, label: v }); }
+      }
+    }
+
+    const matrix = rowCats.map(() => colCats.map(() => 0));
+    let paired = 0;
+    for (const row of filteredRows) {
+      const rv = extractChoiceValues(row, rowField);
+      const cv = extractChoiceValues(row, colField);
+      if (rv.length === 0 || cv.length === 0) continue;
+      paired++;
+      for (const r of rv) {
+        for (const c of cv) {
+          matrix[rowIndex.get(r)!][colIndex.get(c)!]++;
+        }
+      }
+    }
+
+    const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));
+    const colTotals = colCats.map((_, ci) => matrix.reduce((s, r) => s + r[ci], 0));
+    const grand = rowTotals.reduce((a, b) => a + b, 0);
+    const maxCell = Math.max(0, ...matrix.flat());
+    return { rowField, colField, rowCats, colCats, matrix, rowTotals, colTotals, grand, maxCell, paired };
+  });
+
+  function crossCellText(count: number, ri: number, ci: number): string {
+    if (!crossTab) return "";
+    switch (crossMode) {
+      case "count": return String(count);
+      case "row": return crossTab.rowTotals[ri] ? Math.round((count / crossTab.rowTotals[ri]) * 100) + " %" : "—";
+      case "col": return crossTab.colTotals[ci] ? Math.round((count / crossTab.colTotals[ci]) * 100) + " %" : "—";
+      case "total": return crossTab.grand ? Math.round((count / crossTab.grand) * 100) + " %" : "—";
+    }
+  }
+
+  // ─── Grilles (grid / checkbox_grid) ─────────────────────────────────
+  let gridFields = $derived(
+    schema.filter((f) => (f.type === "grid" || f.type === "checkbox_grid") && f.grid)
+  );
+
+  function getGridMatrix(field: FieldDefinition): number[][] {
+    const gRows = field.grid?.rows ?? [];
+    const gCols = field.grid?.columns ?? [];
+    const matrix = gRows.map(() => gCols.map(() => 0));
+    for (const row of filteredRows) {
+      const val = row.values[field.key];
+      if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+      gRows.forEach((r, ri) => {
+        const cell = (val as Record<string, unknown>)[r];
+        if (cell == null) return;
+        const selected = Array.isArray(cell) ? cell.map(String) : [String(cell)];
+        gCols.forEach((c, ci) => {
+          if (selected.includes(c)) matrix[ri][ci]++;
+        });
+      });
+    }
+    return matrix;
+  }
+
+  // ─── Corrélations entre champs numériques ───────────────────────────
+  let correlations = $derived.by(() => {
+    if (numericFields.length < 2) return [];
+    const out: { a: FieldDefinition; b: FieldDefinition; r: number; n: number }[] = [];
+    for (let i = 0; i < numericFields.length; i++) {
+      for (let j = i + 1; j < numericFields.length; j++) {
+        const res = pearson(numericFields[i], numericFields[j]);
+        if (res) out.push({ a: numericFields[i], b: numericFields[j], ...res });
+      }
+    }
+    return out.sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+  });
+
   // ─── Data loading ────────────────────────────────────────────────────
   onMount(async () => {
     try {
@@ -209,21 +487,45 @@
   onDestroy(() => {
     lineChart?.dispose();
     fillRateChart?.dispose();
+    dayHourChart?.dispose();
+    weekdayChart?.dispose();
+    hourChart?.dispose();
+    crossChart?.dispose();
     Object.values(pieCharts).forEach((c) => c.dispose());
+    Object.values(histCharts).forEach((c) => c.dispose());
+    Object.values(gridCharts).forEach((c) => c.dispose());
   });
 
   // --- ECharts rendering & Redrawing ---
   $effect(() => {
-    if (filteredRows && !loading) {
+    if (filteredRows && evolutionMode && !loading) {
       // Delay slightly to allow DOM updates
       setTimeout(() => {
         renderLineChart();
         renderFillRateChart();
+        renderDayHourChart();
+        renderWeekdayChart();
+        renderHourChart();
         choiceFields.forEach((field) => {
           const el = pieChartEls[field.key];
           if (el) renderPieChart(el, field);
         });
+        numericFields.forEach((field) => {
+          const el = histCharts[field.key]?.getDom() as HTMLDivElement | undefined;
+          if (el) renderHistChart(el, field);
+        });
+        gridFields.forEach((field) => {
+          const el = gridCharts[field.key]?.getDom() as HTMLDivElement | undefined;
+          if (el) renderGridChart(el, field);
+        });
       }, 50);
+    }
+  });
+
+  // Le tableau croisé dépend aussi des champs choisis : effet dédié
+  $effect(() => {
+    if (crossTab && crossChartEl && !loading) {
+      setTimeout(renderCrossChart, 50);
     }
   });
 
@@ -236,7 +538,11 @@
       const d = new Date(a.date);
       return `${d.getDate()}/${d.getMonth() + 1}`;
     });
-    const counts = filteredActivity.map((a) => a.count);
+    let counts = filteredActivity.map((a) => a.count);
+    if (evolutionMode === "cumulative") {
+      let acc = 0;
+      counts = counts.map((c) => (acc += c));
+    }
     lineChart.setOption({
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value} réponse(s)</b>` },
       grid: { left: 12, right: 12, top: 12, bottom: 24, containLabel: true },
@@ -271,7 +577,6 @@
       return;
     }
 
-    const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
     chart.setOption({
       tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
       legend: { show: false },
@@ -305,6 +610,127 @@
         barMaxWidth: 18,
       }],
     });
+  }
+
+  /** Options ECharts communes aux heatmaps (rampe séquentielle verte, valeurs affichées). */
+  function heatmapOption(rowLabels: string[], colLabels: string[], matrix: number[][]) {
+    const maxVal = Math.max(1, ...matrix.flat());
+    // ECharts trace l'axe Y de bas en haut : on inverse pour lire de haut en bas
+    const data: [number, number, number][] = [];
+    matrix.forEach((row, ri) => {
+      row.forEach((v, ci) => data.push([ci, rowLabels.length - 1 - ri, v]));
+    });
+    return {
+      tooltip: {
+        formatter: (p: any) =>
+          `${rowLabels[rowLabels.length - 1 - p.value[1]]} × ${colLabels[p.value[0]]}<br/><b>${p.value[2]} réponse(s)</b>`,
+      },
+      grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
+      xAxis: { type: "category", data: colLabels, axisTick: { show: false }, axisLabel: { color: "#94a3b8", fontSize: 10 }, splitArea: { show: true } },
+      yAxis: { type: "category", data: [...rowLabels].reverse(), axisTick: { show: false }, axisLabel: { color: "#475569", fontSize: 11 }, splitArea: { show: true } },
+      visualMap: { show: false, min: 0, max: maxVal, inRange: { color: HEAT_COLORS } },
+      series: [{
+        type: "heatmap",
+        data,
+        label: { show: true, fontSize: 10, color: "#334155", formatter: (p: any) => (p.value[2] > 0 ? p.value[2] : "") },
+        itemStyle: { borderColor: "#ffffff", borderWidth: 2, borderRadius: 3 },
+      }],
+    };
+  }
+
+  /** Options ECharts communes aux barres simples vertes. */
+  function barOption(labels: string[], counts: number[], xLabelInterval: number | "auto" = "auto") {
+    return {
+      tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value} réponse(s)</b>` },
+      grid: { left: 8, right: 8, top: 8, bottom: 8, containLabel: true },
+      xAxis: { type: "category", data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: "#e2e8f0" } }, axisLabel: { color: "#94a3b8", fontSize: 10, interval: xLabelInterval } },
+      yAxis: { type: "value", minInterval: 1, axisLine: { show: false }, splitLine: { lineStyle: { color: "#f1f5f9" } }, axisLabel: { color: "#94a3b8", fontSize: 10 } },
+      series: [{
+        type: "bar",
+        data: counts,
+        itemStyle: { color: "#22c55e", borderRadius: [4, 4, 0, 0] },
+        barMaxWidth: 22,
+      }],
+    };
+  }
+
+  function renderDayHourChart() {
+    if (!echarts || !dayHourEl) return;
+    if (!dayHourChart) dayHourChart = echarts.init(dayHourEl, null, { renderer: "canvas" });
+    const hours = Array.from({ length: 24 }, (_, h) => `${h}h`);
+    dayHourChart.setOption(heatmapOption(WEEKDAYS, hours, dayHourMatrix));
+  }
+
+  function renderWeekdayChart() {
+    if (!echarts || !weekdayEl) return;
+    if (!weekdayChart) weekdayChart = echarts.init(weekdayEl, null, { renderer: "canvas" });
+    weekdayChart.setOption(barOption(WEEKDAYS, weekdayDist, 0));
+  }
+
+  function renderHourChart() {
+    if (!echarts || !hourEl) return;
+    if (!hourChart) hourChart = echarts.init(hourEl, null, { renderer: "canvas" });
+    hourChart.setOption(barOption(Array.from({ length: 24 }, (_, h) => `${h}h`), hourDist, 1));
+  }
+
+  function renderCrossChart() {
+    if (!echarts || !crossChartEl || !crossTab) return;
+    // Le conteneur est démonté/remonté selon la sélection : réinitialiser si le DOM a changé
+    if (crossChart && crossChart.getDom() !== crossChartEl) {
+      crossChart.dispose();
+      crossChart = null;
+    }
+    if (!crossChart) crossChart = echarts.init(crossChartEl, null, { renderer: "canvas" });
+    crossChart.setOption(
+      heatmapOption(
+        crossTab.rowCats.map((c) => c.label),
+        crossTab.colCats.map((c) => c.label),
+        crossTab.matrix
+      ),
+      true
+    );
+    // Le nombre de lignes (donc la hauteur du conteneur) peut changer avec le champ choisi
+    crossChart.resize();
+  }
+
+  function renderHistChart(el: HTMLDivElement, field: FieldDefinition) {
+    if (!echarts || !el) return;
+    let chart = histCharts[field.key];
+    if (!chart) {
+      chart = echarts.init(el, null, { renderer: "canvas" });
+      histCharts[field.key] = chart;
+    }
+    const hist = getHistogram(field);
+    if (!hist) {
+      chart.clear();
+      return;
+    }
+    chart.setOption(barOption(hist.labels, hist.counts));
+  }
+
+  function renderGridChart(el: HTMLDivElement, field: FieldDefinition) {
+    if (!echarts || !el) return;
+    let chart = gridCharts[field.key];
+    if (!chart) {
+      chart = echarts.init(el, null, { renderer: "canvas" });
+      gridCharts[field.key] = chart;
+    }
+    chart.setOption(heatmapOption(field.grid?.rows ?? [], field.grid?.columns ?? [], getGridMatrix(field)));
+  }
+
+  // Actions Svelte : montage paresseux des graphiques dynamiques
+  function initHistChart(el: HTMLDivElement, field: FieldDefinition) {
+    renderHistChart(el, field);
+    return {
+      destroy() { histCharts[field.key]?.dispose(); delete histCharts[field.key]; },
+    };
+  }
+
+  function initGridChart(el: HTMLDivElement, field: FieldDefinition) {
+    renderGridChart(el, field);
+    return {
+      destroy() { gridCharts[field.key]?.dispose(); delete gridCharts[field.key]; },
+    };
   }
 
   // --- Export graphiques en image ---
@@ -435,23 +861,214 @@
     </div>
   </div>
 
+  <!-- ── KPI avancés ── -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+    <div class="card flex flex-col gap-1 items-center text-center py-5">
+      <span class="text-3xl font-black text-[color:var(--ink)]">{avgPerActiveDay}</span>
+      <span class="text-xs font-semibold text-[color:var(--muted)]">Réponses / jour actif</span>
+    </div>
+    <div class="card flex flex-col gap-1 items-center text-center py-5">
+      {#if peakDay}
+        <span class="text-3xl font-black text-[color:var(--ink)]">{peakDay.count}</span>
+        <span class="text-xs font-semibold text-[color:var(--muted)]">
+          Record le {new Date(peakDay.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+        </span>
+      {:else}
+        <span class="text-3xl font-black text-[color:var(--ink)]">—</span>
+        <span class="text-xs font-semibold text-[color:var(--muted)]">Jour record</span>
+      {/if}
+    </div>
+    <div class="card flex flex-col gap-1 items-center text-center py-5">
+      <span class="text-3xl font-black text-[color:var(--ink)]">{peakHour ? `${peakHour.hour}h–${peakHour.hour + 1}h` : "—"}</span>
+      <span class="text-xs font-semibold text-[color:var(--muted)]">Heure de pointe</span>
+    </div>
+    <div class="card flex flex-col gap-1 items-center text-center py-5">
+      <span class="text-3xl font-black text-[color:var(--ink)]">{completionRate != null ? `${completionRate}%` : "—"}</span>
+      <span class="text-xs font-semibold text-[color:var(--muted)]">Réponses complètes (obligatoires)</span>
+    </div>
+  </div>
+
   <!-- ── Évolution des réponses ── -->
   <div class="card mb-6 animate-fade-in">
-    <div class="flex items-center gap-2 mb-4">
+    <div class="flex items-center gap-2 mb-4 flex-wrap">
       <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50 text-green-600">
         <IconChartLine size={18} />
       </span>
       <h2 class="font-bold text-[color:var(--ink)]">Évolution des réponses</h2>
+      <div class="ml-auto flex items-center gap-2">
+        <div class="flex border border-[color:var(--line)] rounded-lg p-0.5 bg-slate-50">
+          <button
+            type="button"
+            class="px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer"
+            class:bg-white={evolutionMode === "daily"}
+            class:shadow-sm={evolutionMode === "daily"}
+            class:text-[color:var(--ink)]={evolutionMode === "daily"}
+            class:text-[color:var(--muted)]={evolutionMode !== "daily"}
+            onclick={() => evolutionMode = "daily"}
+          >
+            Quotidien
+          </button>
+          <button
+            type="button"
+            class="px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer"
+            class:bg-white={evolutionMode === "cumulative"}
+            class:shadow-sm={evolutionMode === "cumulative"}
+            class:text-[color:var(--ink)]={evolutionMode === "cumulative"}
+            class:text-[color:var(--muted)]={evolutionMode !== "cumulative"}
+            onclick={() => evolutionMode = "cumulative"}
+          >
+            Cumulé
+          </button>
+        </div>
+        <button
+          type="button"
+          class="btn-secondary text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
+          onclick={() => exportChartImage(lineChart, 'evolution_reponses')}
+        >
+          <IconDownload size={13} /> PNG
+        </button>
+      </div>
+    </div>
+    <div bind:this={lineChartEl} class="h-52 w-full"></div>
+  </div>
+
+  <!-- ── Activité temporelle croisée ── -->
+  <div class="card mb-6 animate-fade-in">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+        <IconTrend size={18} />
+      </span>
+      <h2 class="font-bold text-[color:var(--ink)]">Quand répond-on ? (jour × heure)</h2>
       <button
         type="button"
         class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
-        onclick={() => exportChartImage(lineChart, 'evolution_reponses')}
+        onclick={() => exportChartImage(dayHourChart, 'activite_jour_heure')}
       >
         <IconDownload size={13} /> PNG
       </button>
     </div>
-    <div bind:this={lineChartEl} class="h-52 w-full"></div>
+    <div bind:this={dayHourEl} class="h-64 w-full"></div>
+    <div class="grid gap-4 sm:grid-cols-2 mt-4 pt-4 border-t border-[color:var(--line)]">
+      <div>
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Par jour de la semaine</h3>
+        <div bind:this={weekdayEl} class="h-36 w-full"></div>
+      </div>
+      <div>
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Par heure de la journée</h3>
+        <div bind:this={hourEl} class="h-36 w-full"></div>
+      </div>
+    </div>
   </div>
+
+  <!-- ── Tableau croisé dynamique ── -->
+  {#if crossFields.length >= 2}
+    <div class="card mb-6 animate-fade-in">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+          <IconCheckboxGrid size={18} />
+        </span>
+        <h2 class="font-bold text-[color:var(--ink)]">Tableau croisé</h2>
+        <button
+          type="button"
+          class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
+          onclick={() => exportChartImage(crossChart, 'tableau_croise')}
+        >
+          <IconDownload size={13} /> PNG
+        </button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Lignes :</label>
+          <select class="input text-xs !w-52 !py-1" bind:value={crossRowKey}>
+            {#each crossFields as f (f.key)}
+              <option value={f.key}>{f.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Colonnes :</label>
+          <select class="input text-xs !w-52 !py-1" bind:value={crossColKey}>
+            {#each crossFields as f (f.key)}
+              <option value={f.key}>{f.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="flex border border-[color:var(--line)] rounded-lg p-0.5 bg-slate-50">
+          {#each [["count", "Effectifs"], ["row", "% ligne"], ["col", "% colonne"], ["total", "% total"]] as [mode, label] (mode)}
+            <button
+              type="button"
+              class="px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer"
+              class:bg-white={crossMode === mode}
+              class:shadow-sm={crossMode === mode}
+              class:text-[color:var(--ink)]={crossMode === mode}
+              class:text-[color:var(--muted)]={crossMode !== mode}
+              onclick={() => crossMode = mode as typeof crossMode}
+            >
+              {label}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      {#if !crossTab}
+        <p class="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 w-fit">
+          Choisissez deux champs différents pour croiser leurs réponses.
+        </p>
+      {:else if crossTab.grand === 0}
+        <p class="text-xs text-[color:var(--muted)] text-center py-6">Aucune réponse à croiser sur ces deux champs.</p>
+      {:else}
+        <div
+          bind:this={crossChartEl}
+          style="height: {Math.max(200, crossTab.rowCats.length * 44 + 60)}px"
+          class="w-full mb-4"
+        ></div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="border-b-2 border-[color:var(--line)]">
+                <th class="text-left py-2 pr-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">
+                  {crossTab.rowField.label} \ {crossTab.colField.label}
+                </th>
+                {#each crossTab.colCats as col (col.value)}
+                  <th class="text-right py-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide max-w-[120px] truncate">{col.label}</th>
+                {/each}
+                <th class="text-right py-2 pl-3 text-xs font-black text-[color:var(--ink)] uppercase tracking-wide">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each crossTab.rowCats as rowCat, ri (rowCat.value)}
+                <tr class="border-b border-[color:var(--line)] last:border-0">
+                  <td class="py-2 pr-3 font-medium text-[color:var(--ink)] max-w-[160px] truncate">{rowCat.label}</td>
+                  {#each crossTab.colCats as _, ci}
+                    {@const count = crossTab.matrix[ri][ci]}
+                    {@const alpha = crossTab.maxCell > 0 ? (count / crossTab.maxCell) * 0.3 : 0}
+                    <td class="py-2 px-3 text-right text-[color:var(--ink)] tabular-nums" style="background:rgba(34,197,94,{alpha})" title="{count} réponse(s)">
+                      {crossCellText(count, ri, ci)}
+                    </td>
+                  {/each}
+                  <td class="py-2 pl-3 text-right font-bold text-[color:var(--ink)] tabular-nums">{crossTab.rowTotals[ri]}</td>
+                </tr>
+              {/each}
+            </tbody>
+            <tfoot>
+              <tr class="border-t-2 border-[color:var(--line)]">
+                <td class="py-2 pr-3 text-xs font-black text-[color:var(--ink)] uppercase tracking-wide">Total</td>
+                {#each crossTab.colTotals as t}
+                  <td class="py-2 px-3 text-right font-bold text-[color:var(--ink)] tabular-nums">{t}</td>
+                {/each}
+                <td class="py-2 pl-3 text-right font-black text-[color:var(--ink)] tabular-nums">{crossTab.grand}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p class="mt-3 text-[11px] text-[color:var(--muted)]">
+          {crossTab.paired} réponse(s) renseignent les deux champs. Les champs à choix multiples comptent une occurrence par option cochée.
+        </p>
+      {/if}
+    </div>
+  {/if}
 
   <!-- ── Taux de remplissage ── -->
   {#if schema.length > 0}
@@ -507,7 +1124,6 @@
                 ></div>
                 <div class="mt-3 space-y-1.5">
                   {#each dist.slice(0, 4) as item, i}
-                    {@const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4"]}
                     <div class="flex items-center gap-2 text-xs">
                       <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{COLORS[i % COLORS.length]}"></span>
                       <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
@@ -539,9 +1155,13 @@
               <th class="text-left pb-2 pr-4 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Champ</th>
               <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">N</th>
               <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Min</th>
+              <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Q1</th>
+              <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Médiane</th>
+              <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Q3</th>
               <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Max</th>
               <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Moyenne</th>
-              <th class="text-right pb-2 pl-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Médiane</th>
+              <th class="text-right pb-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Écart-type</th>
+              <th class="text-right pb-2 pl-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">Somme</th>
             </tr>
           </thead>
           <tbody>
@@ -550,18 +1170,121 @@
               <tr class="border-b border-[color:var(--line)] last:border-0">
                 <td class="py-2.5 pr-4 font-medium text-[color:var(--ink)] truncate max-w-[160px]">{field.label}</td>
                 {#if stats}
-                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)]">{stats.count}</td>
-                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)]">{stats.min}</td>
-                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)]">{stats.max}</td>
-                  <td class="py-2.5 px-3 text-right font-semibold text-[color:var(--ink)]">{stats.avg}</td>
-                  <td class="py-2.5 pl-3 text-right text-[color:var(--muted)]">{stats.median}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.count}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.min}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.q1}</td>
+                  <td class="py-2.5 px-3 text-right font-semibold text-[color:var(--ink)] tabular-nums">{stats.median}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.q3}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.max}</td>
+                  <td class="py-2.5 px-3 text-right font-semibold text-[color:var(--ink)] tabular-nums">{stats.avg}</td>
+                  <td class="py-2.5 px-3 text-right text-[color:var(--muted)] tabular-nums">{stats.stdDev}</td>
+                  <td class="py-2.5 pl-3 text-right text-[color:var(--muted)] tabular-nums">{stats.sum}</td>
                 {:else}
-                  <td colspan="5" class="py-2.5 px-3 text-[color:var(--muted)] text-center text-xs italic">Aucune donnée</td>
+                  <td colspan="9" class="py-2.5 px-3 text-[color:var(--muted)] text-center text-xs italic">Aucune donnée</td>
                 {/if}
               </tr>
             {/each}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- ── Histogrammes ── -->
+    <div class="mb-6 animate-fade-in">
+      <h2 class="font-bold text-[color:var(--ink)] mb-4 flex items-center gap-2">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+          <IconChartBar size={18} />
+        </span>
+        Histogrammes des champs numériques
+      </h2>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {#each numericFields as field (field.key)}
+          <div class="card">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
+              <button
+                type="button"
+                class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
+                onclick={() => exportChartImage(histCharts[field.key], 'histogramme_' + field.key)}
+              >
+                <IconDownload size={10} /> PNG
+              </button>
+            </div>
+            {#if getHistogram(field)}
+              <div use:initHistChart={field} class="h-40 w-full"></div>
+            {:else}
+              <p class="text-xs text-[color:var(--muted)] text-center py-4">Aucune donnée</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── Corrélations ── -->
+  {#if correlations.length > 0}
+    <div class="card mb-6 animate-fade-in">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+          <IconFormula size={18} />
+        </span>
+        <h2 class="font-bold text-[color:var(--ink)]">Corrélations entre champs numériques</h2>
+      </div>
+      <div class="space-y-2">
+        {#each correlations as c (c.a.key + c.b.key)}
+          {@const pct = Math.round(Math.abs(c.r) * 100)}
+          <div class="flex items-center gap-3 text-sm">
+            <span class="flex-1 truncate text-[color:var(--ink)]" title="{c.a.label} × {c.b.label}">
+              {c.a.label} <span class="text-[color:var(--muted)]">×</span> {c.b.label}
+            </span>
+            <div class="w-40 h-2.5 bg-slate-100 rounded-full overflow-hidden shrink-0" title="n = {c.n} paires">
+              <div
+                class="h-full rounded-full"
+                style="width:{pct}%;background:{c.r >= 0 ? '#3b82f6' : '#ef4444'}"
+              ></div>
+            </div>
+            <span class="w-16 text-right font-bold tabular-nums shrink-0" style="color:{c.r >= 0 ? '#1d4ed8' : '#b91c1c'}">
+              {c.r >= 0 ? "+" : ""}{Math.round(c.r * 100) / 100}
+            </span>
+          </div>
+        {/each}
+      </div>
+      <p class="mt-3 text-[11px] text-[color:var(--muted)]">
+        Coefficient de Pearson entre −1 et +1 : <span class="font-semibold" style="color:#1d4ed8">bleu = corrélation positive</span>,
+        <span class="font-semibold" style="color:#b91c1c">rouge = négative</span>. Calculé sur les réponses renseignant les deux champs (minimum 3).
+      </p>
+    </div>
+  {/if}
+
+  <!-- ── Grilles ── -->
+  {#if gridFields.length > 0}
+    <div class="mb-6 animate-fade-in">
+      <h2 class="font-bold text-[color:var(--ink)] mb-4 flex items-center gap-2">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <IconCheckboxGrid size={18} />
+        </span>
+        Réponses des grilles
+      </h2>
+      <div class="grid gap-4 lg:grid-cols-2">
+        {#each gridFields as field (field.key)}
+          <div class="card">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
+              <button
+                type="button"
+                class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
+                onclick={() => exportChartImage(gridCharts[field.key], 'grille_' + field.key)}
+              >
+                <IconDownload size={10} /> PNG
+              </button>
+            </div>
+            <div
+              use:initGridChart={field}
+              style="height: {Math.max(160, (field.grid?.rows.length ?? 0) * 40 + 50)}px"
+              class="w-full"
+            ></div>
+          </div>
+        {/each}
       </div>
     </div>
   {/if}
