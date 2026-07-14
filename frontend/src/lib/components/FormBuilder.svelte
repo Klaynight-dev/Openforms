@@ -166,6 +166,41 @@
     field.options = field.options.filter((_, i) => i !== idx);
   }
 
+  // --- Drag & drop for reordering options (nested inside a draggable field card,
+  // so events must be stopped from bubbling up to the card's own drag handlers) ---
+  let dragOptionIndex = $state<number | null>(null);
+  let dragOverOptionIndex = $state<number | null>(null);
+
+  function onOptionDragStart(e: DragEvent, idx: number) {
+    e.stopPropagation();
+    dragOptionIndex = idx;
+  }
+
+  function onOptionDragOver(e: DragEvent, idx: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragOverOptionIndex = idx;
+  }
+
+  function onOptionDrop(e: DragEvent, field: FieldDefinition, idx: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragOptionIndex !== null && dragOptionIndex !== idx) {
+      const opts = [...(field.options ?? [])];
+      const [moved] = opts.splice(dragOptionIndex, 1);
+      opts.splice(idx, 0, moved);
+      field.options = opts;
+    }
+    dragOptionIndex = null;
+    dragOverOptionIndex = null;
+  }
+
+  function onOptionDragEnd(e: DragEvent) {
+    e.stopPropagation();
+    dragOptionIndex = null;
+    dragOverOptionIndex = null;
+  }
+
   // Helpers grid
   function gridText(arr: string[] | undefined): string {
     return (arr ?? []).join("\n");
@@ -348,17 +383,29 @@
                 <label class="label text-xs">Options de choix</label>
                 <div class="space-y-2">
                   {#each field.options ?? [] as opt, oi}
-                    <div class="flex items-center gap-2">
-                      <span class="text-slate-300"><FieldIcon size={14} /></span>
-                      <input 
-                        class="input text-xs !py-1 flex-1" 
+                    <div
+                      class="flex items-center gap-2 rounded-lg transition-colors"
+                      class:bg-brand-50={dragOverOptionIndex === oi && dragOptionIndex !== null && dragOptionIndex !== oi}
+                      ondragover={(e) => onOptionDragOver(e, oi)}
+                      ondrop={(e) => onOptionDrop(e, field, oi)}
+                      role="none"
+                    >
+                      <span
+                        class="text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing shrink-0"
+                        draggable="true"
+                        ondragstart={(e) => onOptionDragStart(e, oi)}
+                        ondragend={onOptionDragEnd}
+                        title="Glisser pour réorganiser"
+                      ><IconDrag size={14} /></span>
+                      <input
+                        class="input text-xs !py-1 flex-1"
                         placeholder={`Option ${oi + 1}`}
                         bind:value={opt.label}
                         oninput={() => opt.value = opt.label}
                       />
-                      <button 
-                        type="button" 
-                        class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 shrink-0" 
+                      <button
+                        type="button"
+                        class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 shrink-0"
                         onclick={() => removeOption(field, oi)}
                         title="Supprimer cette option"
                       >
