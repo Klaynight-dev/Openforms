@@ -400,6 +400,20 @@
               </div>
             {/if}
 
+            <!-- Date / DateTime editor options -->
+            {#if field.type === "date" || field.type === "datetime"}
+              <div class="pt-4 border-t border-slate-100">
+                <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    bind:checked={field.allowAutoToday}
+                    class="rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
+                  />
+                  <span>Afficher un bouton de remplissage automatique ({field.type === "date" ? "date du jour" : "date et heure actuelles"})</span>
+                </label>
+              </div>
+            {/if}
+
             <!-- File Upload editor options -->
             {#if field.type === "file"}
               <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">

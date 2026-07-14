@@ -50,6 +50,8 @@ export interface FieldDefinition {
   options?: FieldOption[];
   allowOther?: boolean;
   requireJustification?: boolean;
+  /** Champs "date"/"datetime" : afficher un bouton de remplissage auto avec la date/l'heure actuelle. */
+  allowAutoToday?: boolean;
   condition?: FieldCondition;
   validation?: FieldValidation;
   accept?: string[];

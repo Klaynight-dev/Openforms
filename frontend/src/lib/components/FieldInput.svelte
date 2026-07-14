@@ -61,6 +61,13 @@
     value = arr;
   }
 
+  function fillWithNow() {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    value = field.type === "date" ? datePart : `${datePart}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+
   function gridSet(rowLabel: string, colValue: string) {
     const obj = (typeof value === "object" && value ? { ...(value as Record<string, string>) } : {}) as Record<
       string,
@@ -251,7 +258,14 @@
       bind:value
     />
   {:else if field.type === "date" || field.type === "datetime"}
-    <input id={field.key} class="input" type={field.type === "date" ? "date" : "datetime-local"} bind:value />
+    <div class="flex items-center gap-2">
+      <input id={field.key} class="input" type={field.type === "date" ? "date" : "datetime-local"} bind:value />
+      {#if field.allowAutoToday}
+        <button type="button" class="btn-secondary !py-1.5 px-3 text-xs shrink-0" onclick={fillWithNow}>
+          {field.type === "date" ? "Aujourd'hui" : "Maintenant"}
+        </button>
+      {/if}
+    </div>
   {:else if field.type === "select"}
     <select
       id={field.key}

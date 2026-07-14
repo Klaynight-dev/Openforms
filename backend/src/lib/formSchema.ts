@@ -60,6 +60,8 @@ export const FieldDefinitionSchema = t.Object({
   options: t.Optional(t.Array(OptionSchema, { maxItems: 200 })),
   allowOther: t.Optional(t.Boolean()),
   requireJustification: t.Optional(t.Boolean()),
+  /** Champs "date"/"datetime" : afficher un bouton de remplissage auto avec la date/l'heure actuelle. */
+  allowAutoToday: t.Optional(t.Boolean()),
   condition: ConditionSchema,
   validation: ValidationSchema,
   /** Champ "file" : types MIME acceptés + taille max en octets. */
