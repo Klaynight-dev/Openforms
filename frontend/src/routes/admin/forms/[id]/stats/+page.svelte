@@ -47,7 +47,6 @@
   // ECharts instances
   let lineChartEl = $state<HTMLDivElement>();
   let lineChart: ECharts | null = null;
-  let pieChartEls: Record<string, HTMLDivElement> = {};
   let pieCharts: Record<string, ECharts> = {};
   let fillRateChartEl = $state<HTMLDivElement>();
   let fillRateChart: ECharts | null = null;
@@ -183,7 +182,7 @@
     if (!opt) return;
     opt.color = color;
     schema = [...schema];
-    const el = pieChartEls[field.key];
+    const el = pieCharts[field.key]?.getDom() as HTMLDivElement | undefined;
     if (el) renderPieChart(el, field);
     try {
       await persistSchema(schema);
@@ -569,7 +568,7 @@
         renderWeekdayChart();
         renderHourChart();
         choiceFields.forEach((field) => {
-          const el = pieChartEls[field.key];
+          const el = pieCharts[field.key]?.getDom() as HTMLDivElement | undefined;
           if (el) renderPieChart(el, field);
         });
         numericFields.forEach((field) => {
@@ -1199,8 +1198,8 @@
                   use:initPieChart={field}
                   class="h-40 w-full"
                 ></div>
-                <div class="mt-3 space-y-1.5">
-                  {#each dist.slice(0, 4) as item, i}
+                <div class="mt-3 space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {#each dist as item, i}
                     {@const isRealOption = field.options?.some((o) => o.value === item.value) ?? false}
                     <div class="flex items-center gap-2 text-xs">
                       {#if canEdit && isRealOption}
