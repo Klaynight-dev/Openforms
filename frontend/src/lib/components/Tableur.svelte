@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { JUSTIFICATION_SUFFIX, type FieldDefinition, type MetaColumn, type ResponseRow } from "../types.ts";
+  import { JUSTIFICATION_SUFFIX, type FieldDefinition, type FieldOption, type MetaColumn, type ResponseRow } from "../types.ts";
   import { api } from "../api/client.ts";
   import { evaluateRowFormula, evaluateAggregate } from "../formulaEngine.ts";
+  import MultiSelectFilter from "./MultiSelectFilter.svelte";
   import {
     IconSearch,
     IconSortAsc,
@@ -43,6 +44,10 @@
     formula?: string;
     editable: boolean;
     numeric: boolean;
+    fieldType?: string;
+    /** "single" pour radio/select, "multi" pour checkbox : pilote l'éditeur et le filtre en liste déroulante. */
+    choiceType?: "single" | "multi";
+    options?: FieldOption[];
   }
 
   // Colonnes = champs du formulaire + colonnes de métadonnées.
@@ -50,12 +55,17 @@
     ...fields
       .filter((f) => f.type !== "file")
       .flatMap((f): Column[] => {
+        const choiceType: Column["choiceType"] =
+          f.type === "checkbox" ? "multi" : f.type === "radio" || f.type === "select" ? "single" : undefined;
         const col: Column = {
           key: f.key,
           label: f.label,
           source: "field" as const,
           editable: canEdit && f.type !== "grid",
           numeric: f.type === "number",
+          fieldType: f.type,
+          choiceType,
+          options: choiceType ? f.options : undefined,
         };
         if (!f.requireJustification) return [col];
         return [
@@ -82,11 +92,14 @@
 
   // --- État interactif ---
   let searchQuery = $state("");
-  let columnFilters = $state<Record<string, string>>({});
+  // Filtres colonnes texte/nombre (sous-chaîne) et filtres colonnes à choix (valeurs sélectionnées).
+  let textFilters = $state<Record<string, string>>({});
+  let choiceFilters = $state<Record<string, string[]>>({});
   let sortKey = $state("");
   let sortDir = $state<"asc" | "desc" | null>(null);
   let editing = $state<{ rowId: string; key: string } | null>(null);
   let editValue = $state("");
+  let editValues = $state<string[]>([]);
   let aggregates = $state<Record<string, string>>({}); // colKey -> "SUM" | "AVG" | ...
   let busy = $state(false);
   let message = $state<string | null>(null);
@@ -149,12 +162,20 @@
         columns.some((c) => displayCell(row, c).toLowerCase().includes(q)),
       );
     }
-    for (const [key, filter] of Object.entries(columnFilters)) {
-      const f = filter.trim().toLowerCase();
-      if (!f) continue;
-      const col = columns.find((c) => c.key === key);
-      if (!col) continue;
-      data = data.filter((row) => displayCell(row, col).toLowerCase().includes(f));
+    for (const col of columns) {
+      if (col.choiceType) {
+        const sel = choiceFilters[col.key];
+        if (!sel || sel.length === 0) continue;
+        data = data.filter((row) => {
+          const raw = rawValue(row, col);
+          const vals = Array.isArray(raw) ? raw.map(String) : raw != null ? [String(raw)] : [];
+          return vals.some((v) => sel.includes(v));
+        });
+      } else {
+        const f = (textFilters[col.key] ?? "").trim().toLowerCase();
+        if (!f) continue;
+        data = data.filter((row) => displayCell(row, col).toLowerCase().includes(f));
+      }
     }
     if (sortKey && sortDir) {
       const col = columns.find((c) => c.key === sortKey);
@@ -188,7 +209,23 @@
   function startEdit(row: ResponseRow, col: Column) {
     if (!col.editable) return;
     editing = { rowId: row.id, key: col.key };
-    editValue = displayCell(row, col);
+    if (col.choiceType === "multi") {
+      const raw = rawValue(row, col);
+      editValues = Array.isArray(raw) ? raw.map(String) : raw != null && raw !== "" ? [String(raw)] : [];
+    } else if (col.choiceType === "single") {
+      const raw = rawValue(row, col);
+      editValue = raw == null ? "" : String(raw);
+    } else {
+      editValue = displayCell(row, col);
+    }
+  }
+
+  function toggleEditValue(value: string) {
+    editValues = editValues.includes(value) ? editValues.filter((v) => v !== value) : [...editValues, value];
+  }
+
+  function cancelEdit() {
+    editing = null;
   }
 
   async function commitEdit() {
@@ -199,12 +236,12 @@
     editing = null;
     if (!col || !row) return;
 
-    let value: unknown = editValue;
-    if (col.numeric) value = editValue === "" ? null : Number(editValue);
-    else {
-      // Si l'utilisateur a saisi l'intitulé d'une option, on stocke la valeur correspondante.
-      const match = Object.entries(optionLabels[col.key] ?? {}).find(([, label]) => label === editValue);
-      if (match) value = match[0];
+    let value: unknown;
+    if (col.choiceType === "multi") {
+      value = [...editValues];
+    } else {
+      value = editValue;
+      if (col.numeric) value = editValue === "" ? null : Number(editValue);
     }
 
     // Mise à jour optimiste locale.
@@ -224,10 +261,10 @@
     if (e.key === "Escape") editing = null;
   }
 
-  // Action de focus automatique à l'apparition de l'input.
-  function focus(node: HTMLInputElement) {
+  // Action de focus automatique à l'apparition de l'input/select.
+  function focus(node: HTMLElement) {
     node.focus();
-    node.select();
+    (node as HTMLInputElement).select?.();
   }
 
   // --- Lignes : ajout / suppression ---
@@ -498,7 +535,17 @@
                   <button class="col-del" title="Retirer la colonne" onclick={() => removeColumn(col.key)} type="button" aria-label="Retirer la colonne"><IconClose size={13} /></button>
                 {/if}
               </div>
-              <input class="col-filter" placeholder="filtrer…" bind:value={columnFilters[col.key]} />
+              {#if col.choiceType}
+                <div class="col-filter-msf">
+                  <MultiSelectFilter
+                    options={col.options ?? []}
+                    bind:selected={choiceFilters[col.key]}
+                    label="Filtrer"
+                  />
+                </div>
+              {:else}
+                <input class="col-filter" placeholder="filtrer…" bind:value={textFilters[col.key]} />
+              {/if}
             </th>
           {/each}
           <th class="meta-th">Soumis le</th>
@@ -516,14 +563,48 @@
                 title={col.editable ? "Double-cliquez pour modifier" : ""}
               >
                 {#if editing?.rowId === row.id && editing?.key === col.key}
-                  <input
-                    class="cell-editor"
-                    type={col.numeric ? "number" : "text"}
-                    bind:value={editValue}
-                    onblur={commitEdit}
-                    onkeydown={editKeydown}
-                    use:focus
-                  />
+                  {#if col.choiceType === "single"}
+                    <select
+                      class="cell-editor"
+                      value={editValue}
+                      onchange={(e) => { editValue = (e.target as HTMLSelectElement).value; commitEdit(); }}
+                      use:focus
+                    >
+                      <option value="">—</option>
+                      {#if editValue && !(col.options ?? []).some((o) => o.value === editValue)}
+                        <option value={editValue}>{formatCell(editValue)}</option>
+                      {/if}
+                      {#each col.options ?? [] as opt}
+                        <option value={opt.value}>{opt.label}</option>
+                      {/each}
+                    </select>
+                  {:else if col.choiceType === "multi"}
+                    <div class="cell-editor cell-editor-multi">
+                      <div class="multi-list">
+                        {#each col.options ?? [] as opt}
+                          <label class="multi-item">
+                            <input type="checkbox" checked={editValues.includes(opt.value)} onchange={() => toggleEditValue(opt.value)} />
+                            <span>{opt.label}</span>
+                          </label>
+                        {/each}
+                      </div>
+                      <div class="multi-actions">
+                        <button type="button" class="btn-primary !py-0.5 !px-2 text-xs" onclick={commitEdit}>OK</button>
+                        <button type="button" class="btn-secondary !py-0.5 !px-2 text-xs" onclick={cancelEdit}>Annuler</button>
+                      </div>
+                    </div>
+                  {:else}
+                    <input
+                      class="cell-editor"
+                      type={col.numeric ? "number" : "text"}
+                      bind:value={editValue}
+                      onblur={commitEdit}
+                      onkeydown={editKeydown}
+                      use:focus
+                    />
+                  {/if}
+                {:else if col.fieldType === "signature" && typeof rawValue(row, col) === "string" && (rawValue(row, col) as string).startsWith("data:image/")}
+                  <img src={rawValue(row, col) as string} alt="Signature" class="sig-thumb" />
                 {:else}
                   <span class="cell-content">{displayCell(row, col)}</span>
                 {/if}
@@ -582,21 +663,61 @@
               <div class="flex flex-col border-b border-slate-50 pb-2 last:border-0 last:pb-0">
                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{col.label}</span>
                 {#if editing?.rowId === row.id && editing?.key === col.key}
-                  <div class="flex items-center gap-1.5 mt-1">
-                    <input 
-                      class="input !py-1.5 text-xs font-semibold" 
-                      type={col.numeric ? "number" : "text"} 
-                      bind:value={editValue}
-                      onkeydown={editKeydown}
-                      use:focus 
-                    />
-                    <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={commitEdit}>OK</button>
-                    <button class="btn-secondary !px-3 !py-1.5 text-xs text-slate-500" onclick={() => editing = null}>Fermer</button>
-                  </div>
+                  {#if col.choiceType === "single"}
+                    <div class="flex items-center gap-1.5 mt-1">
+                      <select class="input !py-1.5 text-xs font-semibold flex-1" bind:value={editValue} use:focus>
+                        <option value="">—</option>
+                        {#if editValue && !(col.options ?? []).some((o) => o.value === editValue)}
+                          <option value={editValue}>{formatCell(editValue)}</option>
+                        {/if}
+                        {#each col.options ?? [] as opt}
+                          <option value={opt.value}>{opt.label}</option>
+                        {/each}
+                      </select>
+                      <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={commitEdit}>OK</button>
+                      <button class="btn-secondary !px-3 !py-1.5 text-xs text-slate-500" onclick={cancelEdit}>Fermer</button>
+                    </div>
+                  {:else if col.choiceType === "multi"}
+                    <div class="mt-1 space-y-2">
+                      <div class="multi-list multi-list-card">
+                        {#each col.options ?? [] as opt}
+                          <label class="multi-item">
+                            <input type="checkbox" checked={editValues.includes(opt.value)} onchange={() => toggleEditValue(opt.value)} />
+                            <span>{opt.label}</span>
+                          </label>
+                        {/each}
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={commitEdit}>OK</button>
+                        <button class="btn-secondary !px-3 !py-1.5 text-xs text-slate-500" onclick={cancelEdit}>Fermer</button>
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="flex items-center gap-1.5 mt-1">
+                      <input
+                        class="input !py-1.5 text-xs font-semibold"
+                        type={col.numeric ? "number" : "text"}
+                        bind:value={editValue}
+                        onkeydown={editKeydown}
+                        use:focus
+                      />
+                      <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={commitEdit}>OK</button>
+                      <button class="btn-secondary !px-3 !py-1.5 text-xs text-slate-500" onclick={cancelEdit}>Fermer</button>
+                    </div>
+                  {/if}
+                {:else if col.fieldType === "signature"}
+                  {@const sigVal = rawValue(row, col)}
+                  {#if sigVal && typeof sigVal === "string" && sigVal.startsWith("data:image/")}
+                    <div class="mt-1 border border-slate-200 rounded-lg p-1.5 bg-slate-50 w-fit max-w-[220px]">
+                      <img src={sigVal} alt="Signature" class="max-h-16 object-contain" />
+                    </div>
+                  {:else}
+                    <span class="text-xs italic text-slate-400">— Aucune signature —</span>
+                  {/if}
                 {:else}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div 
+                  <div
                     class="text-sm text-[color:var(--ink)] font-semibold min-h-[1.5rem] py-1 px-1.5 rounded transition hover:bg-brand-50/50 cursor-pointer"
                     onclick={() => { if (col.editable) startEdit(row, col); }}
                     title={col.editable ? "Cliquez pour modifier" : ""}
@@ -760,6 +881,9 @@
       padding: 0.15rem 0.3rem;
       font-weight: normal;
     }
+    .col-filter-msf {
+      margin-top: 0.25rem;
+    }
     .idx {
       background: #f9fafb;
       color: #9ca3af;
@@ -790,6 +914,26 @@
       box-sizing: border-box;
       outline: none;
       font-size: 0.82rem;
+    }
+    .cell-editor-multi {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      background: white;
+      height: auto;
+      min-height: 100%;
+      z-index: 5;
+      box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.15);
+    }
+    .sig-thumb {
+      max-height: 28px;
+      max-width: 100%;
+      object-fit: contain;
+      display: block;
+      background: white;
+      border: 1px solid m.$gray-border;
+      border-radius: 4px;
+      padding: 2px;
     }
     tbody tr:hover td:not(.idx) {
       background: #f0fdf4;
@@ -825,5 +969,34 @@
   }
   .hidden {
     display: none !important;
+  }
+  .multi-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: 140px;
+    overflow-y: auto;
+    @include m.subtle-scroll;
+  }
+  .multi-list-card {
+    max-height: 220px;
+    border: 1px solid m.$gray-border;
+    border-radius: 0.5rem;
+    padding: 0.4rem;
+  }
+  .multi-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    color: #334155;
+    input {
+      accent-color: m.$brand;
+    }
+  }
+  .multi-actions {
+    display: flex;
+    gap: 0.35rem;
   }
 </style>

@@ -25,6 +25,8 @@ export type FieldType =
 export interface FieldOption {
   value: string;
   label: string;
+  /** Couleur personnalisée (hex) utilisée pour représenter ce choix dans les statistiques (camembert...). */
+  color?: string;
 }
 
 export interface FieldValidation {

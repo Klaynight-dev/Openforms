@@ -4,7 +4,8 @@
   import { page } from "$app/stores";
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
-  import type { FieldDefinition, ResponseRow } from "$lib/types.ts";
+  import type { FieldDefinition, ResponseRow, FormDetail } from "$lib/types.ts";
+  import MultiSelectFilter from "$lib/components/MultiSelectFilter.svelte";
   import {
     IconBack,
     IconChartBar,
@@ -35,6 +36,13 @@
   let schema = $state<FieldDefinition[]>([]);
   let rows = $state<ResponseRow[]>([]);
   let activity = $state<{ date: string; count: number }[]>([]);
+  let formDetail = $state<FormDetail | null>(null);
+  let canEdit = $state(false);
+  let saveMessage = $state<string | null>(null);
+
+  // Filtres additionnels : valeurs sélectionnées par champ à choix.
+  let extraFilters = $state<Record<string, string[]>>({});
+  let hasExtraFilters = $derived(Object.values(extraFilters).some((v) => v.length > 0));
 
   // ECharts instances
   let lineChartEl = $state<HTMLDivElement>();
@@ -67,13 +75,24 @@
   let filterEndDate = $state("");
 
   let filteredRows = $derived.by<ResponseRow[]>(() => {
-    if (!filterStartDate && !filterEndDate) return rows;
-    const start = filterStartDate ? new Date(filterStartDate).getTime() : 0;
-    const end = filterEndDate ? new Date(filterEndDate).getTime() : Infinity;
-    return rows.filter((r) => {
-      const t = new Date(r.submittedAt).getTime();
-      return t >= start && t <= end;
-    });
+    let data = rows;
+    if (filterStartDate || filterEndDate) {
+      const start = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+      const end = filterEndDate ? new Date(filterEndDate).getTime() : Infinity;
+      data = data.filter((r) => {
+        const t = new Date(r.submittedAt).getTime();
+        return t >= start && t <= end;
+      });
+    }
+    for (const [key, selected] of Object.entries(extraFilters)) {
+      if (!selected || selected.length === 0) continue;
+      data = data.filter((r) => {
+        const v = r.values[key];
+        const vals = Array.isArray(v) ? v.map(String) : v != null ? [String(v)] : [];
+        return vals.some((x) => selected.includes(x));
+      });
+    }
+    return data;
   });
 
   let filteredActivity = $derived.by<{ date: string; count: number }[]>(() => {
@@ -125,7 +144,7 @@
     schema.filter((f) => ["short_text", "paragraph", "email"].includes(f.type))
   );
 
-  function getChoiceDistribution(field: FieldDefinition): { label: string; count: number }[] {
+  function getChoiceDistribution(field: FieldDefinition): { value: string; label: string; count: number; color?: string }[] {
     const counts: Record<string, number> = {};
     for (const opt of field.options ?? []) counts[opt.value] = 0;
     for (const row of filteredRows) {
@@ -138,13 +157,14 @@
       }
     }
     return Object.entries(counts).map(([v, count]) => {
-      let label = field.options?.find((o) => o.value === v)?.label ?? v;
+      const opt = field.options?.find((o) => o.value === v);
+      let label = opt?.label ?? v;
       if (label.startsWith("__other__:")) {
         label = label.slice("__other__:".length);
       } else if (label === "__other__") {
         label = "Autre";
       }
-      return { label, count };
+      return { value: v, label, count, color: opt?.color };
     }).sort((a, b) => b.count - a.count);
   }
 
@@ -155,6 +175,45 @@
       .filter((v) => v != null && v !== "")
       .map(Number)
       .filter((v) => !isNaN(v));
+  }
+
+  // --- Édition de la couleur d'une option (persistée dans le schéma du formulaire) ---
+  async function setOptionColor(field: FieldDefinition, optionValue: string, color: string) {
+    const opt = field.options?.find((o) => o.value === optionValue);
+    if (!opt) return;
+    opt.color = color;
+    schema = [...schema];
+    const el = pieChartEls[field.key];
+    if (el) renderPieChart(el, field);
+    try {
+      await persistSchema(schema);
+    } catch (e) {
+      saveMessage = e instanceof Error ? e.message : "Impossible d'enregistrer la couleur.";
+    }
+  }
+
+  async function persistSchema(updatedSchema: FieldDefinition[]) {
+    if (!formDetail) return;
+    await api.updateForm(formId, {
+      title: formDetail.title,
+      description: formDetail.description ?? undefined,
+      schema: updatedSchema,
+      metaColumns: formDetail.metaColumns,
+      requireConsent: formDetail.requireConsent,
+      consentText: formDetail.consentText ?? undefined,
+      isAnonymized: formDetail.isAnonymized,
+      encryptResponses: formDetail.encryptResponses,
+      visibility: formDetail.visibility,
+      allowedEmails: formDetail.allowedEmails,
+      notifyOwner: formDetail.notifyOwner,
+      sendConfirmationEmail: formDetail.sendConfirmationEmail,
+      confirmationEmailText: formDetail.confirmationEmailText ?? undefined,
+      webhookUrl: formDetail.webhookUrl ?? undefined,
+      startsAt: formDetail.startsAt ?? undefined,
+      endsAt: formDetail.endsAt ?? undefined,
+      maxResponses: formDetail.maxResponses ?? undefined,
+      translations: formDetail.translations,
+    });
   }
 
   /** Quantile par interpolation linéaire sur un tableau trié. */
@@ -462,9 +521,10 @@
   // ─── Data loading ────────────────────────────────────────────────────
   onMount(async () => {
     try {
-      const [statsRes, responseRes, echartsMod] = await Promise.all([
+      const [statsRes, responseRes, formRes, echartsMod] = await Promise.all([
         api.getFormStatsSummary(formId),
         api.listResponses(formId),
+        api.getForm(formId).catch(() => null),
         import("echarts"),
       ]);
       echarts = echartsMod;
@@ -472,6 +532,8 @@
       activity = statsRes.summary.activity;
       schema = responseRes.form.schema as FieldDefinition[];
       rows = responseRes.rows;
+      canEdit = responseRes.permission === "WRITE";
+      formDetail = formRes?.form ?? null;
     } catch (e) {
       error = e instanceof Error ? e.message : "Erreur de chargement.";
     } finally {
@@ -583,7 +645,7 @@
       series: [{
         type: "pie",
         radius: ["42%", "72%"],
-        data: dist.map((d, i) => ({ name: d.label, value: d.count, itemStyle: { color: COLORS[i % COLORS.length] } })),
+        data: dist.map((d, i) => ({ name: d.label, value: d.count, itemStyle: { color: d.color ?? COLORS[i % COLORS.length] } })),
         label: { show: false },
         emphasis: { label: { show: true, fontSize: 12, fontWeight: "bold" } },
       }],
@@ -780,7 +842,7 @@
 
 
 
-<!-- Date range selector -->
+<!-- Filtres (date + champs à choix) -->
 {#if !loading && !error}
   <div class="mb-6 bg-white border border-[color:var(--line)] rounded-2xl p-4 flex flex-wrap items-center gap-4 shadow-sm animate-fade-in">
     <div class="flex items-center gap-2">
@@ -791,13 +853,27 @@
       <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Au :</label>
       <input class="input text-xs !w-40 !py-1" type="date" bind:value={filterEndDate} />
     </div>
-    {#if filterStartDate || filterEndDate}
+
+    {#if choiceFields.length > 0}
+      <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+      <div class="flex flex-wrap items-center gap-2">
+        {#each choiceFields as field (field.key)}
+          <MultiSelectFilter
+            options={field.options ?? []}
+            bind:selected={extraFilters[field.key]}
+            label={field.label}
+          />
+        {/each}
+      </div>
+    {/if}
+
+    {#if filterStartDate || filterEndDate || hasExtraFilters}
       <button
         type="button"
         class="text-xs text-brand font-bold hover:underline"
-        onclick={() => { filterStartDate = ""; filterEndDate = ""; }}
+        onclick={() => { filterStartDate = ""; filterEndDate = ""; extraFilters = {}; }}
       >
-        Réinitialiser le filtre
+        Réinitialiser les filtres
       </button>
     {/if}
   </div>
@@ -1124,8 +1200,19 @@
                 ></div>
                 <div class="mt-3 space-y-1.5">
                   {#each dist.slice(0, 4) as item, i}
+                    {@const isRealOption = field.options?.some((o) => o.value === item.value) ?? false}
                     <div class="flex items-center gap-2 text-xs">
-                      <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{COLORS[i % COLORS.length]}"></span>
+                      {#if canEdit && isRealOption}
+                        <input
+                          type="color"
+                          class="color-swatch shrink-0"
+                          value={item.color ?? COLORS[i % COLORS.length]}
+                          oninput={(e) => setOptionColor(field, item.value, (e.target as HTMLInputElement).value)}
+                          title="Changer la couleur de « {item.label} »"
+                        />
+                      {:else}
+                        <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{item.color ?? COLORS[i % COLORS.length]}"></span>
+                      {/if}
                       <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
                       <span class="font-bold text-[color:var(--muted)]">{total > 0 ? Math.round((item.count / total) * 100) : 0}%</span>
                     </div>
@@ -1368,11 +1455,59 @@
 
 {/if}
 
+{#if saveMessage}
+  <div class="save-toast">
+    <span>{saveMessage}</span>
+    <button type="button" onclick={() => (saveMessage = null)} aria-label="Fermer">×</button>
+  </div>
+{/if}
+
 <style>
   :global(.card) {
     background: white;
     border: 1px solid var(--line);
     border-radius: 1rem;
     padding: 1.25rem;
+  }
+  .color-swatch {
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: none;
+    border-radius: 9999px;
+    cursor: pointer;
+    background: none;
+  }
+  .color-swatch::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .color-swatch::-webkit-color-swatch {
+    border: none;
+    border-radius: 9999px;
+  }
+  .save-toast {
+    position: fixed;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    border-radius: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+    z-index: 50;
+  }
+  .save-toast button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font-size: 1rem;
+    line-height: 1;
   }
 </style>

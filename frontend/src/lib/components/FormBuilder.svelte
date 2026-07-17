@@ -160,7 +160,7 @@
     const name = `Option ${opts.length + 1}`;
     field.options = [...opts, { value: name, label: name }];
   }
-  
+
   function removeOption(field: FieldDefinition, idx: number) {
     if (!field.options) return;
     field.options = field.options.filter((_, i) => i !== idx);
@@ -199,6 +199,12 @@
     e.stopPropagation();
     dragOptionIndex = null;
     dragOverOptionIndex = null;
+  }
+
+  // Palette par défaut, alignée sur celle utilisée dans les graphiques de statistiques.
+  const STATS_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
+  function optionColor(opt: { color?: string }, idx: number): string {
+    return opt.color ?? STATS_COLORS[idx % STATS_COLORS.length];
   }
 
   // Helpers grid
@@ -397,6 +403,13 @@
                         ondragend={onOptionDragEnd}
                         title="Glisser pour réorganiser"
                       ><IconDrag size={14} /></span>
+                      <input
+                        type="color"
+                        class="option-color shrink-0"
+                        value={optionColor(opt, oi)}
+                        oninput={(e) => (opt.color = (e.target as HTMLInputElement).value)}
+                        title="Couleur de cette option dans les statistiques"
+                      />
                       <input
                         class="input text-xs !py-1 flex-1"
                         placeholder={`Option ${oi + 1}`}
@@ -923,5 +936,22 @@
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  .option-color {
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 1px solid m.$gray-border;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    background: none;
+    &::-webkit-color-swatch-wrapper {
+      padding: 2px;
+    }
+    &::-webkit-color-swatch {
+      border: none;
+      border-radius: 0.25rem;
+    }
   }
 </style>

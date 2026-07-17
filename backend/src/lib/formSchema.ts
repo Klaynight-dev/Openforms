@@ -29,6 +29,8 @@ export type FieldType = (typeof FIELD_TYPES)[number];
 const OptionSchema = t.Object({
   value: t.String({ minLength: 1, maxLength: 200 }),
   label: t.String({ minLength: 1, maxLength: 200 }),
+  /** Couleur personnalisée (hex) pour la représentation de ce choix dans les statistiques. */
+  color: t.Optional(t.String({ maxLength: 20 })),
 });
 
 const ValidationSchema = t.Optional(

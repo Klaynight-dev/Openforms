@@ -67,6 +67,8 @@ import {
   MapPin,
   CreditCard,
   PaperPlaneTilt,
+  Funnel,
+  Palette,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -124,6 +126,8 @@ export {
   MapPin as IconAddress,
   CreditCard as IconCreditCard,
   PaperPlaneTilt as IconSend,
+  Funnel as IconFunnel,
+  Palette as IconPalette,
 };
 
 // --- Fallback Lucide ---
