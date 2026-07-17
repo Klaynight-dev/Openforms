@@ -539,7 +539,8 @@
                 <div class="col-filter-msf">
                   <MultiSelectFilter
                     options={col.options ?? []}
-                    bind:selected={choiceFilters[col.key]}
+                    selected={choiceFilters[col.key] ?? []}
+                    onChange={(vals) => (choiceFilters[col.key] = vals)}
                     label="Filtrer"
                   />
                 </div>

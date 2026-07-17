@@ -1,14 +1,20 @@
 <script lang="ts">
   import { IconFunnel, IconCaretDown } from "../icons.ts";
 
+  // `selected` est un prop simple + callback (et non `$bindable`) : la clé liée côté
+  // parent (ex. `choiceFilters[col.key]`) vaut `undefined` tant qu'aucun filtre n'a
+  // été touché, et Svelte interdit `bind:x={undefined}` sur un bindable à valeur
+  // de repli en mode runes (erreur `props_invalid_value`).
   let {
     options = [] as { value: string; label: string }[],
-    selected = $bindable([] as string[]),
+    selected = [] as string[],
     label = "Filtrer",
+    onChange,
   }: {
     options?: { value: string; label: string }[];
     selected?: string[];
     label?: string;
+    onChange?: (values: string[]) => void;
   } = $props();
 
   let open = $state(false);
@@ -26,15 +32,16 @@
   }
 
   function toggleValue(value: string) {
-    selected = selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value];
+    const current = selected ?? [];
+    onChange?.(current.includes(value) ? current.filter((v) => v !== value) : [...current, value]);
   }
 
   function selectAll() {
-    selected = options.map((o) => o.value);
+    onChange?.(options.map((o) => o.value));
   }
 
   function clearAll() {
-    selected = [];
+    onChange?.([]);
   }
 
   function focusSearch(node: HTMLInputElement) {

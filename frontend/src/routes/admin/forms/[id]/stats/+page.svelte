@@ -860,7 +860,8 @@
         {#each choiceFields as field (field.key)}
           <MultiSelectFilter
             options={field.options ?? []}
-            bind:selected={extraFilters[field.key]}
+            selected={extraFilters[field.key] ?? []}
+            onChange={(vals) => (extraFilters[field.key] = vals)}
             label={field.label}
           />
         {/each}
