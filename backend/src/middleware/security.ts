@@ -27,11 +27,24 @@ export const securityHeaders = new Elysia({ name: "security-headers" }).onReques
 const isDevLocalhost = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
 
+/**
+ * Routes publiques destinées à être appelées depuis n'importe quel site tiers
+ * (widget d'embed : lecture d'un formulaire publié, soumission, upload de
+ * fichier). Elles ne s'appuient jamais sur le cookie de session — seuls les
+ * formulaires PUBLIC y répondent sans auth — donc les ouvrir à toute origine
+ * ne fuite aucune donnée protégée par cookie.
+ */
+const isEmbeddablePublicRoute = (pathname: string) =>
+  /^\/api\/v1\/forms\/public\/[^/]+$/.test(pathname) ||
+  pathname === "/api/v1/responses/submit" ||
+  pathname === "/api/v1/uploads";
+
 export const corsPlugin = cors({
   origin: (request: Request) => {
     const origin = request.headers.get("origin") ?? "";
     if (env.frontendOrigins.includes(origin)) return true;
     if (!env.isProduction && isDevLocalhost(origin)) return true;
+    if (origin && isEmbeddablePublicRoute(new URL(request.url).pathname)) return true;
     return false;
   },
   credentials: true,

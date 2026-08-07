@@ -121,6 +121,8 @@ openssl rand -base64 48
 ```
 Renseignez également votre `DATABASE_URL` pointant vers votre instance PostgreSQL.
 
+> **Compatibilité MySQL :** le schéma Prisma n'utilise aucun type spécifique à PostgreSQL (pas de tableaux natifs, pas de `@db.*`), il est donc portable vers MySQL/MariaDB. Pour basculer : changez `provider = "postgresql"` en `provider = "mysql"` dans [`backend/prisma/schema/schema.prisma`](backend/prisma/schema/schema.prisma), pointez `DATABASE_URL` vers votre instance MySQL (`mysql://user:pass@host:3306/db`), puis relancez `bun run db:generate` et `bun run db:migrate` (cela régénère l'historique de migrations pour le nouveau moteur). Ce mode n'est pas couvert par une CI dédiée : testez vos migrations sur un environnement de dev avant de basculer en production.
+
 ### 3. Installation et Lancement
 Depuis la racine du projet, installez les dépendances globales :
 ```bash
@@ -213,6 +215,62 @@ L'instance peut être servie simultanément sur plusieurs domaines publics (ex: 
 ### Lien personnalisé par formulaire
 
 Chaque formulaire dispose d'un onglet **Paramètres → Lien personnalisé** permettant de choisir librement le segment d'URL public (`/f/mon-lien`), en plus du domaine sur lequel il est consulté. Le lien est validé côté API (unicité, format `minuscules-et-tirets`, mots réservés exclus).
+
+---
+
+## 🧩 Widget d'embed (intégrer un formulaire sur un site tiers)
+
+Un formulaire **publié et en visibilité `PUBLIC`** peut être intégré directement dans le DOM de n'importe quel site (pas d'iframe) via un petit script autonome, `embed.js`, généré depuis `frontend/embed/widget.ts` et servi comme asset statique du frontend (`/embed.js`).
+
+### Usage déclaratif
+
+```html
+<div data-openforms="mon-slug"></div>
+<script src="https://forms.exemple.com/embed.js" defer></script>
+```
+
+Au chargement, le script scanne le DOM à la recherche de tout élément `[data-openforms]` et y monte le formulaire correspondant (rendu dans un **Shadow DOM**, donc sans collision avec le CSS du site hôte).
+
+* Si le frontend et l'API sont servis en routage par chemin same-origin (voir la section domaines ci-dessus), rien d'autre à faire : l'API est déduite de l'origine du `<script src>`.
+* Si l'API est sur un sous-domaine séparé, précisez-la par élément avec `data-openforms-api="https://api-forms.exemple.com"`, ou globalement avant l'inclusion du script :
+  ```html
+  <script>window.OpenFormsConfig = { apiBase: "https://api-forms.exemple.com" };</script>
+  <script src="https://forms.exemple.com/embed.js" defer></script>
+  ```
+
+### Usage programmatique
+
+```html
+<div id="mon-form"></div>
+<script src="https://forms.exemple.com/embed.js" defer></script>
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    OpenForms.mount(document.getElementById("mon-form"), {
+      slug: "mon-slug",
+      apiBase: "https://api-forms.exemple.com",
+      onSubmit: (responseId) => console.log("Réponse enregistrée :", responseId),
+    });
+  });
+</script>
+```
+
+### Limites connues
+
+* Uniquement les formulaires en visibilité **PUBLIC** (les formulaires `PRIVATE`/`RESTRICTED` nécessitent une connexion par cookie, incompatible avec un site tiers cross-origin — le widget affiche un message d'erreur dans ce cas).
+* Le champ `stripe_payment` reste, comme dans l'app principale, un module de **démonstration** (aucune transaction réelle n'est effectuée).
+* Pas de sélecteur de langue (le widget affiche toujours la langue par défaut du formulaire).
+
+### Build
+
+`embed.js` est régénéré automatiquement par `bun run build` (via le script `build:embed` du frontend, qui bundle `frontend/embed/widget.ts` avec `esbuild` vers `frontend/static/embed.js`). En développement, régénérez-le manuellement après une modification :
+
+```bash
+cd frontend && bun run build:embed
+```
+
+### CORS
+
+Les endpoints nécessaires au widget (`GET /api/v1/forms/public/:slug`, `POST /api/v1/responses/submit`, `POST /api/v1/uploads`) sont volontairement ouverts à **toute origine** côté backend (voir `isEmbeddablePublicRoute` dans `backend/src/middleware/security.ts`), puisqu'ils ne s'appuient jamais sur le cookie de session — seuls les formulaires publics y répondent sans authentification. Le reste de l'API reste restreint à `FRONTEND_ORIGIN`.
 
 ---
 

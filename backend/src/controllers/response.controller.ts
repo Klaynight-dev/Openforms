@@ -81,7 +81,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
           return { success: false, error: "Ce formulaire est restreint. Veuillez vous connecter." };
         }
         const userEmail = auth.user.email;
-        const hasAccess = form.allowedEmails.some(
+        const hasAccess = ((form.allowedEmails as string[] | null) ?? []).some(
           (email) => email.toLowerCase() === userEmail.toLowerCase()
         );
         if (!hasAccess) {

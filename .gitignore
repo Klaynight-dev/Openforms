@@ -154,3 +154,6 @@ frontend/.env
 # Bundle CA exporté localement pour contourner un proxy TLS d'entreprise
 corp-ca.pem
 **/corp-ca.pem
+# Widget d'embed : généré par `bun run build:embed` (voir frontend/embed/)
+frontend/static/embed.js
+frontend/static/embed.js.map

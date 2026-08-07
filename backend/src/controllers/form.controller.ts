@@ -90,7 +90,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           return { success: false, error: "Ce formulaire est restreint. Veuillez vous connecter." };
         }
         const userEmail = auth.user.email;
-        const hasAccess = form.allowedEmails.some(
+        const hasAccess = ((form.allowedEmails as string[] | null) ?? []).some(
           (email) => email.toLowerCase() === userEmail.toLowerCase()
         );
         if (!hasAccess) {
@@ -368,7 +368,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           isAnonymized: form.isAnonymized,
           encryptResponses: form.encryptResponses,
           visibility: form.visibility,
-          allowedEmails: form.allowedEmails,
+          allowedEmails: form.allowedEmails ?? [],
           notifyOwner: form.notifyOwner,
           sendConfirmationEmail: form.sendConfirmationEmail,
           confirmationEmailText: form.confirmationEmailText,

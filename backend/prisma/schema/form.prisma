@@ -25,7 +25,10 @@ model Form {
 
   isPublished  Boolean  @default(false)
   visibility   String   @default("PUBLIC")
-  allowedEmails String[] @default([])
+  /// Liste d'emails autorisés (visibilité RESTRICTED). Stocké en Json (et non
+  /// String[] Postgres) pour rester compatible MySQL, où les types liste
+  /// scalaires n'existent pas.
+  allowedEmails Json     @default("[]")
 
   // --- Notifications & Webhooks ---
   notifyOwner          Boolean   @default(false)
