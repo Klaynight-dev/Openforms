@@ -1,0 +1,64 @@
+name: ✨ Feature request
+description: Suggest a capability OpenForms is missing
+labels: ["enhancement", "needs triage"]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions for this idea
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: |
+        Describe the situation, not the solution. What are you doing today, and
+        why is it painful? This is the most useful part of the request.
+      placeholder: |
+        I collect registrations for a yearly event. Every year I ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like OpenForms to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Including workarounds you currently use, or how other tools handle it.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Form builder / field types
+        - Public form / respondent experience
+        - Response spreadsheet
+        - Statistics & reporting
+        - Privacy / GDPR
+        - Authentication / SSO / permissions
+        - REST API & integrations
+        - Theming / white-label
+        - Internationalisation
+        - Accessibility
+        - Deployment / operations
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to work on this myself

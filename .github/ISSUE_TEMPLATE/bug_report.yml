@@ -1,0 +1,108 @@
+name: 🐛 Bug report
+description: Something is broken or behaves unexpectedly
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug!
+
+        ⚠️ **Found a security vulnerability?** Do not file it here — follow
+        [SECURITY.md](https://github.com/Klaynight-dev/Openforms/blob/main/SECURITY.md) instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched the existing issues and this is not a duplicate
+          required: true
+        - label: I am running the latest release (or `main`)
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: |
+        When I ... the app ...
+        I expected ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Form builder
+        - Public form / respondent view
+        - Response spreadsheet
+        - Statistics
+        - File uploads
+        - Authentication / SSO
+        - REST API / API keys
+        - Webhooks & notifications
+        - Embed widget
+        - Deployment / Docker
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OpenForms version
+      description: Release tag, image tag, or commit SHA.
+      placeholder: "0.1.0 / ghcr latest / a1b2c3d"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      options:
+        - Docker Compose (prebuilt images)
+        - Docker Compose (built from source)
+        - Bare metal / Bun
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: database
+    attributes:
+      label: Database
+      placeholder: "PostgreSQL 15 / MySQL 8.0 / MariaDB 11"
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      description: Only relevant for UI bugs.
+      placeholder: "Firefox 128 on Ubuntu 24.04"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Backend logs (`docker compose logs backend`) and/or browser console output.
+        **Redact any secret, token, email address or respondent data before pasting.**
+      render: shell

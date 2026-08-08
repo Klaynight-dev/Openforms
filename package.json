@@ -1,8 +1,16 @@
 {
-  "name": "formulaire-humanitour",
+  "name": "openforms",
   "version": "0.1.0",
   "private": true,
-  "description": "Alternative éthique et open-source à Google Forms — SvelteKit + ElysiaJS + Prisma sur Bun.",
+  "description": "Ethical, self-hostable open-source alternative to Google Forms — SvelteKit + ElysiaJS + Prisma on Bun.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Klaynight-dev/Openforms.git"
+  },
+  "homepage": "https://github.com/Klaynight-dev/Openforms",
+  "bugs": {
+    "url": "https://github.com/Klaynight-dev/Openforms/issues"
+  },
   "license": "MIT",
   "workspaces": [
     "backend",
