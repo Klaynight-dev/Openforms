@@ -1,0 +1,5 @@
+[test]
+# Renseigne l'environnement de test avant le chargement de src/config/env.ts,
+# qui fait échouer le processus si une variable critique manque.
+preload = ["./tests/setup.ts"]
+coverage = false

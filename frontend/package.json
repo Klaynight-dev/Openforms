@@ -8,6 +8,8 @@
     "build": "npm run build:embed && vite build",
     "build:embed": "node embed/build.mjs",
     "preview": "vite preview",
+    "test": "bun test tests/",
+    "test:watch": "bun test tests/ --watch",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
   },

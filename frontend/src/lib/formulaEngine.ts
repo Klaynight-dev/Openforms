@@ -16,6 +16,12 @@ export type Row = Record<string, unknown>;
 
 function toNumbers(rows: Row[], col: string): number[] {
   return rows
+    .filter((r) => {
+      // Une cellule vide n'est pas un zéro : `Number("")` vaut 0, ce qui
+      // fausserait AVG, MEDIAN et COUNT en comptant les non-réponses.
+      const raw = r[col];
+      return raw !== null && raw !== undefined && String(raw).trim() !== "";
+    })
     .map((r) => Number(r[col]))
     .filter((n) => Number.isFinite(n));
 }
@@ -59,9 +65,12 @@ export function evaluateRowFormula(formula: string, row: Row): string {
     const parts = splitArgs(concat[1]);
     return parts
       .map((p) => {
-        const lit = p.match(/^"(.*)"$/);
+        // On retire les espaces AVANT de reconnaître un littéral, sans quoi
+        // `CONCAT(a, " ", b)` traiterait ` " "` comme un nom de colonne.
+        const arg = p.trim();
+        const lit = arg.match(/^"(.*)"$/s);
         if (lit) return lit[1];
-        return String(row[p.trim()] ?? "");
+        return String(row[arg] ?? "");
       })
       .join("");
   }
@@ -130,7 +139,7 @@ function evalArithmetic(input: string, row: Row): number {
     if (t === "-") return -parseFactor();
     if (t === "(") {
       const v = parseExpr();
-      next(); // ')'
+      if (next() !== ")") throw new Error("parenthèse fermante manquante");
       return v;
     }
     if (t === undefined) throw new Error("fin inattendue");
@@ -140,6 +149,9 @@ function evalArithmetic(input: string, row: Row): number {
   }
 
   const result = parseExpr();
+  // Sans ce contrôle, `=a b` ou `=foo(1)` renverrait silencieusement la valeur
+  // de `a` / 0 au lieu de signaler une formule invalide.
+  if (pos < tokens.length) throw new Error(`jeton inattendu : ${tokens[pos]}`);
   if (!Number.isFinite(result)) throw new Error("résultat non fini");
   return Math.round(result * 1e6) / 1e6;
 }

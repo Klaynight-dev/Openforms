@@ -9,6 +9,10 @@
     "frontend"
   ],
   "scripts": {
+    "test": "bun run --cwd backend test && bun run --cwd frontend test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "check": "bun run --cwd backend check && bun run --cwd frontend check",
     "dev": "bun run --filter '*' dev",
     "dev:backend": "bun run --cwd backend dev",
     "dev:frontend": "bun run --cwd frontend dev",
