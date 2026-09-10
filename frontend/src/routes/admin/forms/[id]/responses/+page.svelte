@@ -4,6 +4,7 @@
   import { goto } from "$app/navigation";
   import Tableur from "$components/Tableur.svelte";
   import { api } from "$api/client.ts";
+  import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
   import type { FieldDefinition, MetaColumn, ResponseRow, FormDetail } from "$lib/types.ts";
   import {
     IconBack,
@@ -57,7 +58,7 @@
   onMount(async () => {
     try {
       const [res, formRes] = await Promise.all([
-        api.listResponses(id),
+        getResponsesCached(id),
         api.getForm(id).catch(() => null),
       ]);
       title = res.form.title;
@@ -155,9 +156,11 @@
 
     try {
       await api.updateCell(rowId, target, kanbanGroupKey, colValue || null);
+      invalidateResponsesCache(id);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Impossible de modifier la réponse.");
-      const res = await api.listResponses(id);
+      invalidateResponsesCache(id);
+      const res = await getResponsesCached(id);
       rows = res.rows;
     }
   }

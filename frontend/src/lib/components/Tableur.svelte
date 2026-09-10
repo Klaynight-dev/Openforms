@@ -2,8 +2,11 @@
   import { onMount } from "svelte";
   import { JUSTIFICATION_SUFFIX, type FieldDefinition, type FieldOption, type MetaColumn, type ResponseRow } from "../types.ts";
   import { api } from "../api/client.ts";
+  import { invalidateResponsesCache } from "../responsesCache.ts";
   import { evaluateRowFormula, evaluateAggregate } from "../formulaEngine.ts";
   import MultiSelectFilter from "./MultiSelectFilter.svelte";
+  import DataExportMenu from "./DataExportMenu.svelte";
+  import { sanitizeFilename, type DataExportOptions, type DataFormat } from "../dataExport.ts";
   import {
     IconSearch,
     IconSortAsc,
@@ -13,7 +16,6 @@
     IconClose,
     IconImport,
     IconDownload,
-    IconExcel,
     IconFormula,
     IconCheckCircle,
   } from "../icons.ts";
@@ -92,8 +94,29 @@
 
   // --- État interactif ---
   let searchQuery = $state("");
+  // La recherche filtre sur toutes les colonnes × toutes les lignes : avec beaucoup
+  // de réponses, refiltrer à chaque frappe suffit à saccader la saisie. On débounce
+  // la valeur réellement utilisée par `viewRows` tout en gardant l'input réactif.
+  let debouncedSearchQuery = $state("");
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = searchQuery;
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => (debouncedSearchQuery = q), 150);
+    return () => clearTimeout(searchDebounceTimer);
+  });
   // Filtres colonnes texte/nombre (sous-chaîne) et filtres colonnes à choix (valeurs sélectionnées).
   let textFilters = $state<Record<string, string>>({});
+  // Même débounce que la recherche globale : filtrer une colonne texte parcourt
+  // aussi toutes les lignes à chaque frappe.
+  let debouncedTextFilters = $state<Record<string, string>>({});
+  let textFiltersDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const snapshot = { ...textFilters };
+    clearTimeout(textFiltersDebounceTimer);
+    textFiltersDebounceTimer = setTimeout(() => (debouncedTextFilters = snapshot), 150);
+    return () => clearTimeout(textFiltersDebounceTimer);
+  });
   let choiceFilters = $state<Record<string, string[]>>({});
   let sortKey = $state("");
   let sortDir = $state<"asc" | "desc" | null>(null);
@@ -111,6 +134,34 @@
       viewMode = "cards";
     }
   });
+
+  // --- Virtualisation des lignes du tableau ---
+  // Avec beaucoup de réponses, rendre toutes les <tr>/<td> dans le DOM (potentiellement
+  // des dizaines de milliers de cellules) rend l'interface très lente au chargement,
+  // au tri comme au scroll. On ne monte que les lignes visibles dans le viewport
+  // (+ une marge de sécurité), et on comble le reste avec deux lignes "espaceurs"
+  // dont la hauteur reproduit celle des lignes non rendues.
+  const ROW_HEIGHT = 34; // doit rester cohérent avec la règle `td { height: 34px }` plus bas
+  const OVERSCAN = 12;
+  let tableWrapperEl = $state<HTMLDivElement>();
+  let viewportHeight = $state(600);
+  let scrollTop = $state(0);
+  let scrollRaf = 0;
+
+  function handleScroll(e: Event) {
+    const el = e.currentTarget as HTMLDivElement;
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollTop = el.scrollTop;
+      scrollRaf = 0;
+    });
+  }
+
+  let totalCols = $derived(columns.length + 1 + (canEdit ? 1 : 0));
+
+  // --- Vue Cartes : pagination simple (chargement progressif) ---
+  const CARDS_PAGE = 30;
+  let cardsLimit = $state(CARDS_PAGE);
 
   // Correspondance valeur -> intitulé pour les champs à options (radio, checkbox, select).
   let optionLabels = $derived<Record<string, Record<string, string>>>(
@@ -156,7 +207,7 @@
   // --- Filtrage + tri (réactif) ---
   let viewRows = $derived.by(() => {
     let data = [...rows];
-    const q = searchQuery.trim().toLowerCase();
+    const q = debouncedSearchQuery.trim().toLowerCase();
     if (q) {
       data = data.filter((row) =>
         columns.some((c) => displayCell(row, c).toLowerCase().includes(q)),
@@ -172,7 +223,7 @@
           return vals.some((v) => sel.includes(v));
         });
       } else {
-        const f = (textFilters[col.key] ?? "").trim().toLowerCase();
+        const f = (debouncedTextFilters[col.key] ?? "").trim().toLowerCase();
         if (!f) continue;
         data = data.filter((row) => displayCell(row, col).toLowerCase().includes(f));
       }
@@ -193,6 +244,29 @@
       }
     }
     return data;
+  });
+
+  // Fenêtre de lignes réellement montées dans le DOM (voir la note "Virtualisation" plus haut).
+  let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
+  let visibleCount = $derived(Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
+  let endIndex = $derived(Math.min(viewRows.length, startIndex + visibleCount));
+  let visibleRows = $derived(viewRows.slice(startIndex, endIndex));
+  let topPad = $derived(startIndex * ROW_HEIGHT);
+  let bottomPad = $derived(Math.max(0, (viewRows.length - endIndex) * ROW_HEIGHT));
+
+  // Recale le scroll (et donc la fenêtre visible) quand le filtrage change le nombre
+  // de lignes, pour éviter de rester bloqué sur une plage vide hors bornes.
+  $effect(() => {
+    void viewRows.length;
+    if (tableWrapperEl && tableWrapperEl.scrollTop !== scrollTop) {
+      scrollTop = tableWrapperEl.scrollTop;
+    }
+  });
+
+  // Réinitialise la pagination de la vue Cartes dès que le jeu de lignes filtré change.
+  $effect(() => {
+    void viewRows;
+    cardsLimit = CARDS_PAGE;
   });
 
   function toggleSort(key: string) {
@@ -251,6 +325,7 @@
 
     try {
       await api.updateCell(target.rowId, col.source === "field" ? "field" : "meta", col.key, value);
+      invalidateResponsesCache(formId);
     } catch (e) {
       message = e instanceof Error ? e.message : "Échec de la sauvegarde.";
     }
@@ -273,6 +348,7 @@
     try {
       const res = await api.addResponseRow(formId);
       rows = [res.row, ...rows];
+      invalidateResponsesCache(formId);
     } catch (e) {
       message = e instanceof Error ? e.message : "Échec de l'ajout.";
     } finally {
@@ -285,6 +361,7 @@
     try {
       await api.deleteResponse(id);
       rows = rows.filter((r) => r.id !== id);
+      invalidateResponsesCache(formId);
     } catch (e) {
       message = e instanceof Error ? e.message : "Échec de la suppression.";
     }
@@ -313,46 +390,60 @@
     return evaluateAggregate(`${fn}(${col.key})`, asRows);
   }
 
-  // --- Export XLSX / CSV (ExcelJS, chargé à la demande) ---
-  async function exportXlsx() {
-    const ExcelJS = (await import("exceljs")).default;
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(formTitle.slice(0, 30));
-    ws.columns = [
-      { header: "Soumis le", key: "_ts", width: 20 },
-      ...columns.map((c) => ({ header: c.label, key: c.key, width: 22 })),
+  // --- Export des données (Excel / CSV / JSON) ---
+  // La génération vit dans $lib/dataExport.ts, partagée avec la page
+  // Statistiques : mêmes colonnes, mêmes valeurs, même bloc de contexte.
+  function buildDataExport(format: DataFormat): DataExportOptions {
+    const exportColumns = [
+      { key: "__submittedAt", label: "Soumis le", kind: "date" as const },
+      ...columns.map((c) => ({
+        key: c.key,
+        label: c.label,
+        kind: (c.kind === "number" || c.kind === "formula" ? "number" : "text") as
+          | "number"
+          | "text",
+      })),
     ];
-    for (const row of viewRows) {
-      const record: Record<string, unknown> = { _ts: new Date(row.submittedAt).toLocaleString() };
+
+    const exportRows = viewRows.map((row) => {
+      const record: Record<string, unknown> = {
+        __submittedAt: new Date(row.submittedAt).toLocaleString("fr-FR"),
+      };
       for (const c of columns) record[c.key] = displayCell(row, c);
-      ws.addRow(record);
+      return record;
+    });
+
+    const activeFilters: string[] = [];
+    if (debouncedSearchQuery) activeFilters.push(`recherche « ${debouncedSearchQuery} »`);
+    for (const [key, value] of Object.entries(debouncedTextFilters)) {
+      if (value) activeFilters.push(`${columnLabel(key)} contient « ${value} »`);
     }
-    ws.getRow(1).font = { bold: true };
-    const buf = await wb.xlsx.writeBuffer();
-    downloadBlob(new Blob([buf]), `${formTitle}.xlsx`);
-  }
-
-  async function exportCsv() {
-    const header = ["Soumis le", ...columns.map((c) => c.label)];
-    const lines = [header.map(csvCell).join(",")];
-    for (const row of viewRows) {
-      const cells = [new Date(row.submittedAt).toLocaleString(), ...columns.map((c) => displayCell(row, c))];
-      lines.push(cells.map(csvCell).join(","));
+    for (const [key, values] of Object.entries(choiceFilters)) {
+      if (values?.length) activeFilters.push(`${columnLabel(key)} = ${values.join(", ")}`);
     }
-    downloadBlob(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), `${formTitle}.csv`);
+
+    return {
+      filename: `${sanitizeFilename(formTitle)}_reponses`,
+      sheetName: "Réponses",
+      columns: exportColumns,
+      rows: exportRows,
+      format,
+      meta: [
+        { label: "Formulaire", value: formTitle },
+        { label: "Lignes exportées", value: String(viewRows.length) },
+        { label: "Lignes au total", value: String(rows.length) },
+        { label: "Date d'export", value: new Date().toLocaleString("fr-FR") },
+        {
+          label: "Filtres actifs",
+          value: activeFilters.length > 0 ? activeFilters.join(" ; ") : "aucun",
+        },
+      ],
+      includeMeta: format !== "csv",
+    };
   }
 
-  function csvCell(v: string): string {
-    return /[",\n;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  }
-
-  function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+  function columnLabel(key: string): string {
+    return columns.find((c) => c.key === key)?.label ?? key;
   }
 
   // --- Import XLSX / CSV : met à jour les cellules par correspondance de colonnes ---
@@ -398,6 +489,7 @@
         }
       }
       rows = [...rows];
+      if (updates > 0) invalidateResponsesCache(formId);
       message = `Import terminé : ${updates} cellule(s) mise(s) à jour.`;
     } catch (err) {
       message = err instanceof Error ? err.message : "Import impossible.";
@@ -453,8 +545,7 @@
               <input type="file" accept=".xlsx,.csv" class="hidden" onchange={importFile} />
             </label>
           {/if}
-          <button class="btn-secondary !px-3 !py-1.5 text-xs" onclick={exportCsv} type="button"><IconDownload size={15} /> CSV</button>
-          <button class="btn-primary !px-3 !py-1.5 text-xs" onclick={exportXlsx} type="button"><IconExcel size={15} /> Excel</button>
+          <DataExportMenu build={buildDataExport} rowCount={viewRows.length} />
         </div>
 
         <!-- Actions Mobile Dropdown -->
@@ -491,18 +582,9 @@
                 </label>
                 <hr class="my-1 border-slate-100" />
               {/if}
-              <button 
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
-                onclick={() => { actionsMenuOpen = false; exportCsv(); }}
-              >
-                <IconDownload size={14} /> Exporter CSV
-              </button>
-              <button 
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-50 transition"
-                onclick={() => { actionsMenuOpen = false; exportXlsx(); }}
-              >
-                <IconDownload size={14} /> Exporter Excel
-              </button>
+              <div class="px-1 py-1">
+                <DataExportMenu build={buildDataExport} rowCount={viewRows.length} />
+              </div>
             </div>
           {/if}
         </div>
@@ -518,7 +600,13 @@
   {/if}
 
   <!-- Vue Tableur classique -->
-  <div class="table-wrapper" class:hidden={viewMode !== "table"}>
+  <div
+    class="table-wrapper"
+    class:hidden={viewMode !== "table"}
+    bind:this={tableWrapperEl}
+    bind:clientHeight={viewportHeight}
+    onscroll={handleScroll}
+  >
     <table class="custom-table">
       <thead>
         <tr>
@@ -554,9 +642,12 @@
         </tr>
       </thead>
       <tbody>
-        {#each viewRows as row, i (row.id)}
+        {#if topPad > 0}
+          <tr class="virt-spacer" aria-hidden="true"><td style="height:{topPad}px" colspan={totalCols}></td></tr>
+        {/if}
+        {#each visibleRows as row, i (row.id)}
           <tr>
-            <td class="idx">{i + 1}</td>
+            <td class="idx">{startIndex + i + 1}</td>
             {#each columns as col (col.key)}
               <td
                 class:editable={col.editable}
@@ -619,6 +710,9 @@
             {/if}
           </tr>
         {/each}
+        {#if bottomPad > 0}
+          <tr class="virt-spacer" aria-hidden="true"><td style="height:{bottomPad}px" colspan={totalCols}></td></tr>
+        {/if}
         {#if viewRows.length === 0}
           <tr><td class="empty" colspan={columns.length + 2}>Aucune réponse.</td></tr>
         {/if}
@@ -652,7 +746,7 @@
   <!-- Vue par Cartes (Mobile) -->
   {#if viewMode === "cards"}
     <div class="space-y-4 mt-4">
-      {#each viewRows as row, i (row.id)}
+      {#each viewRows.slice(0, cardsLimit) as row, i (row.id)}
         <div class="card border border-[color:var(--line)] bg-white rounded-2xl p-5 shadow-sm">
           <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
             <span class="text-xs font-bold text-brand uppercase tracking-wider">Réponse #{viewRows.length - i}</span>
@@ -745,6 +839,11 @@
       {/each}
       {#if viewRows.length === 0}
         <div class="text-center text-slate-400 p-12 bg-white rounded-2xl border border-[color:var(--line)]">Aucune réponse.</div>
+      {/if}
+      {#if cardsLimit < viewRows.length}
+        <button type="button" class="btn-secondary w-full !py-2.5 text-xs" onclick={() => (cardsLimit += CARDS_PAGE)}>
+          Afficher plus ({viewRows.length - cardsLimit} restantes)
+        </button>
       {/if}
     </div>
   {/if}
@@ -966,6 +1065,10 @@
       text-align: center;
       color: #9ca3af;
       padding: 2rem;
+    }
+    .virt-spacer td {
+      border: none;
+      padding: 0;
     }
   }
   .hidden {
