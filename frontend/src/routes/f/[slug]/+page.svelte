@@ -1,10 +1,10 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
   import { api, ApiError, type SignedFileDescriptor } from "$api/client.ts";
   import { JUSTIFICATION_SUFFIX, type FormDetail, type FieldDefinition } from "$lib/types.ts";
-  import { IconCheckCircle, IconLock, IconShield } from "$lib/icons.ts";
+  import { IconCheckCircle, IconLock, IconShield, IconWarning } from "$lib/icons.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
 
   let form = $state<FormDetail | null>(null);
@@ -24,6 +24,26 @@
   let submitting = $state(false);
   let submitted = $state(false);
   let submitError = $state<string | null>(null);
+
+  let errorCount = $derived(Object.keys(fieldErrors).length);
+
+  /** Vrai dès qu'une valeur a été saisie et que rien n'a encore été envoyé. */
+  let hasUnsavedInput = $derived(
+    !submitted &&
+      Object.values(values).some(
+        (v) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
+      ),
+  );
+
+  // Un formulaire long se perd en un clic sur « Précédent » ou une fermeture
+  // d'onglet. Le navigateur affiche sa propre confirmation ; le texte du
+  // message n'est plus personnalisable, seule la présence du gestionnaire compte.
+  $effect(() => {
+    if (!hasUnsavedInput) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  });
 
   // Multi-pages / Sections
   interface Page {
@@ -226,7 +246,29 @@
     if (validatePage(currentPage)) {
       currentPageIndex += 1;
       window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      goToFirstError();
     }
+  }
+
+  /**
+   * Amène l'utilisateur jusqu'au premier champ en erreur, en changeant de page
+   * si besoin. Sans ça, sur un formulaire long ou paginé, le clic sur
+   * « Envoyer » ne produit rien de visible et paraît cassé.
+   */
+  async function goToFirstError() {
+    const key = translatedForm?.schema.find((f) => fieldErrors[f.key])?.key;
+    if (!key) return;
+    const pageIndex = pages.findIndex((pg) => pg.fields.some((f) => f.key === key));
+    if (pageIndex >= 0) currentPageIndex = pageIndex;
+    await tick();
+    const card = document.querySelector<HTMLElement>(`[data-field="${CSS.escape(key)}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Les champs simples portent l'id de la clé ; les groupes (radio, cases à
+    // cocher, grilles) n'en ont pas : on vise alors le premier contrôle.
+    const control =
+      document.getElementById(key) ?? card?.querySelector<HTMLElement>("input, select, textarea");
+    control?.focus({ preventScroll: true });
   }
 
   function prevPage() {
@@ -258,13 +300,7 @@
       return;
     }
     if (!validateAll()) {
-      for (let i = 0; i < pages.length; i++) {
-        const hasError = pages[i].fields.some((f) => fieldErrors[f.key]);
-        if (hasError) {
-          currentPageIndex = i;
-          break;
-        }
-      }
+      goToFirstError();
       return;
     }
     submitting = true;
@@ -297,13 +333,7 @@
         const errs: Record<string, string> = {};
         for (const d of err.details) if (d.key) errs[d.key] = d.message;
         fieldErrors = errs;
-        for (let i = 0; i < pages.length; i++) {
-          const hasError = pages[i].fields.some((f) => fieldErrors[f.key]);
-          if (hasError) {
-            currentPageIndex = i;
-            break;
-          }
-        }
+        goToFirstError();
       }
     } finally {
       submitting = false;
@@ -432,7 +462,12 @@
         {/if}
 
         {#each currentPage.fields as field (field.key)}
-          <div class="mb-4 rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div
+            data-field={field.key}
+            class="mb-4 rounded-xl border bg-white p-6 shadow-sm hover:shadow-md transition-shadow duration-200"
+            class:border-[color:var(--line)]={!fieldErrors[field.key]}
+            class:border-[color:var(--danger)]={fieldErrors[field.key]}
+          >
             <FieldInput
               {field}
               formId={translatedForm.id}
@@ -454,8 +489,27 @@
           </label>
         {/if}
 
-        {#if submitError}
-          <p class="mb-4 text-sm font-semibold text-[color:var(--danger)]">{submitError}</p>
+        {#if submitError || errorCount > 0}
+          <div
+            class="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-4"
+            role="alert"
+          >
+            <IconWarning size={18} weight="fill" class="mt-0.5 shrink-0 text-[color:var(--danger)]" />
+            <div class="text-sm">
+              <p class="font-semibold text-red-900">
+                {submitError ?? "Le formulaire n'a pas pu être envoyé."}
+              </p>
+              {#if errorCount > 0}
+                <button
+                  type="button"
+                  class="mt-1 font-semibold text-red-700 underline underline-offset-2"
+                  onclick={goToFirstError}
+                >
+                  {errorCount} champ{errorCount > 1 ? "s" : ""} à corriger — aller au premier
+                </button>
+              {/if}
+            </div>
+          </div>
         {/if}
 
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
