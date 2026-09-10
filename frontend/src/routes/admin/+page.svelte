@@ -5,6 +5,7 @@
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { askConfirm } from "$lib/stores/dialog.svelte.ts";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import type { FormSummary, GlobalStats } from "$lib/types.ts";
   import {
     IconTable,
@@ -598,11 +599,20 @@
     {:else if error}
       <p class="text-[color:var(--danger)]">{error}</p>
     {:else if filteredForms.length === 0}
-      <div class="card flex flex-col items-center gap-3 py-12 text-center text-[color:var(--muted)]">
-        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-500">
-          <IconLeaf size={26} weight="fill" />
-        </span>
-        Aucun formulaire pour le moment dans cet espace.
+      <div class="card !p-0">
+        <EmptyState
+          icon={IconLeaf}
+          title="Aucun formulaire dans cet espace"
+          hint={canCreateForm
+            ? "Créez un premier formulaire pour commencer à collecter des réponses."
+            : "Les formulaires créés dans cet espace apparaîtront ici."}
+        >
+          {#if canCreateForm}
+            <a class="btn-primary !px-4 !py-2 !text-sm" href="/admin/forms/new">
+              <IconPlus size={15} weight="bold" /> Nouveau formulaire
+            </a>
+          {/if}
+        </EmptyState>
       </div>
     {:else}
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

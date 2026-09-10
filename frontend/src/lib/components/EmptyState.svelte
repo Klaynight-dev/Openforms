@@ -6,10 +6,16 @@
   import type { Component, Snippet } from "svelte";
   import { IconEmpty } from "$lib/icons.ts";
 
+  /**
+   * N'importe quelle icône du registre : Phosphor et Lucide ont des types de
+   * props différents (`weight` notamment), inutile de les unifier ici.
+   */
+  type IconLike = Component<any>;
+
   interface Props {
     title: string;
     hint?: string;
-    icon?: Component<{ size?: number; weight?: string }>;
+    icon?: IconLike;
     /** Boutons d'action. */
     children?: Snippet;
     compact?: boolean;

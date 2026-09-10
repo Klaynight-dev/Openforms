@@ -10,6 +10,7 @@
   import ExportSettingsPanel from "$lib/components/ExportSettingsPanel.svelte";
   import ExportPreviewModal from "$lib/components/ExportPreviewModal.svelte";
   import DataExportMenu from "$lib/components/DataExportMenu.svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import { sanitizeFilename, type DataExportOptions, type DataFormat } from "$lib/dataExport.ts";
   import Segmented from "$lib/components/Segmented.svelte";
   import { toasts } from "$lib/stores/toast.svelte.ts";
@@ -1598,10 +1599,12 @@
       </div>
     </div>
   {:else}
-    <div class="card flex flex-col items-center gap-3 py-12 text-center text-[color:var(--muted)]">
-      <IconChartBar size={36} class="opacity-30" />
-      <p class="font-semibold">Aucune réponse pour le moment.</p>
-      <p class="text-sm">Les statistiques apparaîtront dès la première soumission.</p>
+    <div class="card !p-0">
+      <EmptyState
+        icon={IconChartBar}
+        title="Aucune réponse pour le moment"
+        hint="Les statistiques apparaîtront dès la première soumission. Partagez le lien public du formulaire pour commencer la collecte."
+      />
     </div>
   {/if}
 

@@ -6,6 +6,7 @@
   import { api } from "$api/client.ts";
   import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import type { FieldDefinition, MetaColumn, ResponseRow, FormDetail } from "$lib/types.ts";
   import {
     IconBack,
@@ -338,7 +339,10 @@
   {:else if activeView === "fiches"}
     <!-- --- Fiches view with Details and PDF generator --- -->
     {#if rows.length === 0}
-      <p class="text-center py-12 text-slate-400">Aucune réponse à afficher.</p>
+      <EmptyState
+        title="Aucune réponse à afficher"
+        hint="Les fiches détaillées apparaîtront ici dès la première soumission."
+      />
     {:else}
       <!-- Split-screen for admin screen, full print block in print mode -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
