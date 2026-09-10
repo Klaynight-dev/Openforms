@@ -13,9 +13,10 @@
 
 <div class="note">
   <p class="!mb-0">
-    <strong>Aucun traceur, aucune bannière.</strong> Le Service ne dépose ni cookie publicitaire, ni cookie de
-    mesure d'audience, ni bouton de réseau social. Les seuls cookies utilisés sont strictement nécessaires au
-    fonctionnement du service : ils sont exemptés de consentement, ce qui explique l'absence de bandeau.
+    <strong>Aucun traceur, aucune bannière.</strong> Le site ne dépose ni cookie publicitaire, ni cookie de
+    mesure d'audience, ni bouton de réseau social, et ne suit aucun répondant d'un site à l'autre. Les seuls
+    cookies utilisés sont strictement nécessaires au fonctionnement du service : ils sont exemptés de
+    consentement, ce qui explique l'absence de bandeau.
   </p>
 </div>
 
@@ -39,7 +40,7 @@
     <tr>
       <td><code>session</code></td>
       <td>
-        Maintient la connexion d'un administrateur. Contient un jeton aléatoire, jamais de données personnelles.
+        Maintient la connexion d'un chargé d'études. Contient un jeton aléatoire, jamais de données personnelles.
         Cookie <em>HttpOnly</em>, inaccessible au JavaScript, et <em>Secure</em> en production.
       </td>
       <td>{retention.sessionDays} jours</td>
@@ -57,11 +58,19 @@
   </tbody>
 </table>
 <p>
-  Un visiteur qui se contente de remplir un formulaire public ne reçoit aucun de ces cookies : ils ne sont posés
-  qu'à la connexion d'un administrateur. Ils sont supprimés à la déconnexion.
+  Une personne qui répond à un questionnaire ne reçoit aucun de ces cookies : ils ne sont posés qu'à la
+  connexion d'un chargé d'études de l'Institut, et supprimés à la déconnexion.
 </p>
 
-<h2>3. Cookies non utilisés</h2>
+<h2>3. Comment une participation est identifiée sans cookie</h2>
+<p>
+  Lorsqu'une enquête s'adresse à un échantillon défini, l'invitation contient un lien personnel comportant un
+  jeton aléatoire. C'est ce lien, et non un cookie, qui rattache la réponse à l'invitation et empêche les
+  participations multiples. Le jeton ne permet aucun suivi en dehors de l'enquête concernée et cesse d'être
+  valable à la clôture du terrain.
+</p>
+
+<h2>4. Cookies non utilisés</h2>
 <ul>
   <li>aucun cookie publicitaire ou de reciblage ;</li>
   <li>aucune mesure d'audience (ni Google Analytics, ni Matomo, ni équivalent) ;</li>
@@ -69,27 +78,27 @@
   <li>aucun partage d'identifiant avec un tiers.</li>
 </ul>
 
-<h2>4. Stockage local</h2>
+<h2>5. Stockage local</h2>
 <p>
-  Le Service n'utilise pas le stockage local du navigateur (<code>localStorage</code>, <code>sessionStorage</code>)
+  Le site n'utilise pas le stockage local du navigateur (<code>localStorage</code>, <code>sessionStorage</code>)
   pour identifier ou suivre les visiteurs.
 </p>
 
-<h2>5. Ressource externe</h2>
+<h2>6. Ressource externe</h2>
 <p>
   La police de caractères « Outfit » est chargée depuis Google Fonts. Ce chargement ne dépose pas de cookie, mais
   transmet l'adresse IP du visiteur à Google. Cette dépendance a vocation à être internalisée ; son blocage par le
-  navigateur n'empêche pas l'usage du Service.
+  navigateur n'empêche pas de répondre à un questionnaire.
 </p>
 
-<h2>6. Refuser ou supprimer les cookies</h2>
+<h2>7. Refuser ou supprimer les cookies</h2>
 <p>
   Les cookies peuvent être supprimés ou bloqués depuis les réglages du navigateur (Firefox, Chrome, Edge, Safari :
   rubrique « Confidentialité »). Le blocage du cookie <code>session</code> empêche toutefois la connexion à
-  l'espace d'administration ; la consultation et l'envoi des formulaires publics restent possibles.
+  l'espace de gestion des enquêtes ; répondre à un questionnaire reste possible sans lui.
 </p>
 
-<h2>7. Contact</h2>
+<h2>8. Contact</h2>
 <p>
   Toute question relative aux cookies peut être adressée à
   <a href="mailto:{publisher.email}">{publisher.email}</a>. Voir également la
