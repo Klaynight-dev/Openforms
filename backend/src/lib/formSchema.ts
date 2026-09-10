@@ -101,7 +101,9 @@ export const ExportThemeSchema = t.Object({
   title: t.Optional(t.String({ maxLength: 200 })),
   subtitle: t.Optional(t.String({ maxLength: 300 })),
   caption: t.Optional(t.String({ maxLength: 1000 })),
-  logoDataUrl: t.Optional(t.String({ maxLength: 400_000 })),
+  // Null explicite : le client envoie toujours la clé, avec null quand aucun
+  // logo n'est défini.
+  logoDataUrl: t.Optional(t.Union([t.String({ maxLength: 400_000 }), t.Null()])),
   logoPosition: t.Optional(
     t.Union([t.Literal("top-left"), t.Literal("top-right"), t.Literal("footer")]),
   ),
