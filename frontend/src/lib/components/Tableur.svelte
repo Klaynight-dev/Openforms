@@ -878,9 +878,6 @@
     border: 1px solid m.$gray-border;
     border-bottom: none;
     border-radius: m.$radius m.$radius 0 0;
-    .spacer {
-      flex: 1;
-    }
     .search-box {
       position: relative;
       .search-ico {

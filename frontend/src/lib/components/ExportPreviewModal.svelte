@@ -43,7 +43,8 @@
   let previewUrl = $state<string | null>(null);
   let rendering = $state(false);
   let renderError = $state<string | null>(null);
-  let canvas: HTMLCanvasElement | null = null;
+  // $state et non `let` simple : `disabled={!canvas}` en dépend.
+  let canvas = $state<HTMLCanvasElement | null>(null);
 
   const effectiveTheme = $derived<ExportTheme>({ ...theme, title, subtitle, caption });
 
@@ -115,7 +116,7 @@
       {#if renderError}
         <p class="p-6 text-center text-sm font-semibold" style="color: var(--danger)">{renderError}</p>
       {:else if previewUrl}
-        <img src={previewUrl} alt="Aperçu de l'image exportée" class:stale={rendering} />
+        <img src={previewUrl} alt="Aperçu de l'export tel qu'il sera téléchargé" class:stale={rendering} />
       {:else}
         <p class="p-10 text-center text-xs" style="color: var(--muted)">Composition de l'aperçu…</p>
       {/if}

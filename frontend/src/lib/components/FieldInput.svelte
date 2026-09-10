@@ -580,17 +580,17 @@
       {:else}
         <div class="space-y-3">
           <div>
-            <label class="label !text-[10px]">Numéro de carte</label>
-            <input class="input text-xs" type="text" placeholder="4242 4242 4242 4242" disabled={isPaying} />
+            <label class="label !text-[10px]" for={`pay-card-${field.key}`}>Numéro de carte</label>
+            <input id={`pay-card-${field.key}`} class="input text-xs" type="text" placeholder="4242 4242 4242 4242" disabled={isPaying} />
           </div>
           <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="label !text-[10px]">Expiration</label>
-              <input class="input text-xs" type="text" placeholder="MM/AA" disabled={isPaying} />
+              <label class="label !text-[10px]" for={`pay-exp-${field.key}`}>Expiration</label>
+              <input id={`pay-exp-${field.key}`} class="input text-xs" type="text" placeholder="MM/AA" disabled={isPaying} />
             </div>
             <div>
-              <label class="label !text-[10px]">CVC</label>
-              <input class="input text-xs" type="text" placeholder="123" disabled={isPaying} />
+              <label class="label !text-[10px]" for={`pay-cvc-${field.key}`}>CVC</label>
+              <input id={`pay-cvc-${field.key}`} class="input text-xs" type="text" placeholder="123" disabled={isPaying} />
             </div>
           </div>
           <button

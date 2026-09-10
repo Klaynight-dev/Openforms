@@ -988,12 +988,12 @@
 {#if !loading && !error}
   <div class="mb-6 bg-white border border-[color:var(--line)] rounded-2xl p-4 flex flex-wrap items-center gap-4 shadow-sm animate-fade-in">
     <div class="flex items-center gap-2">
-      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Du :</label>
-      <input class="input text-xs !w-40 !py-1" type="date" bind:value={filterStartDate} />
+      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="filter-start">Du :</label>
+      <input id="filter-start" class="input text-xs !w-40 !py-1" type="date" bind:value={filterStartDate} />
     </div>
     <div class="flex items-center gap-2">
-      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Au :</label>
-      <input class="input text-xs !w-40 !py-1" type="date" bind:value={filterEndDate} />
+      <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="filter-end">Au :</label>
+      <input id="filter-end" class="input text-xs !w-40 !py-1" type="date" bind:value={filterEndDate} />
     </div>
 
     {#if choiceFields.length > 0}
@@ -1207,16 +1207,16 @@
 
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <div class="flex items-center gap-2">
-          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Lignes :</label>
-          <select class="input text-xs !w-52 !py-1" bind:value={crossRowKey}>
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="cross-rows">Lignes :</label>
+          <select id="cross-rows" class="input text-xs !w-52 !py-1" bind:value={crossRowKey}>
             {#each crossFields as f (f.key)}
               <option value={f.key}>{f.label}</option>
             {/each}
           </select>
         </div>
         <div class="flex items-center gap-2">
-          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Colonnes :</label>
-          <select class="input text-xs !w-52 !py-1" bind:value={crossColKey}>
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="cross-cols">Colonnes :</label>
+          <select id="cross-cols" class="input text-xs !w-52 !py-1" bind:value={crossColKey}>
             {#each crossFields as f (f.key)}
               <option value={f.key}>{f.label}</option>
             {/each}

@@ -317,15 +317,17 @@
             <div class="flex flex-col sm:flex-row gap-4 items-start">
               <!-- Label Input -->
               <div class="flex-1 w-full">
-                <label class="label text-[10px] text-slate-400 uppercase tracking-wide">Question</label>
+                <label class="label text-[10px] text-slate-400 uppercase tracking-wide" for={`fb-q-${field.key}`}>Question</label>
                 {#if editingLocale === "fr"}
                   <input 
+                    id={`fb-q-${field.key}`}
                     class="input font-bold" 
                     bind:value={field.label} 
                     placeholder="Question sans titre" 
                   />
                 {:else}
                   <input 
+                    id={`fb-q-${field.key}`}
                     class="input font-bold bg-brand-50/20 text-brand-700 placeholder-brand-300" 
                     placeholder={field.label} 
                     bind:value={settings.translations[editingLocale].fields[field.key].label} 
@@ -335,8 +337,8 @@
 
               <!-- Type Select dropdown -->
               <div class="w-full sm:w-56 shrink-0">
-                <label class="label text-[10px] text-slate-400 uppercase tracking-wide">Type de réponse</label>
-                <select class="input text-xs" bind:value={field.type}>
+                <label class="label text-[10px] text-slate-400 uppercase tracking-wide" for={`fb-2-${field.key}`}>Type de réponse</label>
+                <select id={`fb-2-${field.key}`} class="input text-xs" bind:value={field.type}>
                   {#each FIELD_TYPE_META as m}
                     <option value={m.type}>{m.label}</option>
                   {/each}
@@ -347,15 +349,17 @@
             <!-- Description & Placeholder -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="label text-[10px] text-slate-400 uppercase">Description explicative</label>
+                <label class="label text-[10px] text-slate-400 uppercase" for={`fb-desc-${field.key}`}>Description explicative</label>
                 {#if editingLocale === "fr"}
                   <input 
+                    id={`fb-desc-${field.key}`}
                     class="input text-xs" 
                     bind:value={field.description} 
                     placeholder="ex: Merci de saisir vos informations..." 
                   />
                 {:else}
                   <input 
+                    id={`fb-desc-${field.key}`}
                     class="input text-xs" 
                     placeholder={field.description} 
                     bind:value={settings.translations[editingLocale].fields[field.key].description} 
@@ -365,15 +369,17 @@
               
               {#if field.type !== "section" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment"}
                 <div>
-                  <label class="label text-[10px] text-slate-400 uppercase">Placeholder (Indication)</label>
+                  <label class="label text-[10px] text-slate-400 uppercase" for={`fb-ph-${field.key}`}>Placeholder (Indication)</label>
                   {#if editingLocale === "fr"}
                     <input 
+                      id={`fb-ph-${field.key}`}
                       class="input text-xs" 
                       bind:value={field.placeholder} 
                       placeholder="ex: Entrez du texte..." 
                     />
                   {:else}
                     <input 
+                      id={`fb-ph-${field.key}`}
                       class="input text-xs" 
                       placeholder={field.placeholder} 
                       bind:value={settings.translations[editingLocale].fields[field.key].placeholder} 
@@ -386,7 +392,7 @@
             <!-- Choice Options Editor -->
             {#if metaFor(field.type).hasOptions}
               <div class="pt-4 border-t border-slate-100">
-                <label class="label text-xs">Options de choix</label>
+                <span class="label text-xs">Options de choix</span>
                 <div class="space-y-2">
                   {#each field.options ?? [] as opt, oi}
                     <div
@@ -401,6 +407,7 @@
                         draggable="true"
                         ondragstart={(e) => onOptionDragStart(e, oi)}
                         ondragend={onOptionDragEnd}
+                        role="none"
                         title="Glisser pour réorganiser"
                       ><IconDrag size={14} /></span>
                       <input
@@ -478,8 +485,8 @@
             {#if field.type === "file"}
               <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label class="label text-xs">Types MIME acceptés (séparés par virgules)</label>
-                  <input 
+                  <label class="label text-xs" for={`fb-6-${field.key}`}>Types MIME acceptés (séparés par virgules)</label>
+                  <input id={`fb-6-${field.key}`} 
                     class="input text-xs" 
                     placeholder="image/*, application/pdf" 
                     value={(field.accept ?? []).join(", ")} 
@@ -487,8 +494,8 @@
                   />
                 </div>
                 <div>
-                  <label class="label text-xs">Taille maximale autorisée (octets)</label>
-                  <input 
+                  <label class="label text-xs" for={`fb-7-${field.key}`}>Taille maximale autorisée (octets)</label>
+                  <input id={`fb-7-${field.key}`} 
                     class="input text-xs" 
                     type="number" 
                     bind:value={field.maxSizeBytes} 
@@ -503,8 +510,8 @@
               <div class="pt-4 border-t border-slate-100 space-y-3">
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="label text-xs">Valeur de départ</label>
-                    <select 
+                    <label class="label text-xs" for={`fb-8-${field.key}`}>Valeur de départ</label>
+                    <select id={`fb-8-${field.key}`} 
                       class="input text-xs"
                       value={field.scale?.min ?? 1}
                       onchange={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.min = parseInt((e.target as HTMLSelectElement).value) || 1; }}
@@ -514,8 +521,8 @@
                     </select>
                   </div>
                   <div>
-                    <label class="label text-xs">Valeur maximale</label>
-                    <select 
+                    <label class="label text-xs" for={`fb-9-${field.key}`}>Valeur maximale</label>
+                    <select id={`fb-9-${field.key}`} 
                       class="input text-xs"
                       value={field.scale?.max ?? 5}
                       onchange={(e) => { field.scale ??= { min: 1, max: 5 }; field.scale.max = parseInt((e.target as HTMLSelectElement).value) || 5; }}
@@ -528,8 +535,8 @@
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="label text-xs">Libellé min (ex: Mauvais)</label>
-                    <input 
+                    <label class="label text-xs" for={`fb-10-${field.key}`}>Libellé min (ex: Mauvais)</label>
+                    <input id={`fb-10-${field.key}`} 
                       class="input text-xs"
                       placeholder="Optionnel"
                       value={field.scale?.minLabel ?? ""}
@@ -537,8 +544,8 @@
                     />
                   </div>
                   <div>
-                    <label class="label text-xs">Libellé max (ex: Excellent)</label>
-                    <input 
+                    <label class="label text-xs" for={`fb-11-${field.key}`}>Libellé max (ex: Excellent)</label>
+                    <input id={`fb-11-${field.key}`} 
                       class="input text-xs"
                       placeholder="Optionnel"
                       value={field.scale?.maxLabel ?? ""}
@@ -553,8 +560,8 @@
             {#if (field.type === "grid" || field.type === "checkbox_grid") && field.grid}
               <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label class="label text-xs">Lignes (une par ligne)</label>
-                  <textarea
+                  <label class="label text-xs" for={`fb-12-${field.key}`}>Lignes (une par ligne)</label>
+                  <textarea id={`fb-12-${field.key}`}
                     class="input text-xs font-mono"
                     rows="3"
                     value={gridText(field.grid.rows)}
@@ -562,8 +569,8 @@
                   ></textarea>
                 </div>
                 <div>
-                  <label class="label text-xs">Colonnes (une par ligne)</label>
-                  <textarea
+                  <label class="label text-xs" for={`fb-13-${field.key}`}>Colonnes (une par ligne)</label>
+                  <textarea id={`fb-13-${field.key}`}
                     class="input text-xs font-mono"
                     rows="3"
                     value={gridText(field.grid.columns)}
@@ -594,8 +601,8 @@
                     {#if field.type === "short_text" || field.type === "paragraph"}
                       <div class="grid grid-cols-2 gap-3">
                         <div>
-                          <label class="label !text-[10px]">Longueur minimale</label>
-                          <input
+                          <label class="label !text-[10px]" for={`fb-14-${field.key}`}>Longueur minimale</label>
+                          <input id={`fb-14-${field.key}`}
                             class="input text-xs"
                             type="number"
                             value={field.validation?.minLength ?? ""}
@@ -607,8 +614,8 @@
                           />
                         </div>
                         <div>
-                          <label class="label !text-[10px]">Longueur maximale</label>
-                          <input
+                          <label class="label !text-[10px]" for={`fb-15-${field.key}`}>Longueur maximale</label>
+                          <input id={`fb-15-${field.key}`}
                             class="input text-xs"
                             type="number"
                             value={field.validation?.maxLength ?? ""}
@@ -621,8 +628,8 @@
                         </div>
                       </div>
                       <div>
-                        <label class="label !text-[10px]">Expression régulière de validation (Regex)</label>
-                        <input
+                        <label class="label !text-[10px]" for={`fb-16-${field.key}`}>Expression régulière de validation (Regex)</label>
+                        <input id={`fb-16-${field.key}`}
                           class="input text-xs font-mono"
                           placeholder="ex: ^[A-Z].*"
                           value={field.validation?.pattern ?? ""}
@@ -635,8 +642,8 @@
                     {:else if field.type === "number"}
                       <div class="grid grid-cols-2 gap-3">
                         <div>
-                          <label class="label !text-[10px]">Valeur minimale</label>
-                          <input
+                          <label class="label !text-[10px]" for={`fb-17-${field.key}`}>Valeur minimale</label>
+                          <input id={`fb-17-${field.key}`}
                             class="input text-xs"
                             type="number"
                             value={field.validation?.min ?? ""}
@@ -648,8 +655,8 @@
                           />
                         </div>
                         <div>
-                          <label class="label !text-[10px]">Valeur maximale</label>
-                          <input
+                          <label class="label !text-[10px]" for={`fb-18-${field.key}`}>Valeur maximale</label>
+                          <input id={`fb-18-${field.key}`}
                             class="input text-xs"
                             type="number"
                             value={field.validation?.max ?? ""}
@@ -696,8 +703,8 @@
                             {@const trigger = precedingChoiceFields.find((f) => f.key === field.condition!.fieldKey)}
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pl-4 border-l-2 border-slate-200">
                               <div>
-                                <label class="label !text-[10px]">Si la question suivante :</label>
-                                <select
+                                <label class="label !text-[10px]" for={`fb-19-${field.key}`}>Si la question suivante :</label>
+                                <select id={`fb-19-${field.key}`}
                                   class="input text-xs"
                                   value={field.condition.fieldKey}
                                   onchange={(e) => {
@@ -716,8 +723,8 @@
                                 </select>
                               </div>
                               <div>
-                                <label class="label !text-[10px]">Est égale à :</label>
-                                <select
+                                <label class="label !text-[10px]" for={`fb-20-${field.key}`}>Est égale à :</label>
+                                <select id={`fb-20-${field.key}`}
                                   class="input text-xs"
                                   value={field.condition.value}
                                   onchange={(e) => {
@@ -743,8 +750,8 @@
 
                     <!-- Advanced Key ID -->
                     <div class="border-t border-slate-200 pt-3">
-                      <label class="label !text-[10px] text-slate-500">Clé d'exportation technique (Identifiant de colonne)</label>
-                      <input 
+                      <label class="label !text-[10px] text-slate-500" for={`fb-21-${field.key}`}>Clé d'exportation technique (Identifiant de colonne)</label>
+                      <input id={`fb-21-${field.key}`} 
                         class="input text-xs font-mono !py-1" 
                         bind:value={field.key} 
                         placeholder="champ_ex"

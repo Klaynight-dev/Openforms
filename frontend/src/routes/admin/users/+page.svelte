@@ -264,8 +264,8 @@
     <!-- Gestion des accès -->
     <div class="card h-fit">
       <h2 class="mb-3 font-semibold">Accès par formulaire</h2>
-      <label class="label">Formulaire</label>
-      <select class="input mb-3" bind:value={selectedFormId} onchange={loadAccess}>
+      <label class="label" for="access-form">Formulaire</label>
+      <select id="access-form" class="input mb-3" bind:value={selectedFormId} onchange={loadAccess}>
         <option value="">— Choisir —</option>
         {#each forms as f}<option value={f.id}>{f.title}</option>{/each}
       </select>
@@ -287,8 +287,8 @@
           {/if}
         </div>
 
-        <label class="label">Ajouter un éditeur</label>
-        <select class="input mb-2" bind:value={accessUserId}>
+        <label class="label" for="access-user">Ajouter un éditeur</label>
+        <select id="access-user" class="input mb-2" bind:value={accessUserId}>
           <option value="">— Utilisateur —</option>
           {#each users.filter((u) => u.role === "EDITOR") as u}<option value={u.id}>{u.email}</option>{/each}
         </select>

@@ -268,13 +268,13 @@
     <!-- --- Kanban Board --- -->
     <div class="no-print flex flex-col gap-4 animate-fade-in">
       <div class="flex items-center gap-3 bg-white p-4 rounded-2xl border border-[color:var(--line)] shadow-sm">
-        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide shrink-0">Regrouper les cartes par :</label>
+        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide shrink-0" for="kanban-group">Regrouper les cartes par :</label>
         {#if groupableFields.length === 0}
           <span class="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
             Aucun champ ou métadonnée textuelle disponible pour le regroupement.
           </span>
         {:else}
-          <select class="input text-xs !w-64" bind:value={kanbanGroupKey}>
+          <select id="kanban-group" class="input text-xs !w-64" bind:value={kanbanGroupKey}>
             {#each groupableFields as f}
               <option value={f.key}>{f.label} ({metaColumns.some(m => m.key === f.key) ? 'Métadonnée' : 'Question'})</option>
             {/each}
@@ -290,6 +290,7 @@
               class="flex flex-col gap-3 rounded-2xl bg-slate-50/70 border border-slate-200/60 p-3 min-h-[300px]"
               ondragover={(e) => e.preventDefault()}
               ondrop={() => onDropLane(col.value)}
+              role="none"
             >
               <div class="flex items-center justify-between border-b border-slate-200 pb-2 mb-1 px-1">
                 <span class="text-xs font-black text-slate-700 uppercase tracking-wider">{col.label}</span>
@@ -303,6 +304,7 @@
                     class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm hover:shadow-md transition cursor-grab select-none active:cursor-grabbing hover:border-brand-200 animate-fade-in"
                     draggable="true"
                     ondragstart={() => onDragStartCard(row.id)}
+                    role="none"
                   >
                     <p class="text-[10px] text-slate-400 font-semibold mb-1">
                       {new Date(row.submittedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}

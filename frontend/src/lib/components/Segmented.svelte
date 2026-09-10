@@ -25,7 +25,16 @@
   }
 </script>
 
-<div class="segmented" class:dense role="radiogroup" aria-label={label} onkeydown={onKeydown}>
+<!-- tabindex sur le conteneur : la tabulation entre dans le groupe puis les
+     flèches naviguent (tabindex mobile porté par les boutons). -->
+<div
+  class="segmented"
+  class:dense
+  role="radiogroup"
+  tabindex="-1"
+  aria-label={label}
+  onkeydown={onKeydown}
+>
   {#each options as option (option.value)}
     <button
       type="button"
