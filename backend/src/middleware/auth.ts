@@ -1,12 +1,17 @@
 import { Elysia } from "elysia";
 import { resolveSession, type SessionContext } from "../lib/session.ts";
+import { resolveApiKey } from "../lib/apiKey.ts";
 import { prisma } from "../services/prisma.ts";
 
 export type Role = "SUPER_ADMIN" | "EDITOR";
 
+/** Origine de l'authentification : conditionne la vérification CSRF. */
+export type AuthSource = "session" | "apikey" | null;
+
 /**
  * Plugin d'authentification :
- *  - `derive` : résout la session depuis le cookie HttpOnly et expose `auth`.
+ *  - `derive` : résout l'identité depuis le cookie HttpOnly **ou** depuis une
+ *    clé d'API (`Authorization: Bearer ofk_…`), et expose `auth`.
  *  - macro `requireRole` : garde de route (401 si non connecté, 403 si mauvais
  *    rôle) et vérification CSRF (double-submit) sur les requêtes mutantes.
  *
@@ -16,28 +21,41 @@ export type Role = "SUPER_ADMIN" | "EDITOR";
  *   .post('/', handler, { requireRole: ['SUPER_ADMIN'] })
  */
 export const authPlugin = new Elysia({ name: "auth" })
-  .derive({ as: "scoped" }, async ({ cookie }) => {
+  .derive({ as: "scoped" }, async ({ cookie, request }) => {
+    // Une clé d'API prime sur le cookie : un client non-navigateur n'en a pas.
+    const header = request.headers.get("authorization");
+    if (header?.startsWith("Bearer ")) {
+      const auth = await resolveApiKey(header.slice(7).trim());
+      if (auth) return { auth: auth as SessionContext | null, authSource: "apikey" as AuthSource };
+    }
+
     const token = cookie.session?.value;
     const auth = await resolveSession(typeof token === "string" ? token : undefined);
-    return { auth: auth as SessionContext | null };
+    return {
+      auth: auth as SessionContext | null,
+      authSource: (auth ? "session" : null) as AuthSource,
+    };
   })
   .macro(({ onBeforeHandle }) => ({
     requireRole(roles: Role[] | true | undefined) {
       if (roles === undefined) return;
       onBeforeHandle((ctx: {
         auth: SessionContext | null;
+        authSource: AuthSource;
         set: { status?: number | string };
         request: Request;
       }) => {
-        const { auth, set, request } = ctx;
+        const { auth, authSource, set, request } = ctx;
         if (!auth) {
           set.status = 401;
           return { success: false, error: "Authentification requise." };
         }
 
-        // Protection CSRF : toute mutation authentifiée doit présenter le jeton.
+        // Protection CSRF : toute mutation authentifiée par cookie doit
+        // présenter le jeton. Les clés d'API en sont exemptées- elles ne sont
+        // pas envoyées automatiquement par le navigateur, donc non rejouables.
         const method = request.method.toUpperCase();
-        if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+        if (authSource === "session" && method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
           const header = request.headers.get("x-csrf-token");
           if (!header || header !== auth.session.csrfSecret) {
             set.status = 403;

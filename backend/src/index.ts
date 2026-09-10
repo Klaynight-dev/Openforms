@@ -9,6 +9,8 @@ import { formController } from "./controllers/form.controller.ts";
 import { responseController } from "./controllers/response.controller.ts";
 import { uploadController } from "./controllers/upload.controller.ts";
 import { statsController } from "./controllers/stats.controller.ts";
+import { statsPresetController } from "./controllers/stats-preset.controller.ts";
+import { apiKeyController } from "./controllers/api-key.controller.ts";
 import { organizationController } from "./controllers/organization.controller.ts";
 import { purgeExpiredSessions } from "./lib/session.ts";
 
@@ -34,7 +36,7 @@ export const app = new Elysia()
   .use(
     swagger({
       documentation: {
-        info: { title: "Formulaire Humanitour — API", version: "0.1.0" },
+        info: { title: "Formulaire Humanitour- API", version: "0.1.0" },
         tags: [
           { name: "auth", description: "Authentification & sessions" },
           { name: "forms", description: "Formulaires (builder)" },
@@ -50,6 +52,8 @@ export const app = new Elysia()
   .use(responseController)
   .use(uploadController)
   .use(statsController)
+  .use(statsPresetController)
+  .use(apiKeyController)
   .use(organizationController);
 
 // Purge périodique des sessions expirées (toutes les heures).

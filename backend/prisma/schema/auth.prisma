@@ -15,7 +15,7 @@ enum FormPermission {
 model User {
   id           String       @id @default(uuid())
   email        String       @unique
-  /// Hash Argon2id calculé via Bun.password — jamais le mot de passe en clair.
+  /// Hash Argon2id calculé via Bun.password- jamais le mot de passe en clair.
   /// `null` tant que le titulaire n'a pas défini son mot de passe via le lien d'invitation.
   passwordHash String?
   role         Role         @default(EDITOR)
@@ -29,8 +29,27 @@ model User {
   formAccess          FormAccess[]
   organizations       OrganizationMember[]
   passwordSetupTokens PasswordSetupToken[]
+  statsPresets        StatsPreset[]
+  apiKeys             ApiKey[]
 
   @@index([email])
+}
+
+/// Clé d'API personnelle : permet à un client externe (serveur MCP, script)
+/// d'agir au nom de l'utilisateur via l'en-tête `Authorization: Bearer <token>`.
+/// Les droits restent ceux du compte porteur- aucune élévation de privilège.
+model ApiKey {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  name   String
+  /// SHA-256 du token remis à la création- jamais stocké en clair.
+  tokenHash  String    @unique
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 /// Jeton à usage unique envoyé par email permettant de définir (ou
@@ -39,7 +58,7 @@ model PasswordSetupToken {
   id        String   @id @default(uuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-  /// SHA-256 du jeton envoyé dans le lien — jamais stocké en clair.
+  /// SHA-256 du jeton envoyé dans le lien- jamais stocké en clair.
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
