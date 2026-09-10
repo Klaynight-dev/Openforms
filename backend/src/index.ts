@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { env } from "./config/env.ts";
 import { securityHeaders, corsPlugin } from "./middleware/security.ts";
+import { requestLogger } from "./middleware/logger.ts";
 import { authController } from "./controllers/auth.controller.ts";
 import { usersController } from "./controllers/users.controller.ts";
 import { formController } from "./controllers/form.controller.ts";
@@ -12,6 +13,7 @@ import { organizationController } from "./controllers/organization.controller.ts
 import { purgeExpiredSessions } from "./lib/session.ts";
 
 export const app = new Elysia()
+  .use(requestLogger)
   .use(securityHeaders)
   .use(corsPlugin)
   .onError(({ code, error, set }) => {
