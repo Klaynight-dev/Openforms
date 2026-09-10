@@ -1,12 +1,21 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { api } from "$api/client.ts";
   import { getResponsesCached } from "$lib/responsesCache.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
-  import type { FieldDefinition, ResponseRow, FormDetail } from "$lib/types.ts";
+  import type {
+    FieldDefinition,
+    ResponseRow,
+    FormDetail,
+    FormSummary,
+    StatsPreset,
+    StatsPresetConfig,
+  } from "$lib/types.ts";
+
   import MultiSelectFilter from "$lib/components/MultiSelectFilter.svelte";
+  import Modal from "$lib/components/Modal.svelte";
   import ExportSettingsPanel from "$lib/components/ExportSettingsPanel.svelte";
   import ExportPreviewModal from "$lib/components/ExportPreviewModal.svelte";
   import DataExportMenu from "$lib/components/DataExportMenu.svelte";
@@ -39,6 +48,18 @@
   // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
   import type { ECharts } from "echarts";
   let echarts: typeof import("echarts") | null = null;
+
+  /** Un formulaire dont les réponses alimentent le tableau croisé. */
+  type CrossSource = { id: string; title: string; schema: FieldDefinition[]; rows: ResponseRow[] };
+
+  /** Dimension croisable : un champ d'une source, ou la source elle-même. */
+  type CrossField = {
+    key: string;
+    label: string;
+    /** `null` pour la dimension virtuelle « formulaire ». */
+    field: FieldDefinition | null;
+    formId: string;
+  };
 
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   /** En deçà de ce pourcentage, une part de camembert ne porte pas d'étiquette. */
@@ -100,31 +121,69 @@
   // Mode d'affichage de la courbe d'évolution
   let evolutionMode = $state<"daily" | "cumulative">("daily");
 
-  // Tableau croisé : champs sélectionnés + mode d'affichage
-  let crossRowKey = $state("");
-  let crossColKey = $state("");
+  // Tableau croisé : champs sélectionnés (un axe peut combiner plusieurs
+  // champs) + mode d'affichage.
+  let crossRowKeys = $state<string[]>([]);
+  let crossColKeys = $state<string[]>([]);
   let crossMode = $state<"count" | "row" | "col" | "total">("count");
+
+  // Sources croisées : formulaires supplémentaires confrontés au formulaire
+  // courant. Toujours au moins le formulaire courant (implicite).
+  let extraSourceIds = $state<string[]>([]);
+  let availableForms = $state<FormSummary[]>([]);
+  let extraSources = $state<Record<string, CrossSource>>({});
+  let loadingSources = $state(false);
 
   // Date range filtering
   let filterStartDate = $state("");
   let filterEndDate = $state("");
 
-  let filteredRows = $derived.by<ResponseRow[]>(() => {
-    let data = rows;
-    if (filterStartDate || filterEndDate) {
-      const start = filterStartDate ? new Date(filterStartDate).getTime() : 0;
-      const end = filterEndDate ? new Date(filterEndDate).getTime() : Infinity;
-      data = data.filter((r) => {
-        const t = new Date(r.submittedAt).getTime();
-        return t >= start && t <= end;
-      });
+  // Filtres numériques (champs `number` et `linear_scale`) : bornes incluses.
+  let numericFilters = $state<Record<string, { min?: number; max?: number }>>({});
+  let hasNumericFilters = $derived(
+    Object.values(numericFilters).some((r) => r.min != null || r.max != null),
+  );
+
+  /** Met à jour une borne de filtre numérique (champ vide = borne retirée). */
+  function setNumericBound(key: string, bound: "min" | "max", raw: string) {
+    const current = { ...(numericFilters[key] ?? {}) };
+    if (raw === "" || Number.isNaN(Number(raw))) delete current[bound];
+    else current[bound] = Number(raw);
+    if (current.min == null && current.max == null) {
+      const { [key]: _removed, ...rest } = numericFilters;
+      numericFilters = rest;
+    } else {
+      numericFilters = { ...numericFilters, [key]: current };
     }
+  }
+
+  /** Restreint un jeu de lignes à la plage de dates courante. */
+  function applyDateFilter(data: ResponseRow[]): ResponseRow[] {
+    if (!filterStartDate && !filterEndDate) return data;
+    const start = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const end = filterEndDate ? new Date(filterEndDate).getTime() : Infinity;
+    return data.filter((r) => {
+      const t = new Date(r.submittedAt).getTime();
+      return t >= start && t <= end;
+    });
+  }
+
+  let filteredRows = $derived.by<ResponseRow[]>(() => {
+    let data = applyDateFilter(rows);
     for (const [key, selected] of Object.entries(extraFilters)) {
       if (!selected || selected.length === 0) continue;
       data = data.filter((r) => {
         const v = r.values[key];
         const vals = Array.isArray(v) ? v.map(String) : v != null ? [String(v)] : [];
         return vals.some((x) => selected.includes(x));
+      });
+    }
+    for (const [key, range] of Object.entries(numericFilters)) {
+      if (range.min == null && range.max == null) continue;
+      data = data.filter((r) => {
+        const n = Number(r.values[key]);
+        if (!Number.isFinite(n)) return false;
+        return n >= (range.min ?? -Infinity) && n <= (range.max ?? Infinity);
       });
     }
     return data;
@@ -429,15 +488,80 @@
   });
 
   // ─── Tableau croisé dynamique ───────────────────────────────────────
-  let crossFields = $derived(
-    schema.filter((f) => ["radio", "select", "checkbox", "linear_scale"].includes(f.type))
-  );
+  const CROSSABLE_TYPES = ["radio", "select", "checkbox", "linear_scale"];
+  /** Dimension virtuelle : la source (formulaire) d'où provient la réponse. */
+  const FORM_DIM_KEY = "__form__";
+  /** Sépare les valeurs d'un axe combinant plusieurs champs. */
+  const AXIS_SEP = "\u001F";
+
+  /** Sources effectivement croisées : le formulaire courant, puis les autres. */
+  let crossSources = $derived.by<CrossSource[]>(() => {
+    const own: CrossSource = { id: formId, title: formTitle, schema, rows: filteredRows };
+    const others = extraSourceIds
+      .filter((id) => id !== formId)
+      .map((id) => extraSources[id])
+      .filter((s): s is CrossSource => Boolean(s))
+      // Les filtres à choix visent les champs du formulaire courant : seules
+      // les bornes de dates, universelles, s'appliquent aux autres sources.
+      .map((s) => ({ ...s, rows: applyDateFilter(s.rows) }));
+    return [own, ...others];
+  });
+
+  let isMultiSource = $derived(crossSources.length > 1);
+
+  /** Champs croisables, préfixés par leur source dès qu'il y en a plusieurs. */
+  let crossFields = $derived.by<CrossField[]>(() => {
+    const out: CrossField[] = [];
+    if (isMultiSource) {
+      out.push({ key: FORM_DIM_KEY, label: "Formulaire (source)", field: null, formId: "" });
+    }
+    for (const src of crossSources) {
+      for (const f of src.schema) {
+        if (!CROSSABLE_TYPES.includes(f.type)) continue;
+        out.push({
+          key: isMultiSource ? `${src.id}::${f.key}` : f.key,
+          label: isMultiSource ? `${src.title}- ${f.label}` : f.label,
+          field: f,
+          formId: src.id,
+        });
+      }
+    }
+    return out;
+  });
 
   $effect(() => {
-    if (crossFields.length >= 2 && !crossRowKey) {
-      crossRowKey = crossFields[0].key;
-      crossColKey = crossFields[1].key;
+    if (crossFields.length >= 2 && crossRowKeys.length === 0 && crossColKeys.length === 0) {
+      crossRowKeys = [crossFields[0].key];
+      crossColKeys = [crossFields[1].key];
     }
+  });
+
+  /** Charge les réponses des sources supplémentaires sélectionnées. */
+  $effect(() => {
+    const ids = extraSourceIds;
+    const missing = untrack(() => ids.filter((id) => id !== formId && !extraSources[id]));
+    if (missing.length === 0) return;
+
+    loadingSources = true;
+    Promise.all(
+      missing.map(async (id) => {
+        const res = await getResponsesCached(id);
+        return [
+          id,
+          {
+            id,
+            title: res.form.title,
+            schema: res.form.schema as FieldDefinition[],
+            rows: res.rows,
+          },
+        ] as const;
+      }),
+    )
+      .then((entries) => {
+        for (const [id, src] of entries) extraSources[id] = src;
+      })
+      .catch(() => toasts.error("Impossible de charger une des sources croisées."))
+      .finally(() => (loadingSources = false));
   });
 
   /** Valeurs d'un champ croisable normalisées en tableau ("Autre" regroupé). */
@@ -465,45 +589,105 @@
     return cats;
   }
 
-  let crossTab = $derived.by(() => {
-    const rowField = crossFields.find((f) => f.key === crossRowKey);
-    const colField = crossFields.find((f) => f.key === crossColKey);
-    if (!rowField || !colField || rowField.key === colField.key) return null;
+  /** Catégories d'une dimension croisable (champ réel ou source). */
+  function crossCategories(cf: CrossField): { value: string; label: string }[] {
+    if (cf.key === FORM_DIM_KEY) return crossSources.map((s) => ({ value: s.id, label: s.title }));
+    return choiceCategories(cf.field!);
+  }
 
-    const rowCats = choiceCategories(rowField);
-    const colCats = choiceCategories(colField);
-    const rowIndex = new Map(rowCats.map((c, i) => [c.value, i]));
-    const colIndex = new Map(colCats.map((c, i) => [c.value, i]));
+  /** Valeurs prises par une dimension pour une ligne donnée d'une source donnée. */
+  function crossValues(row: ResponseRow, srcId: string, cf: CrossField): string[] {
+    if (cf.key === FORM_DIM_KEY) return [srcId];
+    // Un champ appartient à une source : les lignes des autres n'y répondent pas.
+    if (cf.formId !== srcId) return [];
+    return extractChoiceValues(row, cf.field!);
+  }
 
-    // Valeurs observées hors options (données libres) : ajoutées en fin
-    for (const row of filteredRows) {
-      for (const v of extractChoiceValues(row, rowField)) {
-        if (!rowIndex.has(v)) { rowIndex.set(v, rowCats.length); rowCats.push({ value: v, label: v }); }
-      }
-      for (const v of extractChoiceValues(row, colField)) {
-        if (!colIndex.has(v)) { colIndex.set(v, colCats.length); colCats.push({ value: v, label: v }); }
-      }
+  /**
+   * Clés d'axe d'une ligne : produit cartésien des valeurs de chaque champ de
+   * l'axe (un champ à choix multiples produit plusieurs combinaisons). Une
+   * ligne qui ne renseigne pas tous les champs de l'axe est exclue.
+   */
+  function axisKeys(row: ResponseRow, srcId: string, fields: CrossField[]): string[] {
+    let combos: string[][] = [[]];
+    for (const cf of fields) {
+      const vals = crossValues(row, srcId, cf);
+      if (vals.length === 0) return [];
+      combos = combos.flatMap((c) => vals.map((v) => [...c, v]));
     }
+    return combos.map((c) => c.join(AXIS_SEP));
+  }
 
-    const matrix = rowCats.map(() => colCats.map(() => 0));
+  /** Libellé lisible d'une clé d'axe composite. */
+  function axisLabel(key: string, fields: CrossField[]): string {
+    return key
+      .split(AXIS_SEP)
+      .map((v, i) => crossCategories(fields[i]).find((c) => c.value === v)?.label ?? v)
+      .join(" / ");
+  }
+
+  /** Rang d'une clé d'axe, pour retrouver l'ordre déclaré des options. */
+  function axisRank(key: string, fields: CrossField[]): number[] {
+    return key.split(AXIS_SEP).map((v, i) => {
+      const idx = crossCategories(fields[i]).findIndex((c) => c.value === v);
+      return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+    });
+  }
+
+  let crossTab = $derived.by(() => {
+    const resolve = (keys: string[]) =>
+      keys.map((k) => crossFields.find((f) => f.key === k)).filter((f): f is CrossField => Boolean(f));
+    const rowFields = resolve(crossRowKeys);
+    const colFields = resolve(crossColKeys);
+    if (rowFields.length === 0 || colFields.length === 0) return null;
+    // Un même champ ne peut pas figurer sur les deux axes.
+    if (rowFields.some((r) => colFields.some((c) => c.key === r.key))) return null;
+
+    const counts = new Map<string, Map<string, number>>();
+    const rowKeys = new Set<string>();
+    const colKeys = new Set<string>();
     let paired = 0;
-    for (const row of filteredRows) {
-      const rv = extractChoiceValues(row, rowField);
-      const cv = extractChoiceValues(row, colField);
-      if (rv.length === 0 || cv.length === 0) continue;
-      paired++;
-      for (const r of rv) {
-        for (const c of cv) {
-          matrix[rowIndex.get(r)!][colIndex.get(c)!]++;
+
+    for (const src of crossSources) {
+      for (const row of src.rows) {
+        const rks = axisKeys(row, src.id, rowFields);
+        const cks = axisKeys(row, src.id, colFields);
+        if (rks.length === 0 || cks.length === 0) continue;
+        paired++;
+        for (const rk of rks) {
+          rowKeys.add(rk);
+          let line = counts.get(rk);
+          if (!line) { line = new Map(); counts.set(rk, line); }
+          for (const ck of cks) {
+            colKeys.add(ck);
+            line.set(ck, (line.get(ck) ?? 0) + 1);
+          }
         }
       }
     }
 
+    const byRank = (fields: CrossField[]) => (a: string, b: string) => {
+      const ra = axisRank(a, fields);
+      const rb = axisRank(b, fields);
+      for (let i = 0; i < ra.length; i++) {
+        if (ra[i] !== rb[i]) return ra[i] - rb[i];
+      }
+      return a.localeCompare(b);
+    };
+
+    const orderedRows = [...rowKeys].sort(byRank(rowFields));
+    const orderedCols = [...colKeys].sort(byRank(colFields));
+    const rowCats = orderedRows.map((k) => ({ value: k, label: axisLabel(k, rowFields) }));
+    const colCats = orderedCols.map((k) => ({ value: k, label: axisLabel(k, colFields) }));
+    const matrix = orderedRows.map((rk) => orderedCols.map((ck) => counts.get(rk)?.get(ck) ?? 0));
+
     const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));
-    const colTotals = colCats.map((_, ci) => matrix.reduce((s, r) => s + r[ci], 0));
+    const colTotals = orderedCols.map((_, ci) => matrix.reduce((s, r) => s + r[ci], 0));
     const grand = rowTotals.reduce((a, b) => a + b, 0);
     const maxCell = Math.max(0, ...matrix.flat());
-    return { rowField, colField, rowCats, colCats, matrix, rowTotals, colTotals, grand, maxCell, paired };
+    const rowLabel = rowFields.map((f) => f.label).join(" / ");
+    const colLabel = colFields.map((f) => f.label).join(" / ");
+    return { rowFields, colFields, rowLabel, colLabel, rowCats, colCats, matrix, rowTotals, colTotals, grand, maxCell, paired };
   });
 
   function crossCellText(count: number, ri: number, ci: number): string {
@@ -515,6 +699,123 @@
       case "total": return crossTab.grand ? Math.round((count / crossTab.grand) * 100) + " %" : "—";
     }
   }
+
+  // ─── Presets de croisement ──────────────────────────────────────────
+  let presets = $state<StatsPreset[]>([]);
+  let activePresetId = $state("");
+  let presetModalOpen = $state(false);
+  let presetName = $state("");
+  let savingPreset = $state(false);
+
+  /** Photographie de la configuration courante, telle qu'elle sera persistée. */
+  function currentPresetConfig(): StatsPresetConfig {
+    const filters: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(extraFilters)) {
+      if (v && v.length > 0) filters[k] = [...v];
+    }
+    const numeric: Record<string, { min?: number; max?: number }> = {};
+    for (const [k, r] of Object.entries(numericFilters)) {
+      if (r.min != null || r.max != null) numeric[k] = { ...r };
+    }
+    return {
+      rowFields: [...crossRowKeys],
+      colFields: [...crossColKeys],
+      crossMode,
+      extraFilters: filters,
+      numericFilters: numeric,
+      ...(filterStartDate ? { dateStart: filterStartDate } : {}),
+      ...(filterEndDate ? { dateEnd: filterEndDate } : {}),
+    };
+  }
+
+  /** Restaure intégralement une configuration enregistrée. */
+  function applyPreset(preset: StatsPreset) {
+    activePresetId = preset.id;
+    extraSourceIds = preset.formIds.filter((id) => id !== formId);
+    crossRowKeys = [...preset.config.rowFields];
+    crossColKeys = [...preset.config.colFields];
+    crossMode = preset.config.crossMode;
+    extraFilters = { ...preset.config.extraFilters };
+    numericFilters = { ...preset.config.numericFilters };
+    filterStartDate = preset.config.dateStart ?? "";
+    filterEndDate = preset.config.dateEnd ?? "";
+  }
+
+  async function loadPresets() {
+    try {
+      const res = await api.listStatsPresets(formId);
+      presets = res.presets;
+    } catch {
+      // Un preset indisponible ne doit pas empêcher la page de fonctionner.
+    }
+  }
+
+  async function savePreset() {
+    const name = presetName.trim();
+    if (!name) return;
+    savingPreset = true;
+    try {
+      const res = await api.createStatsPreset({
+        name,
+        formIds: [formId, ...extraSourceIds.filter((id) => id !== formId)],
+        config: currentPresetConfig(),
+      });
+      presets = [res.preset, ...presets];
+      activePresetId = res.preset.id;
+      presetModalOpen = false;
+      presetName = "";
+      toasts.success("Preset enregistré.");
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Échec de l'enregistrement du preset.");
+    } finally {
+      savingPreset = false;
+    }
+  }
+
+  /** Écrase le preset actif avec la configuration affichée. */
+  async function updateActivePreset() {
+    const target = presets.find((p) => p.id === activePresetId);
+    if (!target) return;
+    savingPreset = true;
+    try {
+      const res = await api.updateStatsPreset(target.id, {
+        formIds: [formId, ...extraSourceIds.filter((id) => id !== formId)],
+        config: currentPresetConfig(),
+      });
+      presets = presets.map((p) => (p.id === res.preset.id ? res.preset : p));
+      toasts.success("Preset mis à jour.");
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Échec de la mise à jour du preset.");
+    } finally {
+      savingPreset = false;
+    }
+  }
+
+  async function deleteActivePreset() {
+    const target = presets.find((p) => p.id === activePresetId);
+    if (!target) return;
+    try {
+      await api.deleteStatsPreset(target.id);
+      presets = presets.filter((p) => p.id !== target.id);
+      activePresetId = "";
+      toasts.success("Preset supprimé.");
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Échec de la suppression du preset.");
+    }
+  }
+
+  /** Même calcul que crossCellText, mais matrice numérique pour le heatmap ECharts. */
+  let crossDisplayMatrix = $derived.by(() => {
+    if (!crossTab) return null;
+    const { matrix, rowTotals, colTotals, grand } = crossTab;
+    if (crossMode === "count") return matrix;
+    return matrix.map((row, ri) =>
+      row.map((count, ci) => {
+        const total = crossMode === "row" ? rowTotals[ri] : crossMode === "col" ? colTotals[ci] : grand;
+        return total ? Math.round((count / total) * 100) : 0;
+      })
+    );
+  });
 
   // ─── Grilles (grid / checkbox_grid) ─────────────────────────────────
   let gridFields = $derived(
@@ -571,6 +872,19 @@
       formDetail = formRes?.form ?? null;
       exportTheme = normalizeExportTheme(formRes?.form?.exportTheme);
       savedThemeJson = JSON.stringify(exportTheme);
+
+      // Sources croisables : les autres formulaires de la même organisation.
+      // Chargées à part- leur absence ne doit pas casser la page.
+      const orgId = formRes?.form?.organizationId ?? null;
+      api
+        .listForms()
+        .then((res) => {
+          availableForms = res.forms.filter(
+            (f) => f.id !== formId && (orgId ? f.organizationId === orgId : false),
+          );
+        })
+        .catch(() => {});
+      loadPresets();
     } catch (e) {
       error = e instanceof Error ? e.message : "Erreur de chargement.";
     } finally {
@@ -632,6 +946,7 @@
   // Le tableau croisé dépend aussi des champs choisis : effet dédié
   $effect(() => {
     void accent;
+    void crossMode;
     if (crossTab && crossChartEl && !loading) {
       const timer = setTimeout(renderCrossChart, 50);
       return () => clearTimeout(timer);
@@ -809,8 +1124,9 @@
   }
 
   /** Options ECharts communes aux heatmaps (rampe dérivée de la couleur d'accent). */
-  function heatmapOption(rowLabels: string[], colLabels: string[], matrix: number[][]) {
+  function heatmapOption(rowLabels: string[], colLabels: string[], matrix: number[][], unit: "count" | "percent" = "count") {
     const maxVal = Math.max(1, ...matrix.flat());
+    const suffix = unit === "percent" ? " %" : " réponse(s)";
     // ECharts trace l'axe Y de bas en haut : on inverse pour lire de haut en bas
     const data: [number, number, number][] = [];
     matrix.forEach((row, ri) => {
@@ -819,7 +1135,7 @@
     return {
       tooltip: {
         formatter: (p: any) =>
-          `${rowLabels[rowLabels.length - 1 - p.value[1]]} × ${colLabels[p.value[0]]}<br/><b>${p.value[2]} réponse(s)</b>`,
+          `${rowLabels[rowLabels.length - 1 - p.value[1]]} × ${colLabels[p.value[0]]}<br/><b>${p.value[2]}${suffix}</b>`,
       },
       grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
       xAxis: { type: "category", data: colLabels, axisTick: { show: false }, axisLabel: { color: "#94a3b8", fontSize: 10 }, splitArea: { show: true } },
@@ -828,7 +1144,7 @@
       series: [{
         type: "heatmap",
         data,
-        label: { show: true, fontSize: 10, color: "#334155", formatter: (p: any) => (p.value[2] > 0 ? p.value[2] : "") },
+        label: { show: true, fontSize: 10, color: "#334155", formatter: (p: any) => (p.value[2] > 0 ? p.value[2] + (unit === "percent" ? " %" : "") : "") },
         itemStyle: { borderColor: "#ffffff", borderWidth: 2, borderRadius: 3 },
       }],
     };
@@ -880,7 +1196,7 @@
   }
 
   function renderCrossChart() {
-    if (!echarts || !crossChartEl || !crossTab) return;
+    if (!echarts || !crossChartEl || !crossTab || !crossDisplayMatrix) return;
     // Le conteneur est démonté/remonté selon la sélection : réinitialiser si le DOM a changé
     if (crossChart && crossChart.getDom() !== crossChartEl) {
       crossChart.dispose();
@@ -891,7 +1207,8 @@
       heatmapOption(
         crossTab.rowCats.map((c) => c.label),
         crossTab.colCats.map((c) => c.label),
-        crossTab.matrix
+        crossDisplayMatrix,
+        crossMode === "count" ? "count" : "percent"
       ),
       true
     );
@@ -1072,17 +1389,15 @@
   }
 
   /** Titre par défaut de l'export du tableau croisé. */
-  let crossChartTitle = $derived.by(() => {
-    const row = schema.find((f) => f.key === crossRowKey)?.label;
-    const col = schema.find((f) => f.key === crossColKey)?.label;
-    return row && col ? `${row} × ${col}` : "Tableau croisé";
-  });
+  let crossChartTitle = $derived(
+    crossTab ? `${crossTab.rowLabel} × ${crossTab.colLabel}` : "Tableau croisé",
+  );
 
   // Recent rows
   let recentRows = $derived([...rows].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 5));
 </script>
 
-<svelte:head><title>{formTitle ? `Stats — ${formTitle}` : "Statistiques"}</title></svelte:head>
+<svelte:head><title>{formTitle ? `Stats- ${formTitle}` : "Statistiques"}</title></svelte:head>
 
 
 
@@ -1112,12 +1427,42 @@
       </div>
     {/if}
 
+    {#if numericFields.length > 0}
+      <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+      <div class="flex flex-wrap items-center gap-3">
+        {#each numericFields as field (field.key)}
+          <div class="flex items-center gap-1">
+            <span class="text-[11px] font-semibold text-slate-500 max-w-[110px] truncate" title={field.label}>
+              {field.label}
+            </span>
+            <input
+              class="input text-xs !w-16 !py-1"
+              type="number"
+              placeholder="min"
+              aria-label="{field.label}- minimum"
+              value={numericFilters[field.key]?.min ?? ""}
+              oninput={(e) => setNumericBound(field.key, "min", e.currentTarget.value)}
+            />
+            <span class="text-[11px] text-slate-400">–</span>
+            <input
+              class="input text-xs !w-16 !py-1"
+              type="number"
+              placeholder="max"
+              aria-label="{field.label}- maximum"
+              value={numericFilters[field.key]?.max ?? ""}
+              oninput={(e) => setNumericBound(field.key, "max", e.currentTarget.value)}
+            />
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     <div class="ml-auto flex items-center gap-2">
-      {#if filterStartDate || filterEndDate || hasExtraFilters}
+      {#if filterStartDate || filterEndDate || hasExtraFilters || hasNumericFilters}
         <button
           type="button"
           class="btn-chip"
-          onclick={() => { filterStartDate = ""; filterEndDate = ""; extraFilters = {}; }}
+          onclick={() => { filterStartDate = ""; filterEndDate = ""; extraFilters = {}; numericFilters = {}; }}
         >
           <IconReset size={13} /> Réinitialiser les filtres
         </button>
@@ -1307,22 +1652,80 @@
         </button>
       </div>
 
+      <!-- Presets : rappeler ou figer une configuration de croisement -->
+      <div class="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-[color:var(--line)]">
+        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="cross-preset">Preset :</label>
+        <select
+          id="cross-preset"
+          class="input text-xs !w-56 !py-1"
+          value={activePresetId}
+          onchange={(e) => {
+            const p = presets.find((x) => x.id === e.currentTarget.value);
+            if (p) applyPreset(p);
+            else activePresetId = "";
+          }}
+        >
+          <option value="">— Aucun-</option>
+          {#each presets as p (p.id)}
+            <option value={p.id}>{p.name}</option>
+          {/each}
+        </select>
+        <button type="button" class="btn-chip" onclick={() => { presetName = ""; presetModalOpen = true; }}>
+          Enregistrer…
+        </button>
+        {#if activePresetId}
+          <button type="button" class="btn-chip" disabled={savingPreset} onclick={updateActivePreset}>
+            Mettre à jour
+          </button>
+          <button type="button" class="btn-chip !text-red-600" onclick={deleteActivePreset}>
+            Supprimer
+          </button>
+        {/if}
+      </div>
+
+      <!-- Sources croisées : confronter d'autres formulaires de l'organisation -->
+      {#if availableForms.length > 0}
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">Sources :</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+            {formTitle || "Formulaire courant"}
+          </span>
+          <MultiSelectFilter
+            options={availableForms.map((f) => ({ value: f.id, label: f.title }))}
+            selected={extraSourceIds}
+            onChange={(vals) => (extraSourceIds = vals)}
+            label="Ajouter un formulaire"
+          />
+          {#if loadingSources}
+            <span class="text-[11px] text-[color:var(--muted)]">Chargement…</span>
+          {/if}
+          {#if isMultiSource}
+            <span class="text-[11px] text-[color:var(--muted)]">
+              Les réponses ne sont pas appariées entre formulaires : chaque source est comptée
+              séparément, et « Formulaire (source) » est disponible comme dimension.
+            </span>
+          {/if}
+        </div>
+      {/if}
+
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <div class="flex items-center gap-2">
-          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="cross-rows">Lignes :</label>
-          <select id="cross-rows" class="input text-xs !w-52 !py-1" bind:value={crossRowKey}>
-            {#each crossFields as f (f.key)}
-              <option value={f.key}>{f.label}</option>
-            {/each}
-          </select>
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">Lignes :</span>
+          <MultiSelectFilter
+            options={crossFields.map((f) => ({ value: f.key, label: f.label }))}
+            selected={crossRowKeys}
+            onChange={(vals) => (crossRowKeys = vals)}
+            label="Champs en ligne"
+          />
         </div>
         <div class="flex items-center gap-2">
-          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide" for="cross-cols">Colonnes :</label>
-          <select id="cross-cols" class="input text-xs !w-52 !py-1" bind:value={crossColKey}>
-            {#each crossFields as f (f.key)}
-              <option value={f.key}>{f.label}</option>
-            {/each}
-          </select>
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">Colonnes :</span>
+          <MultiSelectFilter
+            options={crossFields.map((f) => ({ value: f.key, label: f.label }))}
+            selected={crossColKeys}
+            onChange={(vals) => (crossColKeys = vals)}
+            label="Champs en colonne"
+          />
         </div>
         <div class="flex border border-[color:var(--line)] rounded-lg p-0.5 bg-slate-50">
           {#each [["count", "Effectifs"], ["row", "% ligne"], ["col", "% colonne"], ["total", "% total"]] as [mode, label] (mode)}
@@ -1343,10 +1746,10 @@
 
       {#if !crossTab}
         <p class="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 w-fit">
-          Choisissez deux champs différents pour croiser leurs réponses.
+          Choisissez au moins un champ en ligne et un en colonne, sans qu'un même champ figure sur les deux axes.
         </p>
       {:else if crossTab.grand === 0}
-        <p class="text-xs text-[color:var(--muted)] text-center py-6">Aucune réponse à croiser sur ces deux champs.</p>
+        <p class="text-xs text-[color:var(--muted)] text-center py-6">Aucune réponse à croiser sur ces champs.</p>
       {:else}
         <div
           bind:this={crossChartEl}
@@ -1359,7 +1762,7 @@
             <thead>
               <tr class="border-b-2 border-[color:var(--line)]">
                 <th class="text-left py-2 pr-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">
-                  {crossTab.rowField.label} \ {crossTab.colField.label}
+                  {crossTab.rowLabel} \ {crossTab.colLabel}
                 </th>
                 {#each crossTab.colCats as col (col.value)}
                   <th class="text-right py-2 px-3 text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide max-w-[120px] truncate">{col.label}</th>
@@ -1394,7 +1797,7 @@
           </table>
         </div>
         <p class="mt-3 text-[11px] text-[color:var(--muted)]">
-          {crossTab.paired} réponse(s) renseignent les deux champs. Les champs à choix multiples comptent une occurrence par option cochée.
+          {crossTab.paired} réponse(s) renseignent tous les champs croisés. Les champs à choix multiples comptent une occurrence par option cochée.
         </p>
       {/if}
     </div>
@@ -1738,6 +2141,34 @@
   onclose={() => (exportTarget = null)}
   onpromote={promoteExportTexts}
 />
+
+<!-- Enregistrement d'un preset de croisement -->
+<Modal
+  open={presetModalOpen}
+  title="Enregistrer ce croisement"
+  description="Champs croisés, sources, filtres et mode d'affichage sont mémorisés."
+  size="sm"
+  dismissible={!savingPreset}
+  onclose={() => (presetModalOpen = false)}
+>
+  <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1" for="preset-name">
+    Nom du preset
+  </label>
+  <input
+    id="preset-name"
+    class="input w-full"
+    bind:value={presetName}
+    placeholder="Ex. Satisfaction par tranche d'âge"
+    onkeydown={(e) => { if (e.key === "Enter") savePreset(); }}
+  />
+
+  {#snippet footer()}
+    <button type="button" class="btn-ghost" onclick={() => (presetModalOpen = false)}>Annuler</button>
+    <button type="button" class="btn-primary" disabled={savingPreset || !presetName.trim()} onclick={savePreset}>
+      {savingPreset ? "Enregistrement…" : "Enregistrer"}
+    </button>
+  {/snippet}
+</Modal>
 
 <style>
   :global(.card) {

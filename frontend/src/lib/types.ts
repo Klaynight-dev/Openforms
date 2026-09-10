@@ -112,6 +112,39 @@ export interface FormAccessEntry {
   user: { id: string; email: string; displayName: string | null };
 }
 
+/** Configuration de croisement enregistrée depuis la page Statistiques. */
+export interface StatsPresetConfig {
+  /** Clés des champs portés par l'axe des lignes (combinés entre eux). */
+  rowFields: string[];
+  /** Clés des champs portés par l'axe des colonnes. */
+  colFields: string[];
+  crossMode: "count" | "row" | "col" | "total";
+  /** Filtres à choix : clé de champ → valeurs retenues. */
+  extraFilters: Record<string, string[]>;
+  /** Filtres numériques : clé de champ → bornes incluses. */
+  numericFilters: Record<string, { min?: number; max?: number }>;
+  dateStart?: string;
+  dateEnd?: string;
+}
+
+export interface StatsPreset {
+  id: string;
+  name: string;
+  /** Formulaires croisés : 1 seul = analyse simple, 2+ = comparaison de sources. */
+  formIds: string[];
+  config: StatsPresetConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 export interface UploadedFileInfo {
   originalName: string;
   mimeType: string;

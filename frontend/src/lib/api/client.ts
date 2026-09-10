@@ -17,6 +17,9 @@ import type {
   FormActivitySummary,
   Organization,
   OrganizationMember,
+  StatsPreset,
+  StatsPresetConfig,
+  ApiKeyInfo,
 } from "../types.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
@@ -162,6 +165,31 @@ export const api = {
     request<{ success: boolean; stats: GlobalStats }>("GET", "/api/v1/stats"),
   getFormStatsSummary: (formId: string) =>
     request<{ success: boolean; summary: FormActivitySummary }>("GET", `/api/v1/stats/form/${formId}/summary`),
+
+  // --- Presets de croisement ---
+  listStatsPresets: (formId?: string) =>
+    request<{ success: boolean; presets: StatsPreset[] }>(
+      "GET",
+      `/api/v1/stats-presets${formId ? `?formId=${encodeURIComponent(formId)}` : ""}`,
+    ),
+  createStatsPreset: (data: { name: string; formIds: string[]; config: StatsPresetConfig }) =>
+    request<{ success: boolean; preset: StatsPreset }>("POST", "/api/v1/stats-presets", data),
+  updateStatsPreset: (
+    id: string,
+    data: Partial<{ name: string; formIds: string[]; config: StatsPresetConfig }>,
+  ) => request<{ success: boolean; preset: StatsPreset }>("PUT", `/api/v1/stats-presets/${id}`, data),
+  deleteStatsPreset: (id: string) =>
+    request<{ success: boolean }>("DELETE", `/api/v1/stats-presets/${id}`),
+
+  // --- Clés d'API (serveur MCP, scripts) ---
+  listApiKeys: () => request<{ success: boolean; keys: ApiKeyInfo[] }>("GET", "/api/v1/api-keys"),
+  /** Le token en clair n'est renvoyé qu'à la création : il n'est plus jamais récupérable. */
+  createApiKey: (name: string, expiresAt?: string) =>
+    request<{ success: boolean; key: ApiKeyInfo; token: string }>("POST", "/api/v1/api-keys", {
+      name,
+      expiresAt,
+    }),
+  deleteApiKey: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/api-keys/${id}`),
 
   // --- Organisations ---
   listOrganizations: () =>
