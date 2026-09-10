@@ -1,5 +1,5 @@
 /**
- * OpenForms — widget d'embed autonome.
+ * OpenForms- widget d'embed autonome.
  *
  * Rend un formulaire publié directement dans le DOM de la page hôte (pas
  * d'iframe), dans un Shadow DOM pour ne jamais entrer en conflit avec le CSS
@@ -573,7 +573,7 @@ class OpenFormsWidget {
         el("h1", { class: "of-title" }, page.title),
         page.description ? el("p", { class: "of-desc" }, page.description) : "",
         page.isFirst && this.form!.isAnonymized
-          ? el("p", { class: "of-anon-badge" }, "🔒 Réponses anonymes — aucune donnée d'identification n'est collectée.")
+          ? el("p", { class: "of-anon-badge" }, "🔒 Réponses anonymes- aucune donnée d'identification n'est collectée.")
           : "",
       ),
     );
@@ -664,7 +664,7 @@ class OpenFormsWidget {
       case "select": {
         const isOther = typeof current === "string" && (current === OTHER_KEY || current.startsWith(OTHER_KEY + ":"));
         const select = el("select", { class: "of-select" }) as HTMLSelectElement;
-        const placeholderOpt = el("option", { value: "", disabled: "true" }, "— Choisir —") as HTMLOptionElement;
+        const placeholderOpt = el("option", { value: "", disabled: "true" }, "— Choisir-") as HTMLOptionElement;
         if (!current) placeholderOpt.selected = true;
         select.append(placeholderOpt);
         for (const opt of field.options ?? []) select.append(el("option", { value: opt.value }, opt.label));
@@ -926,7 +926,7 @@ class OpenFormsWidget {
             el(
               "div",
               { style: "color:#137333;background:#e6f4ea;border:1px solid #ceead6;padding:.75rem;border-radius:.5rem;font-size:.75rem;font-weight:600" },
-              `Paiement validé (mock) — ${(current as { transactionId: string }).transactionId}`,
+              `Paiement validé (mock)- ${(current as { transactionId: string }).transactionId}`,
             ),
           );
         } else {

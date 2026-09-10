@@ -100,7 +100,7 @@ async function main() {
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    console.log(`[seed] Le compte ${email} existe déjà — aucun changement.`);
+    console.log(`[seed] Le compte ${email} existe déjà- aucun changement.`);
   } else {
     const generated = !process.env.ADMIN_PASSWORD;
     const password = process.env.ADMIN_PASSWORD ?? generatePassword();

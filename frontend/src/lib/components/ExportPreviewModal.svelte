@@ -3,7 +3,7 @@
    * Aperçu avant téléchargement d'un graphique habillé.
    *
    * Le titre et la légende sont éditables ici pour l'export en cours : on
-   * annote une image sans avoir à modifier — puis restaurer — les réglages
+   * annote une image sans avoir à modifier- puis restaurer- les réglages
    * globaux. « Appliquer à tous les exports » promeut ces valeurs dans le
    * thème du formulaire.
    */

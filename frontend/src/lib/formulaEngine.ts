@@ -1,5 +1,5 @@
 /**
- * Moteur de formules minimaliste pour le tableur admin — écrit en TS, sans
+ * Moteur de formules minimaliste pour le tableur admin- écrit en TS, sans
  * dépendance ni `eval`. Supporte :
  *   - Fonctions d'agrégation sur une colonne : SUM(col), AVG(col), MIN(col),
  *     MAX(col), COUNT(col), MEDIAN(col)

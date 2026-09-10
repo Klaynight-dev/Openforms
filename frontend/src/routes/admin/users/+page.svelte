@@ -61,7 +61,7 @@
       copied = true;
       setTimeout(() => (copied = false), 2000);
     } catch {
-      /* clipboard indisponible — le lien reste affiché pour copie manuelle */
+      /* clipboard indisponible- le lien reste affiché pour copie manuelle */
     }
   }
 
@@ -152,7 +152,7 @@
   }
 </script>
 
-<svelte:head><title>Utilisateurs — Admin</title></svelte:head>
+<svelte:head><title>Utilisateurs- Admin</title></svelte:head>
 
 {#if !auth.isSuperAdmin}
   <p class="text-red-600">Accès réservé aux Super Admins.</p>
@@ -266,7 +266,7 @@
       <h2 class="mb-3 font-semibold">Accès par formulaire</h2>
       <label class="label" for="access-form">Formulaire</label>
       <select id="access-form" class="input mb-3" bind:value={selectedFormId} onchange={loadAccess}>
-        <option value="">— Choisir —</option>
+        <option value="">— Choisir-</option>
         {#each forms as f}<option value={f.id}>{f.title}</option>{/each}
       </select>
 
@@ -289,7 +289,7 @@
 
         <label class="label" for="access-user">Ajouter un éditeur</label>
         <select id="access-user" class="input mb-2" bind:value={accessUserId}>
-          <option value="">— Utilisateur —</option>
+          <option value="">— Utilisateur-</option>
           {#each users.filter((u) => u.role === "EDITOR") as u}<option value={u.id}>{u.email}</option>{/each}
         </select>
         <select class="input mb-2" bind:value={accessPerm}>

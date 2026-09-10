@@ -38,7 +38,7 @@ export interface DataExportOptions {
   meta?: ExportMetaEntry[];
   /**
    * Inclure le contexte dans le fichier. En XLSX il occupe un onglet dédié, en
-   * JSON une clé `contexte`, en CSV des lignes préfixées `#` — désactivé par
+   * JSON une clé `contexte`, en CSV des lignes préfixées `#`- désactivé par
    * défaut pour le CSV, que la plupart des tableurs lisent sans en-tête libre.
    */
   includeMeta?: boolean;

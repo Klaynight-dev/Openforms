@@ -30,8 +30,8 @@ const isDevLocalhost = (origin: string) =>
 /**
  * Routes publiques destinées à être appelées depuis n'importe quel site tiers
  * (widget d'embed : lecture d'un formulaire publié, soumission, upload de
- * fichier). Elles ne s'appuient jamais sur le cookie de session — seuls les
- * formulaires PUBLIC y répondent sans auth — donc les ouvrir à toute origine
+ * fichier). Elles ne s'appuient jamais sur le cookie de session- seuls les
+ * formulaires PUBLIC y répondent sans auth- donc les ouvrir à toute origine
  * ne fuite aucune donnée protégée par cookie.
  */
 const isEmbeddablePublicRoute = (pathname: string) =>

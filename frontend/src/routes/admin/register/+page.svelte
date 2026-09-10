@@ -36,7 +36,7 @@
   }
 </script>
 
-<svelte:head><title>Inscription — Admin</title></svelte:head>
+<svelte:head><title>Inscription- Admin</title></svelte:head>
 
 <div class="grid min-h-[85vh] place-items-center py-8">
   <form onsubmit={submit} class="gform-card w-full max-w-md p-8">

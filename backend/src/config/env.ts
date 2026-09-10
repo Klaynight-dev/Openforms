@@ -1,7 +1,7 @@
 /**
  * Chargement et validation stricte des variables d'environnement.
  * Le processus s'arrête immédiatement si une variable critique manque
- * ou est mal formée (fail-fast) — indispensable pour un déploiement sûr.
+ * ou est mal formée (fail-fast)- indispensable pour un déploiement sûr.
  */
 
 function required(name: string): string {

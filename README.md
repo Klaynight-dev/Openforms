@@ -88,7 +88,7 @@ Cette commande va :
 2. Compiler et démarrer le backend ElysiaJS (Bun), en appliquant automatiquement les migrations Prisma au démarrage.
 3. Compiler et lancer le frontend SvelteKit (Node.js).
 
-> **Premier compte Super Admin** : la création de compte se fait désormais uniquement par invitation (un Super Admin existant invite par email). Sur une base de données neuve, il n'existe donc aucun compte au départ — créez le premier Super Admin via `bun run db:studio` (Prisma Studio) en insérant une ligne `User` (`role: SUPER_ADMIN`, `isActive: true`), puis générez-lui un lien de définition de mot de passe.
+> **Premier compte Super Admin** : la création de compte se fait désormais uniquement par invitation (un Super Admin existant invite par email). Sur une base de données neuve, il n'existe donc aucun compte au départ- créez le premier Super Admin via `bun run db:studio` (Prisma Studio) en insérant une ligne `User` (`role: SUPER_ADMIN`, `isActive: true`), puis générez-lui un lien de définition de mot de passe.
 
 ### 3. Accès
 * **Frontend** : [http://localhost:5173](http://localhost:5173)
@@ -200,15 +200,15 @@ Assurez-vous de :
 
 ## 🌐 Domaines personnalisés (multi-domaine)
 
-L'instance peut être servie simultanément sur plusieurs domaines publics (ex: `humanitour.fr` **et** `klaynight.fr`). Comme l'authentification repose sur un cookie de session `SameSite=Lax`, chaque domaine doit voir l'API comme **de même origine** (même domaine, routage par chemin) plutôt que comme une API distante partagée — sans quoi le cookie de session ne circulera pas correctement pour l'un des domaines.
+L'instance peut être servie simultanément sur plusieurs domaines publics (ex: `humanitour.fr` **et** `klaynight.fr`). Comme l'authentification repose sur un cookie de session `SameSite=Lax`, chaque domaine doit voir l'API comme **de même origine** (même domaine, routage par chemin) plutôt que comme une API distante partagée- sans quoi le cookie de session ne circulera pas correctement pour l'un des domaines.
 
 1. **DNS** : chez votre registrar/DNS, créez un enregistrement `A` (et `AAAA` si IPv6) pour chaque domaine/sous-domaine (`humanitour.fr`, `www.humanitour.fr`, `klaynight.fr`, `www.klaynight.fr`) pointant vers l'IP publique du serveur. Cette étape ne peut pas être faite depuis ce dépôt.
 2. **Reverse-proxy** : utilisez [`Caddyfile.example`](Caddyfile.example) comme point de départ. Il route `/api/*` et `/docs*` vers le backend et le reste vers le frontend, **pour chacun des domaines**, afin que l'API reste "same-origin" partout.
-3. **`FRONTEND_ORIGIN`** (backend) : liste déjà par défaut `https://humanitour.fr,https://www.humanitour.fr,https://klaynight.fr,https://www.klaynight.fr,https://forms.klaynight.fr,https://forms.humanitour.fr` dans `docker-compose.yml` — ajustez si vous ajoutez d'autres domaines.
+3. **`FRONTEND_ORIGIN`** (backend) : liste déjà par défaut `https://humanitour.fr,https://www.humanitour.fr,https://klaynight.fr,https://www.klaynight.fr,https://forms.klaynight.fr,https://forms.humanitour.fr` dans `docker-compose.yml`- ajustez si vous ajoutez d'autres domaines.
 4. **`VITE_API_BASE`** (frontend, au build) : avec un routage par chemin same-origin comme ci-dessus, buildez avec `VITE_API_BASE=""` (vide) pour que le frontend appelle l'API en chemin relatif (`/api/v1/...`), quel que soit le domaine visité.
 5. **`COOKIE_SECURE=true`** en production (HTTPS obligatoire pour que les cookies de session traversent correctement chaque domaine).
 
-> **Sous-domaine séparé pour l'API (ex: `forms.klaynight.fr` + `api-forms.klaynight.fr`)** : si vous préférez héberger le frontend et l'API sur deux sous-domaines distincts plutôt qu'un routage par chemin same-origin, l'appel devient une requête cross-origin — deux conditions supplémentaires s'appliquent :
+> **Sous-domaine séparé pour l'API (ex: `forms.klaynight.fr` + `api-forms.klaynight.fr`)** : si vous préférez héberger le frontend et l'API sur deux sous-domaines distincts plutôt qu'un routage par chemin same-origin, l'appel devient une requête cross-origin- deux conditions supplémentaires s'appliquent :
 >    - `FRONTEND_ORIGIN` (backend) **doit** lister l'origine exacte du frontend (ex: `https://forms.klaynight.fr`), sinon le navigateur bloque toutes les réponses faute d'en-tête `Access-Control-Allow-Origin` (c'est la cause la plus fréquente d'erreurs CORS après un déploiement).
 >    - `VITE_API_BASE` (frontend, au build) doit alors pointer vers l'URL absolue de l'API (ex: `https://api-forms.klaynight.fr`) plutôt que rester vide.
 
@@ -256,7 +256,7 @@ Au chargement, le script scanne le DOM à la recherche de tout élément `[data-
 
 ### Limites connues
 
-* Uniquement les formulaires en visibilité **PUBLIC** (les formulaires `PRIVATE`/`RESTRICTED` nécessitent une connexion par cookie, incompatible avec un site tiers cross-origin — le widget affiche un message d'erreur dans ce cas).
+* Uniquement les formulaires en visibilité **PUBLIC** (les formulaires `PRIVATE`/`RESTRICTED` nécessitent une connexion par cookie, incompatible avec un site tiers cross-origin- le widget affiche un message d'erreur dans ce cas).
 * Le champ `stripe_payment` reste, comme dans l'app principale, un module de **démonstration** (aucune transaction réelle n'est effectuée).
 * Pas de sélecteur de langue (le widget affiche toujours la langue par défaut du formulaire).
 
@@ -270,7 +270,7 @@ cd frontend && bun run build:embed
 
 ### CORS
 
-Les endpoints nécessaires au widget (`GET /api/v1/forms/public/:slug`, `POST /api/v1/responses/submit`, `POST /api/v1/uploads`) sont volontairement ouverts à **toute origine** côté backend (voir `isEmbeddablePublicRoute` dans `backend/src/middleware/security.ts`), puisqu'ils ne s'appuient jamais sur le cookie de session — seuls les formulaires publics y répondent sans authentification. Le reste de l'API reste restreint à `FRONTEND_ORIGIN`.
+Les endpoints nécessaires au widget (`GET /api/v1/forms/public/:slug`, `POST /api/v1/responses/submit`, `POST /api/v1/uploads`) sont volontairement ouverts à **toute origine** côté backend (voir `isEmbeddablePublicRoute` dans `backend/src/middleware/security.ts`), puisqu'ils ne s'appuient jamais sur le cookie de session- seuls les formulaires publics y répondent sans authentification. Le reste de l'API reste restreint à `FRONTEND_ORIGIN`.
 
 ---
 

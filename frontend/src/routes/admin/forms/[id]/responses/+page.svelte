@@ -188,7 +188,7 @@
   }
 </script>
 
-<svelte:head><title>Réponses — {title}</title></svelte:head>
+<svelte:head><title>Réponses- {title}</title></svelte:head>
 
 
 <!-- Tabs selector -->
@@ -416,7 +416,7 @@
                             <img src={val} alt="Signature numérique" class="max-h-20 object-contain h-auto" />
                           </div>
                         {:else}
-                          <p class="text-xs italic text-slate-400">— Aucune signature —</p>
+                          <p class="text-xs italic text-slate-400">— Aucune signature-</p>
                         {/if}
                       {:else if field.type === "file"}
                         {#if Array.isArray(val)}

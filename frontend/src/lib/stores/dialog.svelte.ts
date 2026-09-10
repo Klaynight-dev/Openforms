@@ -3,7 +3,7 @@
  *
  * Les dialogues natifs bloquent le thread, ignorent la charte, ne sont pas
  * traduisibles et, sous certains navigateurs, peuvent être désactivés par
- * l'utilisateur — auquel cas une confirmation renvoie silencieusement `false`.
+ * l'utilisateur- auquel cas une confirmation renvoie silencieusement `false`.
  * Ces deux fonctions gardent la même ergonomie d'appel (`await`) tout en
  * passant par `DialogHost`, monté dans le layout racine.
  */

@@ -872,7 +872,7 @@
                   </div>
                 {:else if field.type === "section"}
                   <div class="w-full bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-indigo-700 font-bold text-xs flex items-center gap-2">
-                    <IconSection size={14} /> Délimitation de page — Saut de section
+                    <IconSection size={14} /> Délimitation de page- Saut de section
                   </div>
                 {/if}
               </div>

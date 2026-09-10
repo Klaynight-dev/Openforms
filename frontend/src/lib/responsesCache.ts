@@ -2,7 +2,7 @@
  * Cache mémoire (côté client) des réponses d'un formulaire.
  *
  * Les pages "Réponses", "Stats" et "Canvas" appellent chacune `api.listResponses`
- * en montant leur route — l'API déchiffre (AES-256-GCM le cas échéant) et
+ * en montant leur route- l'API déchiffre (AES-256-GCM le cas échéant) et
  * sérialise l'intégralité des réponses à chaque appel. Pour un formulaire à
  * beaucoup de réponses, naviguer d'un onglet à l'autre refaisait ce travail
  * (réseau + déchiffrement + parsing JSON) à chaque fois.

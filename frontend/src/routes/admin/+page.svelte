@@ -348,7 +348,7 @@
   }
 </script>
 
-<svelte:head><title>Formulaires — Admin</title></svelte:head>
+<svelte:head><title>Formulaires- Admin</title></svelte:head>
 
 <!-- ══════════════════════════════════════════════════
      DASHBOARD STATS GLOBALES (SUPER_ADMIN seulement)
@@ -436,7 +436,7 @@
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-green-50 text-green-600">
             <IconChartLine size={16} />
           </span>
-          <h2 class="font-bold text-sm text-[color:var(--ink)]">Activité — 30 derniers jours</h2>
+          <h2 class="font-bold text-sm text-[color:var(--ink)]">Activité- 30 derniers jours</h2>
           <span class="ml-auto text-xs text-[color:var(--muted)]">
             {stats.activity.reduce((s, a) => s + a.count, 0)} réponses
           </span>

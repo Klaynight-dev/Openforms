@@ -59,7 +59,7 @@
   }
 </script>
 
-<svelte:head><title>Définir mon mot de passe — Admin</title></svelte:head>
+<svelte:head><title>Définir mon mot de passe- Admin</title></svelte:head>
 
 <div class="grid min-h-[85vh] place-items-center py-8">
   <div class="gform-card w-full max-w-md p-8">

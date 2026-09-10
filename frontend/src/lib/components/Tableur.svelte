@@ -818,7 +818,7 @@
                       <img src={sigVal} alt="Signature" class="max-h-16 object-contain" />
                     </div>
                   {:else}
-                    <span class="text-xs italic text-slate-400">— Aucune signature —</span>
+                    <span class="text-xs italic text-slate-400">— Aucune signature-</span>
                   {/if}
                 {:else}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->

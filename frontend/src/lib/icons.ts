@@ -3,7 +3,7 @@
  *
  * Politique : **Phosphor** (`phosphor-svelte`) est le jeu principal. Lorsqu'une
  * icône adéquate n'existe pas dans Phosphor, on retombe sur **Lucide**
- * (`@lucide/svelte`) — ex. `Sigma` pour l'agrégation de colonnes du tableur.
+ * (`@lucide/svelte`)- ex. `Sigma` pour l'agrégation de colonnes du tableur.
  *
  * Tous les composants importent leurs icônes depuis ce fichier afin de garder
  * un style cohérent et un point de bascule unique.

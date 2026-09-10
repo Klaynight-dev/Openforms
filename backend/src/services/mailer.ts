@@ -113,7 +113,7 @@ export async function sendEmail({
 export async function sendInviteEmail(to: string, link: string) {
   return sendEmail({
     to,
-    subject: "Votre compte OpenForms — définissez votre mot de passe",
+    subject: "Votre compte OpenForms- définissez votre mot de passe",
     text: `Un compte OpenForms a été créé pour vous. Définissez votre mot de passe via ce lien (valable 48h) : ${link}`,
     html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
       <h2 style="color:#673ab7;margin-top:0;">Bienvenue sur OpenForms</h2>

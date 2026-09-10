@@ -4,8 +4,8 @@ import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 
 /**
  * Statistiques globales de la plateforme.
- * GET /api/v1/stats — réservé aux SUPER_ADMIN.
- * GET /api/v1/stats/form/:formId — accessible aux utilisateurs ayant accès au formulaire.
+ * GET /api/v1/stats- réservé aux SUPER_ADMIN.
+ * GET /api/v1/stats/form/:formId- accessible aux utilisateurs ayant accès au formulaire.
  */
 export const statsController = new Elysia({ prefix: "/api/v1/stats" })
   .use(authPlugin)
@@ -148,7 +148,7 @@ export const statsController = new Elysia({ prefix: "/api/v1/stats" })
 
   // =========================================================================
   //  STATS PAR FORMULAIRE  (SUPER_ADMIN + EDITOR ayant accès)
-  //  Calcul côté frontend à partir de listResponses — pas d'endpoint dédié.
+  //  Calcul côté frontend à partir de listResponses- pas d'endpoint dédié.
   //  Cet endpoint existe pour les métadonnées de base uniquement.
   // =========================================================================
   .get(

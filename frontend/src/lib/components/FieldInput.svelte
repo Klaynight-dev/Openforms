@@ -280,7 +280,7 @@
         }
       }}
     >
-      <option value="" disabled selected={!value}>— Choisir —</option>
+      <option value="" disabled selected={!value}>— Choisir-</option>
       {#each field.options ?? [] as opt}
         <option value={opt.value}>{opt.label}</option>
       {/each}

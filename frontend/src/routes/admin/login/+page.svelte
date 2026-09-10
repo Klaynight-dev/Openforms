@@ -23,7 +23,7 @@
   }
 </script>
 
-<svelte:head><title>Connexion — Admin</title></svelte:head>
+<svelte:head><title>Connexion- Admin</title></svelte:head>
 
 <div class="grid min-h-[80vh] place-items-center">
   <form onsubmit={submit} class="gform-card w-full max-w-sm p-8">

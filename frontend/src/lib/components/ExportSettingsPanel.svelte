@@ -160,7 +160,7 @@
               <span class="label !mb-1 !text-xs">Sous-titre</span>
               <input
                 class="input"
-                placeholder="Ex : Saison 2025-2026 — Club de natation"
+                placeholder="Ex : Saison 2025-2026- Club de natation"
                 maxlength="300"
                 bind:value={theme.subtitle}
               />
@@ -389,7 +389,7 @@
               <span class="label !mb-1 !text-xs">Mention légale</span>
               <input
                 class="input"
-                placeholder="Ex : © Club de natation — diffusion interne"
+                placeholder="Ex : © Club de natation- diffusion interne"
                 maxlength="300"
                 bind:value={theme.legalNotice}
               />

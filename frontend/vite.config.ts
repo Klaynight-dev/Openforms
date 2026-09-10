@@ -12,6 +12,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // En dev, on parle directement à l'API Elysia (http://localhost:3000)
-    // via le client typé avec credentials — pas de proxy nécessaire.
+    // via le client typé avec credentials- pas de proxy nécessaire.
   },
 });

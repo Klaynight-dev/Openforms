@@ -11,7 +11,7 @@ function field(over: Partial<FieldDefinition> & Pick<FieldDefinition, "key" | "t
   return { label: over.key, required: false, ...over } as FieldDefinition;
 }
 
-describe("validateSubmission — champs requis", () => {
+describe("validateSubmission- champs requis", () => {
   test("signale un champ requis absent", () => {
     const { errors } = validateSubmission([field({ key: "nom", type: "short_text", required: true })], {});
     expect(errors).toHaveLength(1);
@@ -42,7 +42,7 @@ describe("validateSubmission — champs requis", () => {
   });
 });
 
-describe("validateSubmission — validation par type", () => {
+describe("validateSubmission- validation par type", () => {
   test("applique les longueurs min et max du texte", () => {
     const f = [field({ key: "bio", type: "paragraph", validation: { minLength: 5, maxLength: 10 } })];
     expect(validateSubmission(f, { bio: "abc" }).errors).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("validateSubmission — validation par type", () => {
   });
 });
 
-describe("validateSubmission — logique conditionnelle", () => {
+describe("validateSubmission- logique conditionnelle", () => {
   const fields = [
     field({
       key: "abonne",
@@ -193,7 +193,7 @@ describe("validateSubmission — logique conditionnelle", () => {
   });
 });
 
-describe("validateSubmission — justifications", () => {
+describe("validateSubmission- justifications", () => {
   const f = [
     field({
       key: "avis",

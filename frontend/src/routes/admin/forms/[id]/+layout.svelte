@@ -84,7 +84,7 @@
 </script>
 
 <svelte:head>
-  <title>{editorState.form ? `${editorState.form.title} — Édition` : "Chargement du formulaire..."}</title>
+  <title>{editorState.form ? `${editorState.form.title}- Édition` : "Chargement du formulaire..."}</title>
 </svelte:head>
 
 <div class="min-h-screen bg-[color:var(--surface-bg)] flex flex-col">

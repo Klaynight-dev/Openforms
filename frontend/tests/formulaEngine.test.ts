@@ -41,7 +41,7 @@ describe("evaluateAggregate", () => {
   });
 });
 
-describe("evaluateRowFormula — arithmétique", () => {
+describe("evaluateRowFormula- arithmétique", () => {
   const row: Row = { a: 10, b: 4, texte: "abc" };
 
   test("respecte la priorité des opérateurs et les parenthèses", () => {
@@ -81,7 +81,7 @@ describe("evaluateRowFormula — arithmétique", () => {
   });
 });
 
-describe("evaluateRowFormula — CONCAT", () => {
+describe("evaluateRowFormula- CONCAT", () => {
   const row: Row = { prenom: "Ada", nom: "Lovelace", vide: null };
 
   test("concatène des références de colonne et des littéraux", () => {

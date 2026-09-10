@@ -253,7 +253,7 @@
 <div class="fixed top-0 left-0 right-0 z-50 bg-gray-900 text-white text-xs font-bold py-2.5 px-4 shadow-md flex items-center justify-between">
   <div class="flex items-center gap-2">
     <IconEye size={16} />
-    <span>Mode Prévisualisation — Les réponses saisies ici ne seront pas enregistrées dans la base de données.</span>
+    <span>Mode Prévisualisation- Les réponses saisies ici ne seront pas enregistrées dans la base de données.</span>
   </div>
   <button 
     onclick={() => window.close()} 
@@ -330,7 +330,7 @@
           {#if currentPage.description}<p class="mt-3 text-sm text-[color:var(--muted)] leading-relaxed whitespace-pre-line">{currentPage.description}</p>{/if}
           {#if currentPage.isFirst && translatedForm.isAnonymized}
             <p class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
-              <IconLock size={14} /> Réponses anonymes — aucune donnée d'identification n'est collectée.
+              <IconLock size={14} /> Réponses anonymes- aucune donnée d'identification n'est collectée.
             </p>
           {/if}
         </div>

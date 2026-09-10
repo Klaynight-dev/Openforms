@@ -46,7 +46,7 @@ export const authController = new Elysia({ prefix: "/api/v1/auth" })
 
       const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
       cookie.session.set({ value: token, ...sessionCookieOptions(maxAge) });
-      // Cookie CSRF lisible par le JS (double-submit) — non HttpOnly.
+      // Cookie CSRF lisible par le JS (double-submit)- non HttpOnly.
       cookie.csrf.set({
         value: csrfSecret,
         httpOnly: false,

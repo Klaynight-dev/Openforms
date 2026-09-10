@@ -6,7 +6,7 @@ import { defineConfig } from "prisma/config";
 try {
   process.loadEnvFile(path.join(import.meta.dirname, ".env"));
 } catch {
-  // .env absent (ex: variables fournies par l'environnement) — on ignore.
+  // .env absent (ex: variables fournies par l'environnement)- on ignore.
 }
 
 export default defineConfig({

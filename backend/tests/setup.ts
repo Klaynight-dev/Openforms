@@ -2,7 +2,7 @@
  * Préchargé par `bun test` (voir bunfig.toml).
  *
  * `src/config/env.ts` valide l'environnement à l'import et fait planter le
- * processus s'il manque une variable — on renseigne donc des valeurs de test
+ * processus s'il manque une variable- on renseigne donc des valeurs de test
  * déterministes AVANT que le moindre module applicatif ne soit chargé.
  *
  * Les valeurs ci-dessous ne sont jamais des secrets réels : elles n'existent
