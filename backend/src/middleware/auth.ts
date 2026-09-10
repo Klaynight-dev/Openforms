@@ -36,40 +36,57 @@ export const authPlugin = new Elysia({ name: "auth" })
       authSource: (auth ? "session" : null) as AuthSource,
     };
   })
-  .macro(({ onBeforeHandle }) => ({
-    requireRole(roles: Role[] | true | undefined) {
-      if (roles === undefined) return;
-      onBeforeHandle((ctx: {
-        auth: SessionContext | null;
-        authSource: AuthSource;
-        set: { status?: number | string };
-        request: Request;
-      }) => {
-        const { auth, authSource, set, request } = ctx;
-        if (!auth) {
-          set.status = 401;
-          return { success: false, error: "Authentification requise." };
-        }
+  // Syntaxe de macro Elysia >= 1.3. L'ancienne forme
+  // `.macro(({ onBeforeHandle }) => ({ … }))` n'enregistre plus rien sur ces
+  // versions : elle échouait en silence, laissant passer toute requête sur les
+  // routes dont `requireRole` était la seule protection.
+  .macro({
+    // `ctx` n'est typé qu'à la frontière du framework : la logique de garde
+    // vit dans `enforceRole`, entièrement typée.
+    requireRole: (roles: Role[] | true | undefined) => ({
+      beforeHandle: (ctx: any) => enforceRole(roles, ctx as GuardContext),
+    }),
+  });
 
-        // Protection CSRF : toute mutation authentifiée par cookie doit
-        // présenter le jeton. Les clés d'API en sont exemptées- elles ne sont
-        // pas envoyées automatiquement par le navigateur, donc non rejouables.
-        const method = request.method.toUpperCase();
-        if (authSource === "session" && method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-          const header = request.headers.get("x-csrf-token");
-          if (!header || header !== auth.session.csrfSecret) {
-            set.status = 403;
-            return { success: false, error: "Jeton CSRF manquant ou invalide." };
-          }
-        }
+/** Contexte minimal dont dépend la garde de route. */
+type GuardContext = {
+  auth: SessionContext | null;
+  authSource: AuthSource;
+  set: { status?: number | string };
+  request: Request;
+};
 
-        if (Array.isArray(roles) && !roles.includes(auth.user.role)) {
-          set.status = 403;
-          return { success: false, error: "Accès refusé : privilèges insuffisants." };
-        }
-      });
-    },
-  }));
+type GuardFailure = { success: false; error: string };
+
+/** Applique la garde : 401 si non connecté, 403 si CSRF absent ou rôle insuffisant. */
+function enforceRole(
+  roles: Role[] | true | undefined,
+  { auth, authSource, set, request }: GuardContext,
+): GuardFailure | undefined {
+  if (roles === undefined) return;
+
+  if (!auth) {
+    set.status = 401;
+    return { success: false, error: "Authentification requise." };
+  }
+
+  // Protection CSRF : toute mutation authentifiée par cookie doit présenter le
+  // jeton. Les clés d'API en sont exemptées : elles ne sont pas envoyées
+  // automatiquement par le navigateur, donc non rejouables.
+  const method = request.method.toUpperCase();
+  if (authSource === "session" && method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+    const header = request.headers.get("x-csrf-token");
+    if (!header || header !== auth.session.csrfSecret) {
+      set.status = 403;
+      return { success: false, error: "Jeton CSRF manquant ou invalide." };
+    }
+  }
+
+  if (Array.isArray(roles) && !roles.includes(auth.user.role)) {
+    set.status = 403;
+    return { success: false, error: "Accès refusé : privilèges insuffisants." };
+  }
+}
 
 /**
  * Détermine le niveau d'accès effectif d'un utilisateur sur un formulaire.
