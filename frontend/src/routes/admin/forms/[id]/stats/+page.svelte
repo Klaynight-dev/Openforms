@@ -3,9 +3,25 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { api } from "$api/client.ts";
+  import { getResponsesCached } from "$lib/responsesCache.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import type { FieldDefinition, ResponseRow, FormDetail } from "$lib/types.ts";
   import MultiSelectFilter from "$lib/components/MultiSelectFilter.svelte";
+  import ExportSettingsPanel from "$lib/components/ExportSettingsPanel.svelte";
+  import ExportPreviewModal from "$lib/components/ExportPreviewModal.svelte";
+  import DataExportMenu from "$lib/components/DataExportMenu.svelte";
+  import { sanitizeFilename, type DataExportOptions, type DataFormat } from "$lib/dataExport.ts";
+  import Segmented from "$lib/components/Segmented.svelte";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
+  import {
+    DEFAULT_EXPORT_THEME,
+    heatRamp,
+    normalizeExportTheme,
+    rgba,
+    shade,
+    type ChartImageSource,
+    type ExportTheme,
+  } from "$lib/exportTheme.ts";
   import {
     IconBack,
     IconChartBar,
@@ -17,14 +33,12 @@
     IconDownload,
     IconCheckboxGrid,
     IconFormula,
+    IconReset,
   } from "$lib/icons.ts";
   // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
   import type { ECharts } from "echarts";
   let echarts: typeof import("echarts") | null = null;
 
-  // Palette catégorielle partagée (ordre fixe) + rampe séquentielle verte (heatmaps).
-  const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
-  const HEAT_COLORS = ["#f0fdf4", "#86efac", "#22c55e", "#15803d"];
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
   const formId = $derived($page.params.id as string);
@@ -38,7 +52,24 @@
   let activity = $state<{ date: string; count: number }[]>([]);
   let formDetail = $state<FormDetail | null>(null);
   let canEdit = $state(false);
-  let saveMessage = $state<string | null>(null);
+
+  // --- Identité visuelle des exports (DA) ---
+  // Source de vérité unique : sert à l'habillage des PNG exportés *et* à la
+  // palette des graphiques à l'écran, pour que l'aperçu corresponde au rendu.
+  let exportTheme = $state<ExportTheme>({ ...DEFAULT_EXPORT_THEME });
+  /** Sérialisation du dernier état persisté, pour détecter les modifications. */
+  let savedThemeJson = $state(JSON.stringify(DEFAULT_EXPORT_THEME));
+  let themeDirty = $derived(JSON.stringify(exportTheme) !== savedThemeJson);
+  let savingTheme = $state(false);
+  let exportPanelOpen = $state(false);
+
+  let palette = $derived(exportTheme.palette);
+  let accent = $derived(exportTheme.accentColor);
+
+  /** Graphique en attente d'export ; non nul = modale d'aperçu ouverte. */
+  let exportTarget = $state<{ chart: ChartImageSource; title: string; filename: string } | null>(
+    null,
+  );
 
   // Filtres additionnels : valeurs sélectionnées par champ à choix.
   let extraFilters = $state<Record<string, string[]>>({});
@@ -187,7 +218,7 @@
     try {
       await persistSchema(schema);
     } catch (e) {
-      saveMessage = e instanceof Error ? e.message : "Impossible d'enregistrer la couleur.";
+      toasts.error(e instanceof Error ? e.message : "Impossible d'enregistrer la couleur.");
     }
   }
 
@@ -522,7 +553,7 @@
     try {
       const [statsRes, responseRes, formRes, echartsMod] = await Promise.all([
         api.getFormStatsSummary(formId),
-        api.listResponses(formId),
+        getResponsesCached(formId),
         api.getForm(formId).catch(() => null),
         import("echarts"),
       ]);
@@ -533,6 +564,8 @@
       rows = responseRes.rows;
       canEdit = responseRes.permission === "WRITE";
       formDetail = formRes?.form ?? null;
+      exportTheme = normalizeExportTheme(formRes?.form?.exportTheme);
+      savedThemeJson = JSON.stringify(exportTheme);
     } catch (e) {
       error = e instanceof Error ? e.message : "Erreur de chargement.";
     } finally {
@@ -558,10 +591,17 @@
   });
 
   // --- ECharts rendering & Redrawing ---
+  // Chaque effet annule son propre timer en attente avant d'en reprogrammer un
+  // (cleanup de $effect) : sans ça, des changements de filtre rapprochés
+  // empilaient plusieurs passes de rendu de TOUS les graphiques en parallèle.
   $effect(() => {
+    // `palette` et `accent` sont lus explicitement : un changement de DA doit
+    // redessiner tous les graphiques, pas seulement les futurs exports.
+    void palette;
+    void accent;
     if (filteredRows && evolutionMode && !loading) {
       // Delay slightly to allow DOM updates
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         renderLineChart();
         renderFillRateChart();
         renderDayHourChart();
@@ -580,13 +620,16 @@
           if (el) renderGridChart(el, field);
         });
       }, 50);
+      return () => clearTimeout(timer);
     }
   });
 
   // Le tableau croisé dépend aussi des champs choisis : effet dédié
   $effect(() => {
+    void accent;
     if (crossTab && crossChartEl && !loading) {
-      setTimeout(renderCrossChart, 50);
+      const timer = setTimeout(renderCrossChart, 50);
+      return () => clearTimeout(timer);
     }
   });
 
@@ -615,9 +658,9 @@
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { color: "#22c55e", width: 2.5 },
-        itemStyle: { color: "#22c55e", borderColor: "#fff", borderWidth: 2 },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(34,197,94,0.25)" }, { offset: 1, color: "rgba(34,197,94,0)" }]) },
+        lineStyle: { color: accent, width: 2.5 },
+        itemStyle: { color: accent, borderColor: "#fff", borderWidth: 2 },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: rgba(accent, 0.25) }, { offset: 1, color: rgba(accent, 0) }]) },
       }],
     });
   }
@@ -644,7 +687,7 @@
       series: [{
         type: "pie",
         radius: ["42%", "72%"],
-        data: dist.map((d, i) => ({ name: d.label, value: d.count, itemStyle: { color: d.color ?? COLORS[i % COLORS.length] } })),
+        data: dist.map((d, i) => ({ name: d.label, value: d.count, itemStyle: { color: d.color ?? palette[i % palette.length] } })),
         label: { show: false },
         emphasis: { label: { show: true, fontSize: 12, fontWeight: "bold" } },
       }],
@@ -673,7 +716,7 @@
     });
   }
 
-  /** Options ECharts communes aux heatmaps (rampe séquentielle verte, valeurs affichées). */
+  /** Options ECharts communes aux heatmaps (rampe dérivée de la couleur d'accent). */
   function heatmapOption(rowLabels: string[], colLabels: string[], matrix: number[][]) {
     const maxVal = Math.max(1, ...matrix.flat());
     // ECharts trace l'axe Y de bas en haut : on inverse pour lire de haut en bas
@@ -689,7 +732,7 @@
       grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
       xAxis: { type: "category", data: colLabels, axisTick: { show: false }, axisLabel: { color: "#94a3b8", fontSize: 10 }, splitArea: { show: true } },
       yAxis: { type: "category", data: [...rowLabels].reverse(), axisTick: { show: false }, axisLabel: { color: "#475569", fontSize: 11 }, splitArea: { show: true } },
-      visualMap: { show: false, min: 0, max: maxVal, inRange: { color: HEAT_COLORS } },
+      visualMap: { show: false, min: 0, max: maxVal, inRange: { color: heatRamp(accent) } },
       series: [{
         type: "heatmap",
         data,
@@ -699,7 +742,7 @@
     };
   }
 
-  /** Options ECharts communes aux barres simples vertes. */
+  /** Options ECharts communes aux barres simples (couleur d'accent). */
   function barOption(labels: string[], counts: number[], xLabelInterval: number | "auto" = "auto") {
     return {
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value} réponse(s)</b>` },
@@ -709,7 +752,7 @@
       series: [{
         type: "bar",
         data: counts,
-        itemStyle: { color: "#22c55e", borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: accent, borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 22,
       }],
     };
@@ -795,23 +838,60 @@
   }
 
   // --- Export graphiques en image ---
-  function exportChartImage(chartInstance: ECharts | null, filename: string) {
-    if (!chartInstance) return;
-    try {
-      const url = chartInstance.getDataURL({
-        type: "png",
-        pixelRatio: 2,
-        backgroundColor: "#ffffff"
-      });
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${filename}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (err) {
-      alert("Erreur lors de l'exportation du graphique.");
+  /** Ouvre l'aperçu habillé du graphique ; le téléchargement s'y fait. */
+  function openExport(chartInstance: ECharts | null, title: string, filename: string) {
+    if (!chartInstance) {
+      toasts.error("Ce graphique n'est pas encore prêt à être exporté.");
+      return;
     }
+    exportTarget = { chart: chartInstance as ChartImageSource, title, filename };
+  }
+
+  /** Filtres actifs, en clair : reportés dans le pied de page de l'export. */
+  let filterSummary = $derived.by<string[]>(() => {
+    const parts: string[] = [];
+    if (filterStartDate && filterEndDate) {
+      parts.push(`du ${formatDateFr(filterStartDate)} au ${formatDateFr(filterEndDate)}`);
+    } else if (filterStartDate) {
+      parts.push(`à partir du ${formatDateFr(filterStartDate)}`);
+    } else if (filterEndDate) {
+      parts.push(`jusqu'au ${formatDateFr(filterEndDate)}`);
+    }
+    for (const [key, selected] of Object.entries(extraFilters)) {
+      if (!selected || selected.length === 0) continue;
+      const field = schema.find((f) => f.key === key);
+      const labels = selected.map((v) => field?.options?.find((o) => o.value === v)?.label ?? v);
+      parts.push(`${field?.label ?? key} = ${labels.join(", ")}`);
+    }
+    return parts;
+  });
+
+  function formatDateFr(iso: string): string {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
+  }
+
+  async function saveExportTheme() {
+    savingTheme = true;
+    try {
+      await api.updateExportTheme(formId, exportTheme);
+      savedThemeJson = JSON.stringify(exportTheme);
+      toasts.success("Habillage des exports enregistré.");
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Enregistrement impossible.");
+    } finally {
+      savingTheme = false;
+    }
+  }
+
+  function resetExportTheme() {
+    exportTheme = { ...DEFAULT_EXPORT_THEME };
+  }
+
+  /** Promeut les textes saisis dans la modale vers les réglages du formulaire. */
+  async function promoteExportTexts(patch: Pick<ExportTheme, "title" | "subtitle" | "caption">) {
+    exportTheme = { ...exportTheme, ...patch };
+    await saveExportTheme();
   }
 
   // Bind pie chart elements dynamically via action
@@ -832,6 +912,69 @@
     if (s === "__other__") return "Autre";
     return s;
   }
+
+  // --- Export des données filtrées (Excel / CSV / JSON) ---
+  /**
+   * Exporte exactement le jeu de lignes qui alimente les graphiques affichés,
+   * accompagné du même contexte que les exports d'images (légende, filtres).
+   */
+  function buildDataExport(format: DataFormat): DataExportOptions {
+    const columns = [
+      { key: "__submittedAt", label: "Soumis le", kind: "date" as const },
+      ...schema.map((field) => ({
+        key: field.key,
+        label: field.label,
+        kind: (["number", "linear_scale"].includes(field.type) ? "number" : "text") as
+          | "number"
+          | "text",
+      })),
+    ];
+
+    const rows = filteredRows.map((row) => {
+      const out: Record<string, unknown> = {
+        __submittedAt: new Date(row.submittedAt).toLocaleString("fr-FR"),
+      };
+      for (const field of schema) {
+        const raw = row.values[field.key];
+        out[field.key] =
+          ["number", "linear_scale"].includes(field.type) && raw !== "" && raw != null
+            ? Number(raw)
+            : formatResponseValue(raw);
+      }
+      return out;
+    });
+
+    const meta = [
+      { label: "Formulaire", value: formTitle },
+      { label: "Réponses exportées", value: String(filteredRows.length) },
+      { label: "Réponses au total", value: String(rows.length) },
+      { label: "Date d'export", value: new Date().toLocaleString("fr-FR") },
+      {
+        label: "Filtres actifs",
+        value: filterSummary.length > 0 ? filterSummary.join(" ; ") : "aucun",
+      },
+    ];
+    if (exportTheme.subtitle) meta.push({ label: "Sous-titre", value: exportTheme.subtitle });
+    if (exportTheme.caption) meta.push({ label: "Légende", value: exportTheme.caption });
+    if (exportTheme.legalNotice) meta.push({ label: "Mention", value: exportTheme.legalNotice });
+
+    return {
+      filename: `${sanitizeFilename(formTitle || "reponses")}_donnees`,
+      sheetName: "Réponses",
+      columns,
+      rows,
+      format,
+      meta,
+      includeMeta: format !== "csv",
+    };
+  }
+
+  /** Titre par défaut de l'export du tableau croisé. */
+  let crossChartTitle = $derived.by(() => {
+    const row = schema.find((f) => f.key === crossRowKey)?.label;
+    const col = schema.find((f) => f.key === crossColKey)?.label;
+    return row && col ? `${row} × ${col}` : "Tableau croisé";
+  });
 
   // Recent rows
   let recentRows = $derived([...rows].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 5));
@@ -867,15 +1010,37 @@
       </div>
     {/if}
 
-    {#if filterStartDate || filterEndDate || hasExtraFilters}
-      <button
-        type="button"
-        class="text-xs text-brand font-bold hover:underline"
-        onclick={() => { filterStartDate = ""; filterEndDate = ""; extraFilters = {}; }}
-      >
-        Réinitialiser les filtres
-      </button>
-    {/if}
+    <div class="ml-auto flex items-center gap-2">
+      {#if filterStartDate || filterEndDate || hasExtraFilters}
+        <button
+          type="button"
+          class="btn-chip"
+          onclick={() => { filterStartDate = ""; filterEndDate = ""; extraFilters = {}; }}
+        >
+          <IconReset size={13} /> Réinitialiser les filtres
+        </button>
+      {/if}
+      <!-- Export du jeu de données qui alimente les graphiques affichés -->
+      <DataExportMenu
+        build={buildDataExport}
+        rowCount={filteredRows.length}
+        label="Exporter les données"
+        dense
+      />
+    </div>
+  </div>
+
+  <!-- Direction artistique des exports : un seul réglage pour tous les PNG -->
+  <div class="mb-6 animate-fade-in">
+    <ExportSettingsPanel
+      bind:theme={exportTheme}
+      bind:open={exportPanelOpen}
+      {canEdit}
+      dirty={themeDirty}
+      saving={savingTheme}
+      onsave={saveExportTheme}
+      onreset={resetExportTheme}
+    />
   </div>
 {/if}
 
@@ -972,34 +1137,21 @@
       </span>
       <h2 class="font-bold text-[color:var(--ink)]">Évolution des réponses</h2>
       <div class="ml-auto flex items-center gap-2">
-        <div class="flex border border-[color:var(--line)] rounded-lg p-0.5 bg-slate-50">
-          <button
-            type="button"
-            class="px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer"
-            class:bg-white={evolutionMode === "daily"}
-            class:shadow-sm={evolutionMode === "daily"}
-            class:text-[color:var(--ink)]={evolutionMode === "daily"}
-            class:text-[color:var(--muted)]={evolutionMode !== "daily"}
-            onclick={() => evolutionMode = "daily"}
-          >
-            Quotidien
-          </button>
-          <button
-            type="button"
-            class="px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer"
-            class:bg-white={evolutionMode === "cumulative"}
-            class:shadow-sm={evolutionMode === "cumulative"}
-            class:text-[color:var(--ink)]={evolutionMode === "cumulative"}
-            class:text-[color:var(--muted)]={evolutionMode !== "cumulative"}
-            onclick={() => evolutionMode = "cumulative"}
-          >
-            Cumulé
-          </button>
-        </div>
+        <Segmented
+          label="Mode d'affichage de la courbe"
+          dense
+          value={evolutionMode}
+          options={[
+            { value: "daily", label: "Quotidien" },
+            { value: "cumulative", label: "Cumulé" },
+          ]}
+          onchange={(v) => (evolutionMode = v as "daily" | "cumulative")}
+        />
         <button
           type="button"
-          class="btn-secondary text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
-          onclick={() => exportChartImage(lineChart, 'evolution_reponses')}
+          class="btn-chip shrink-0"
+          aria-label="Exporter la courbe d'évolution en image"
+          onclick={() => openExport(lineChart, evolutionMode === 'cumulative' ? 'Réponses cumulées' : 'Évolution des réponses', 'evolution_reponses')}
         >
           <IconDownload size={13} /> PNG
         </button>
@@ -1017,8 +1169,8 @@
       <h2 class="font-bold text-[color:var(--ink)]">Quand répond-on ? (jour × heure)</h2>
       <button
         type="button"
-        class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
-        onclick={() => exportChartImage(dayHourChart, 'activite_jour_heure')}
+        class="btn-chip ml-auto shrink-0"
+        onclick={() => openExport(dayHourChart, 'Activité par jour et par heure', 'activite_jour_heure')}
       >
         <IconDownload size={13} /> PNG
       </button>
@@ -1046,8 +1198,8 @@
         <h2 class="font-bold text-[color:var(--ink)]">Tableau croisé</h2>
         <button
           type="button"
-          class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
-          onclick={() => exportChartImage(crossChart, 'tableau_croise')}
+          class="btn-chip ml-auto shrink-0"
+          onclick={() => openExport(crossChart, crossChartTitle, 'tableau_croise')}
         >
           <IconDownload size={13} /> PNG
         </button>
@@ -1156,8 +1308,8 @@
         <h2 class="font-bold text-[color:var(--ink)]">Taux de remplissage par champ</h2>
         <button
           type="button"
-          class="btn-secondary ml-auto text-xs !py-1 !px-2 flex items-center gap-1 shrink-0"
-          onclick={() => exportChartImage(fillRateChart, 'taux_remplissage')}
+          class="btn-chip ml-auto shrink-0"
+          onclick={() => openExport(fillRateChart, 'Taux de remplissage par champ', 'taux_remplissage')}
         >
           <IconDownload size={13} /> PNG
         </button>
@@ -1185,8 +1337,8 @@
                 <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
                 <button
                   type="button"
-                  class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
-                  onclick={() => exportChartImage(pieCharts[field.key], 'repartition_' + field.key)}
+                  class="btn-chip !px-2 !py-0.5 !text-[10px] shrink-0"
+                  onclick={() => openExport(pieCharts[field.key], field.label, 'repartition_' + field.key)}
                 >
                   <IconDownload size={10} /> PNG
                 </button>
@@ -1206,12 +1358,12 @@
                         <input
                           type="color"
                           class="color-swatch shrink-0"
-                          value={item.color ?? COLORS[i % COLORS.length]}
+                          value={item.color ?? palette[i % palette.length]}
                           oninput={(e) => setOptionColor(field, item.value, (e.target as HTMLInputElement).value)}
                           title="Changer la couleur de « {item.label} »"
                         />
                       {:else}
-                        <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{item.color ?? COLORS[i % COLORS.length]}"></span>
+                        <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{item.color ?? palette[i % palette.length]}"></span>
                       {/if}
                       <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
                       <span class="font-bold text-[color:var(--muted)]">{total > 0 ? Math.round((item.count / total) * 100) : 0}%</span>
@@ -1291,8 +1443,8 @@
               <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
               <button
                 type="button"
-                class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
-                onclick={() => exportChartImage(histCharts[field.key], 'histogramme_' + field.key)}
+                class="btn-chip !px-2 !py-0.5 !text-[10px] shrink-0"
+                onclick={() => openExport(histCharts[field.key], field.label, 'histogramme_' + field.key)}
               >
                 <IconDownload size={10} /> PNG
               </button>
@@ -1359,8 +1511,8 @@
               <h3 class="font-semibold text-sm text-[color:var(--ink)] truncate">{field.label}</h3>
               <button
                 type="button"
-                class="text-[10px] text-slate-400 hover:text-brand font-bold flex items-center gap-0.5 shrink-0"
-                onclick={() => exportChartImage(gridCharts[field.key], 'grille_' + field.key)}
+                class="btn-chip !px-2 !py-0.5 !text-[10px] shrink-0"
+                onclick={() => openExport(gridCharts[field.key], field.label, 'grille_' + field.key)}
               >
                 <IconDownload size={10} /> PNG
               </button>
@@ -1455,12 +1607,22 @@
 
 {/if}
 
-{#if saveMessage}
-  <div class="save-toast">
-    <span>{saveMessage}</span>
-    <button type="button" onclick={() => (saveMessage = null)} aria-label="Fermer">×</button>
-  </div>
-{/if}
+<!-- Aperçu habillé du graphique avant téléchargement -->
+<ExportPreviewModal
+  open={exportTarget !== null}
+  chart={exportTarget?.chart ?? null}
+  theme={exportTheme}
+  filename={exportTarget?.filename ?? "export"}
+  context={{
+    chartTitle: exportTarget?.title ?? "",
+    formTitle,
+    responseCount: filteredRows.length,
+    filterSummary,
+  }}
+  {canEdit}
+  onclose={() => (exportTarget = null)}
+  onpromote={promoteExportTexts}
+/>
 
 <style>
   :global(.card) {
@@ -1484,30 +1646,5 @@
   .color-swatch::-webkit-color-swatch {
     border: none;
     border-radius: 9999px;
-  }
-  .save-toast {
-    position: fixed;
-    bottom: 1.25rem;
-    right: 1.25rem;
-    background: #fef2f2;
-    color: #991b1b;
-    border: 1px solid #fecaca;
-    border-radius: 0.75rem;
-    padding: 0.6rem 0.9rem;
-    font-size: 0.8rem;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
-    z-index: 50;
-  }
-  .save-toast button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: inherit;
-    font-size: 1rem;
-    line-height: 1;
   }
 </style>
