@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
+  import { askConfirm, askPrompt } from "$lib/stores/dialog.svelte.ts";
   import type { User, FormSummary, FormAccessEntry } from "$lib/types.ts";
   import { IconKey, IconTrash, IconClose, IconCheck, IconPlus, IconSend, IconDuplicate } from "$lib/icons.ts";
 
@@ -68,9 +70,9 @@
       const res = await api.resendInvite(u.id);
       inviteLink = res.inviteLink;
       copied = false;
-      alert(`Lien d'invitation renvoyé à ${u.email} et affiché ci-dessous.`);
+      toasts.success(`Lien d'invitation renvoyé à ${u.email}, affiché ci-dessous.`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Échec.");
+      toasts.error(e instanceof Error ? e.message : "Renvoi de l'invitation impossible.");
     }
   }
 
@@ -87,23 +89,39 @@
   }
 
   async function resetPassword(u: User) {
-    const pw = prompt(`Nouveau mot de passe pour ${u.email} (min. 10 caractères) :`);
+    const pw = await askPrompt({
+      title: "Réinitialiser le mot de passe",
+      message: `Le nouveau mot de passe sera actif immédiatement pour ${u.email}.`,
+      label: "Nouveau mot de passe (10 caractères minimum)",
+      confirmLabel: "Mettre à jour",
+    });
     if (!pw) return;
+    if (pw.length < 10) {
+      toasts.error("Le mot de passe doit contenir au moins 10 caractères.");
+      return;
+    }
     try {
       await api.updateUser(u.id, { password: pw });
-      alert("Mot de passe mis à jour.");
+      toasts.success("Mot de passe mis à jour.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Échec.");
+      toasts.error(e instanceof Error ? e.message : "Mise à jour impossible.");
     }
   }
 
   async function removeUser(u: User) {
-    if (!confirm(`Supprimer ${u.email} ?`)) return;
+    const ok = await askConfirm({
+      title: `Supprimer ${u.email} ?`,
+      message: "Ce compte perdra définitivement l'accès à l'application.",
+      confirmLabel: "Supprimer",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteUser(u.id);
       users = users.filter((x) => x.id !== u.id);
+      toasts.success("Compte supprimé.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Échec.");
+      toasts.error(e instanceof Error ? e.message : "Suppression impossible.");
     }
   }
 
@@ -122,8 +140,9 @@
       await api.grantAccess(accessUserId, selectedFormId, accessPerm);
       await loadAccess();
       accessUserId = "";
+      toasts.success("Accès accordé.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Échec.");
+      toasts.error(e instanceof Error ? e.message : "Attribution de l'accès impossible.");
     }
   }
 

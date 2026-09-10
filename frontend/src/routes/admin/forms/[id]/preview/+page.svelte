@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
   import { api, type SignedFileDescriptor } from "$api/client.ts";
@@ -215,7 +216,7 @@
   function simulateSubmit(e: Event) {
     e.preventDefault();
     if (form?.requireConsent && !consent) {
-      alert("Vous devez accepter le consentement pour soumettre.");
+      toasts.error("Vous devez accepter le consentement pour soumettre.");
       return;
     }
     if (!validateAll()) {

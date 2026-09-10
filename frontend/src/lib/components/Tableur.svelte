@@ -6,6 +6,8 @@
   import { evaluateRowFormula, evaluateAggregate } from "../formulaEngine.ts";
   import MultiSelectFilter from "./MultiSelectFilter.svelte";
   import DataExportMenu from "./DataExportMenu.svelte";
+  import { toasts } from "../stores/toast.svelte.ts";
+  import { askConfirm, askPrompt } from "../stores/dialog.svelte.ts";
   import { sanitizeFilename, type DataExportOptions, type DataFormat } from "../dataExport.ts";
   import {
     IconSearch,
@@ -17,7 +19,6 @@
     IconImport,
     IconDownload,
     IconFormula,
-    IconCheckCircle,
   } from "../icons.ts";
 
   let {
@@ -125,7 +126,6 @@
   let editValues = $state<string[]>([]);
   let aggregates = $state<Record<string, string>>({}); // colKey -> "SUM" | "AVG" | ...
   let busy = $state(false);
-  let message = $state<string | null>(null);
   let viewMode = $state<"table" | "cards">("table");
   let actionsMenuOpen = $state(false);
 
@@ -327,7 +327,7 @@
       await api.updateCell(target.rowId, col.source === "field" ? "field" : "meta", col.key, value);
       invalidateResponsesCache(formId);
     } catch (e) {
-      message = e instanceof Error ? e.message : "Échec de la sauvegarde.";
+      toasts.error(e instanceof Error ? e.message : "Échec de la sauvegarde.");
     }
   }
 
@@ -350,34 +350,53 @@
       rows = [res.row, ...rows];
       invalidateResponsesCache(formId);
     } catch (e) {
-      message = e instanceof Error ? e.message : "Échec de l'ajout.";
+      toasts.error(e instanceof Error ? e.message : "Échec de l'ajout.");
     } finally {
       busy = false;
     }
   }
 
   async function deleteRow(id: string) {
-    if (!confirm("Supprimer définitivement cette réponse ?")) return;
+    const ok = await askConfirm({
+      title: "Supprimer cette réponse ?",
+      message: "La ligne et ses valeurs seront définitivement supprimées.",
+      confirmLabel: "Supprimer",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteResponse(id);
       rows = rows.filter((r) => r.id !== id);
       invalidateResponsesCache(formId);
     } catch (e) {
-      message = e instanceof Error ? e.message : "Échec de la suppression.";
+      toasts.error(e instanceof Error ? e.message : "Échec de la suppression.");
     }
   }
 
   // --- Colonnes de métadonnées : ajout / suppression ---
-  function addColumn() {
-    const label = prompt("Nom de la nouvelle colonne :");
+  async function addColumn() {
+    const label = await askPrompt({
+      title: "Nouvelle colonne",
+      message: "Une colonne de métadonnées : son contenu n'est visible que des éditeurs.",
+      label: "Nom de la colonne",
+      placeholder: "Ex : statut de traitement",
+      confirmLabel: "Ajouter",
+      maxLength: 200,
+    });
     if (!label) return;
     const col: MetaColumn = { key: `meta_${Date.now().toString(36)}`, label, kind: "text" };
     metaColumns = [...metaColumns, col];
     onMetaColumnsChange?.(metaColumns);
   }
 
-  function removeColumn(key: string) {
-    if (!confirm("Retirer cette colonne de métadonnées ?")) return;
+  async function removeColumn(key: string) {
+    const ok = await askConfirm({
+      title: "Retirer cette colonne ?",
+      message: "Les valeurs qu'elle contient ne seront plus affichées.",
+      confirmLabel: "Retirer",
+      danger: true,
+    });
+    if (!ok) return;
     metaColumns = metaColumns.filter((c) => c.key !== key);
     onMetaColumnsChange?.(metaColumns);
   }
@@ -452,7 +471,6 @@
     const file = input.files?.[0];
     if (!file) return;
     busy = true;
-    message = null;
     try {
       const ExcelJS = (await import("exceljs")).default;
       const wb = new ExcelJS.Workbook();
@@ -490,9 +508,9 @@
       }
       rows = [...rows];
       if (updates > 0) invalidateResponsesCache(formId);
-      message = `Import terminé : ${updates} cellule(s) mise(s) à jour.`;
+      toasts.success(`Import terminé : ${updates} cellule(s) mise(s) à jour.`);
     } catch (err) {
-      message = err instanceof Error ? err.message : "Import impossible.";
+      toasts.error(err instanceof Error ? err.message : "Import impossible.");
     } finally {
       busy = false;
       input.value = "";
@@ -591,13 +609,6 @@
       </div>
     </div>
   </div>
-
-  {#if message}
-    <div class="msg">
-      <span class="flex items-center gap-1.5"><IconCheckCircle size={15} weight="fill" /> {message}</span>
-      <button onclick={() => (message = null)} type="button" aria-label="Fermer"><IconClose size={14} /></button>
-    </div>
-  {/if}
 
   <!-- Vue Tableur classique -->
   <div
@@ -890,20 +901,6 @@
       &:focus {
         @include m.focus-ring;
       }
-    }
-  }
-  .msg {
-    display: flex;
-    justify-content: space-between;
-    background: #ecfdf5;
-    color: #065f46;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.8rem;
-    border: 1px solid #a7f3d0;
-    button {
-      background: none;
-      border: none;
-      cursor: pointer;
     }
   }
   .table-wrapper {

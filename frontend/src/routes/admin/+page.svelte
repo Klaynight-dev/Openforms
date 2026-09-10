@@ -3,6 +3,8 @@
   import { goto } from "$app/navigation";
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
+  import { askConfirm } from "$lib/stores/dialog.svelte.ts";
   import type { FormSummary, GlobalStats } from "$lib/types.ts";
   import {
     IconTable,
@@ -89,7 +91,7 @@
       newOrgName = "";
       await load();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Impossible de créer l'organisation.");
+      toasts.error(e instanceof Error ? e.message : "Impossible de créer l'organisation.");
     }
   }
 
@@ -111,19 +113,26 @@
       orgMembers = [...orgMembers, res.member];
       inviteEmail = "";
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Impossible d'inviter ce membre.");
+      toasts.error(e instanceof Error ? e.message : "Impossible d'inviter ce membre.");
     } finally {
       inviting = false;
     }
   }
 
   async function removeMember(memberId: string) {
-    if (!activeOrgId || !confirm("Retirer ce membre de l'organisation ?")) return;
+    if (!activeOrgId) return;
+    const ok = await askConfirm({
+      title: "Retirer ce membre ?",
+      message: "Il perdra l'accès aux formulaires de l'organisation.",
+      confirmLabel: "Retirer",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.removeOrgMember(activeOrgId, memberId);
       orgMembers = orgMembers.filter((m) => m.id !== memberId);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Action impossible.");
+      toasts.error(e instanceof Error ? e.message : "Action impossible.");
     }
   }
 
@@ -261,12 +270,18 @@
       f.isPublished = res.isPublished;
       forms = [...forms];
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Action impossible.");
+      toasts.error(e instanceof Error ? e.message : "Action impossible.");
     }
   }
 
   async function remove(f: FormSummary) {
-    if (!confirm(`Supprimer « ${f.title} » et toutes ses réponses ?`)) return;
+    const ok = await askConfirm({
+      title: `Supprimer « ${f.title} » ?`,
+      message: "Le formulaire et toutes ses réponses seront définitivement supprimés.",
+      confirmLabel: "Supprimer",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteForm(f.id);
       forms = forms.filter((x) => x.id !== f.id);
@@ -274,7 +289,7 @@
       next.delete(f.id);
       selected = next;
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Suppression impossible.");
+      toasts.error(e instanceof Error ? e.message : "Suppression impossible.");
     }
   }
 
@@ -283,7 +298,7 @@
       const res = await api.duplicateForm(f.id);
       forms = [res.form, ...forms];
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Duplication impossible.");
+      toasts.error(e instanceof Error ? e.message : "Duplication impossible.");
     }
   }
 
@@ -292,8 +307,12 @@
   }
 
   async function copyLink(slug: string) {
-    await navigator.clipboard.writeText(publicUrl(slug));
-    alert("Lien copié !");
+    try {
+      await navigator.clipboard.writeText(publicUrl(slug));
+      toasts.success("Lien public copié.");
+    } catch {
+      toasts.error("Copie impossible : le presse-papiers est indisponible.");
+    }
   }
 
   // --- Actions groupées ---
@@ -315,7 +334,13 @@
   async function bulkDelete() {
     const ids = [...selected];
     const count = ids.length;
-    if (!confirm(`Supprimer ${count} formulaire(s) et toutes leurs réponses ?`)) return;
+    const ok = await askConfirm({
+      title: `Supprimer ${count} formulaire${count > 1 ? "s" : ""} ?`,
+      message: "Toutes leurs réponses seront définitivement supprimées.",
+      confirmLabel: "Supprimer",
+      danger: true,
+    });
+    if (!ok) return;
     await Promise.all(ids.map((id) => api.deleteForm(id)));
     forms = forms.filter((f) => !ids.includes(f.id));
     clearSelection();

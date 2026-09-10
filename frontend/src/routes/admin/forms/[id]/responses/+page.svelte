@@ -5,6 +5,7 @@
   import Tableur from "$components/Tableur.svelte";
   import { api } from "$api/client.ts";
   import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
   import type { FieldDefinition, MetaColumn, ResponseRow, FormDetail } from "$lib/types.ts";
   import {
     IconBack,
@@ -97,7 +98,7 @@
         translations: detail.translations,
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Impossible d'enregistrer les colonnes.");
+      toasts.error(e instanceof Error ? e.message : "Impossible d'enregistrer les colonnes.");
     }
   }
 
@@ -158,7 +159,7 @@
       await api.updateCell(rowId, target, kanbanGroupKey, colValue || null);
       invalidateResponsesCache(id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Impossible de modifier la réponse.");
+      toasts.error(err instanceof Error ? err.message : "Impossible de modifier la réponse.");
       invalidateResponsesCache(id);
       const res = await getResponsesCached(id);
       rows = res.rows;
