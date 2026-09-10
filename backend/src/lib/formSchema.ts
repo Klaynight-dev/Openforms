@@ -92,6 +92,35 @@ export const MetaColumnSchema = t.Object({
 });
 export type MetaColumn = Static<typeof MetaColumnSchema>;
 
+/**
+ * Identité visuelle appliquée aux images exportées depuis la page Statistiques.
+ * Le logo est stocké en data URL (limitée à ~400 Ko encodés) afin de rester
+ * self-contained : pas de dépendance à un CDN ni au stockage de fichiers.
+ */
+export const ExportThemeSchema = t.Object({
+  title: t.Optional(t.String({ maxLength: 200 })),
+  subtitle: t.Optional(t.String({ maxLength: 300 })),
+  caption: t.Optional(t.String({ maxLength: 1000 })),
+  logoDataUrl: t.Optional(t.String({ maxLength: 400_000 })),
+  logoPosition: t.Optional(
+    t.Union([t.Literal("top-left"), t.Literal("top-right"), t.Literal("footer")]),
+  ),
+  palette: t.Optional(t.Array(t.String({ pattern: "^#[0-9a-fA-F]{6}$" }), { maxItems: 24 })),
+  fontFamily: t.Optional(t.String({ maxLength: 200 })),
+  theme: t.Optional(t.Union([t.Literal("light"), t.Literal("dark")])),
+  accentColor: t.Optional(t.String({ pattern: "^#[0-9a-fA-F]{6}$" })),
+  ratio: t.Optional(
+    t.Union([t.Literal("auto"), t.Literal("16:9"), t.Literal("4:3"), t.Literal("1:1")]),
+  ),
+  scale: t.Optional(t.Union([t.Literal(1), t.Literal(2), t.Literal(3)])),
+  showDate: t.Optional(t.Boolean()),
+  showCount: t.Optional(t.Boolean()),
+  showFilters: t.Optional(t.Boolean()),
+  showFormTitle: t.Optional(t.Boolean()),
+  legalNotice: t.Optional(t.String({ maxLength: 300 })),
+});
+export type ExportTheme = Static<typeof ExportThemeSchema>;
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Suffixe de clé utilisé pour stocker le texte de justification lié à un champ à choix. */

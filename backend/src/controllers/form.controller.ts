@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
-import { FormSchemaArray, MetaColumnSchema } from "../lib/formSchema.ts";
+import { ExportThemeSchema, FormSchemaArray, MetaColumnSchema } from "../lib/formSchema.ts";
 import { randomToken } from "../services/crypto.ts";
 
 function slugify(title: string): string {
@@ -288,6 +288,45 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
     { params: t.Object({ id: t.String() }), body: t.Object(FormSettings), requireRole: true },
   )
 
+  // --- Identité visuelle des exports statistiques ---
+  // Endpoint dédié : la page Statistiques n'a pas le formulaire complet en main
+  // et ne doit pas risquer d'écraser le schéma en réenvoyant tout le payload.
+  .put(
+    "/:id/export-theme",
+    async ({ auth, params, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
+      const form = await prisma.form.findUnique({ where: { id: params.id } });
+      if (!form) {
+        set.status = 404;
+        return { success: false, error: "Formulaire introuvable." };
+      }
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
+      if (perm !== "WRITE") {
+        set.status = 403;
+        return { success: false, error: "Édition non autorisée." };
+      }
+      if (body.logoDataUrl && !/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(body.logoDataUrl)) {
+        set.status = 400;
+        return { success: false, error: "Le logo doit être une image PNG, JPEG, WebP ou SVG." };
+      }
+
+      const updated = await prisma.form.update({
+        where: { id: params.id },
+        data: { exportTheme: body as object },
+        select: { exportTheme: true },
+      });
+      return { success: true, exportTheme: updated.exportTheme };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: ExportThemeSchema,
+      requireRole: true,
+    },
+  )
+
   // --- Publication / dépublication (Super Admin ou propriétaire) ---
   .post(
     "/:id/publish",
@@ -377,6 +416,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           endsAt: form.endsAt,
           maxResponses: form.maxResponses,
           translations: form.translations ?? {},
+          exportTheme: form.exportTheme ?? {},
           isPublished: false, // reset to draft
           ownerId: auth.user.id,
           organizationId: form.organizationId,

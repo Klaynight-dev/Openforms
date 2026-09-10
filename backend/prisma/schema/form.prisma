@@ -44,6 +44,12 @@ model Form {
   // --- Multilinguisme ---
   translations         Json      @default("{}")
 
+  // --- Identité visuelle des exports statistiques ---
+  /// Habillage appliqué aux images exportées depuis la page Statistiques :
+  /// titre/sous-titre, légende libre, logo (data URL), palette, police,
+  /// pied de page. Voir frontend/src/lib/exportTheme.ts pour la forme exacte.
+  exportTheme          Json      @default("{}")
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
