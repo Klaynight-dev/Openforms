@@ -157,3 +157,10 @@ corp-ca.pem
 # Widget d'embed : généré par `bun run build:embed` (voir frontend/embed/)
 frontend/static/embed.js
 frontend/static/embed.js.map
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+# Uploads créés par la suite de tests backend
+backend/.test-uploads/

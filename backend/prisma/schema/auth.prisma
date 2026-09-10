@@ -29,6 +29,7 @@ model User {
   formAccess          FormAccess[]
   organizations       OrganizationMember[]
   passwordSetupTokens PasswordSetupToken[]
+  dolibarrConnections DolibarrConnection[]  @relation("DolibarrConnectionCreator")
 
   @@index([email])
 }

@@ -53,6 +53,8 @@ model Form {
   organizationId String?
   responses    Response[]
   access       FormAccess[]
+  dolibarrMapping DolibarrMapping?
+  deliveries      IntegrationDelivery[]
 
   @@index([ownerId])
   @@index([slug])

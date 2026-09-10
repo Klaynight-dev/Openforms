@@ -377,7 +377,7 @@
     {:else if loadError}
       <div class="gform-card p-8 text-center text-[color:var(--danger)]">{loadError}</div>
     {:else if submitted}
-      <div class="gform-card p-10 text-center animate-fade-in">
+      <div class="gform-card p-10 text-center animate-fade-in" data-testid="submitted">
         <div class="mx-auto mb-3 text-brand-500 flex justify-center"><IconCheckCircle size={52} weight="fill" /></div>
         <h1 class="mb-2 text-2xl font-bold">Merci !</h1>
         <p class="text-[color:var(--muted)]">Votre réponse a bien été enregistrée.</p>
@@ -405,7 +405,7 @@
           {/if}
         </div>
         <div class="p-6 md:p-8">
-          <h1 class="text-3xl font-bold tracking-tight text-[color:var(--ink)]">{currentPage.title}</h1>
+          <h1 class="text-3xl font-bold tracking-tight text-[color:var(--ink)]" data-testid="form-title">{currentPage.title}</h1>
           {#if currentPage.description}<p class="mt-3 text-sm text-[color:var(--muted)] leading-relaxed whitespace-pre-line">{currentPage.description}</p>{/if}
           {#if currentPage.isFirst && translatedForm.isAnonymized}
             <p class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
@@ -449,28 +449,28 @@
 
         {#if currentPage.isLast && translatedForm.requireConsent}
           <label class="mb-5 flex items-start gap-3 rounded-xl border border-[color:var(--line)] bg-white p-6 text-sm shadow-sm hover:shadow-md cursor-pointer transition-shadow duration-200">
-            <input type="checkbox" bind:checked={consent} class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
+            <input type="checkbox" bind:checked={consent} data-testid="consent" class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
             <span class="text-[color:var(--ink)] font-medium leading-tight">{translatedForm.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
           </label>
         {/if}
 
         {#if submitError}
-          <p class="mb-4 text-sm font-semibold text-[color:var(--danger)]">{submitError}</p>
+          <p class="mb-4 text-sm font-semibold text-[color:var(--danger)]" data-testid="submit-error">{submitError}</p>
         {/if}
 
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           <div class="flex items-center gap-3 w-full sm:w-auto">
             {#if !currentPage.isFirst}
-              <button class="btn-secondary w-full sm:w-auto" type="button" onclick={prevPage}>
+              <button class="btn-secondary w-full sm:w-auto" type="button" onclick={prevPage} data-testid="prev-page">
                 Précédent
               </button>
             {/if}
             {#if !currentPage.isLast}
-              <button class="btn-primary w-full sm:w-auto" type="button" onclick={nextPage}>
+              <button class="btn-primary w-full sm:w-auto" type="button" onclick={nextPage} data-testid="next-page">
                 Suivant
               </button>
             {:else}
-              <button class="btn-primary w-full sm:w-auto" type="submit" disabled={submitting}>
+              <button class="btn-primary w-full sm:w-auto" type="submit" disabled={submitting} data-testid="form-submit">
                 {submitting ? "Envoi…" : "Envoyer"}
               </button>
             {/if}

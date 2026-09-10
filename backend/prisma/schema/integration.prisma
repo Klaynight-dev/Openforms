@@ -1,0 +1,129 @@
+// Intégrations sortantes : file de livraison fiable + connecteur Dolibarr.
+//
+// Principe : une soumission n'appelle jamais un système tiers en direct. Elle
+// crée une ligne `IntegrationDelivery` (PENDING), et un dispatcher la traite en
+// arrière-plan avec réessais. Une inscription ne peut donc pas être perdue
+// parce que le serveur Dolibarr était momentanément indisponible.
+
+/// Instance Dolibarr cible. La clé API n'est jamais stockée en clair :
+/// `apiKeyEnc` contient un payload AES-256-GCM (cf. services/crypto.ts).
+model DolibarrConnection {
+  id        String  @id @default(uuid())
+  label     String
+  /// Racine de l'API, sans slash final — ex. https://erp.club.fr/api/index.php
+  baseUrl   String
+  apiKeyEnc String
+
+  /// Désactive la vérification du certificat TLS (auto-signé en interne).
+  /// À n'utiliser que sur un réseau de confiance.
+  insecureTls Boolean @default(false)
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+
+  createdBy   User   @relation("DolibarrConnectionCreator", fields: [createdById], references: [id])
+  createdById String
+
+  mappings  DolibarrMapping[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+/// Ce qu'une soumission doit produire dans Dolibarr.
+enum DolibarrTarget {
+  /// Un adhérent seul (POST /members).
+  MEMBER
+  /// Un adhérent puis sa cotisation (POST /members/{id}/subscriptions).
+  MEMBER_WITH_SUBSCRIPTION
+  /// Un tiers puis un contact rattaché (POST /thirdparties, POST /contacts).
+  THIRDPARTY_CONTACT
+}
+
+/// Critère de rapprochement pour éviter les doublons d'une saison à l'autre.
+enum DolibarrDedupe {
+  /// Toujours créer un nouvel objet.
+  NONE
+  /// Rechercher par email et mettre à jour l'objet existant le cas échéant.
+  EMAIL
+}
+
+/// Configuration de l'export Dolibarr pour un formulaire donné.
+model DolibarrMapping {
+  id     String @id @default(uuid())
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String @unique
+
+  connection   DolibarrConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connectionId String
+
+  enabled Boolean        @default(false)
+  target  DolibarrTarget @default(MEMBER)
+  dedupe  DolibarrDedupe @default(EMAIL)
+
+  /// Correspondance { "<propriété Dolibarr>": { source: "field"|"const", key?, value? } }.
+  /// La notation pointée gère les extrafields : "array_options.options_licence".
+  /// Voir lib/dolibarrMapping.ts pour la sémantique exacte.
+  fieldMap Json @default("{}")
+
+  /// Identifiant du type d'adhérent Dolibarr (obligatoire pour créer un membre).
+  memberTypeId Int?
+
+  /// Cotisation (cible MEMBER_WITH_SUBSCRIPTION) : montant fixe, ou champ du
+  /// formulaire portant le montant, et durée de validité en mois.
+  subscriptionAmount    Float?
+  subscriptionAmountKey String?
+  subscriptionMonths    Int     @default(12)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([connectionId])
+}
+
+enum DeliveryTarget {
+  WEBHOOK
+  DOLIBARR
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCEEDED
+  /// Réessais épuisés — nécessite un rejeu manuel.
+  FAILED
+}
+
+/// Une tentative de livraison vers un système tiers.
+///
+/// Note RGPD : cette table ne duplique **jamais** le contenu des réponses. On
+/// n'y stocke que les identifiants ; le dispatcher relit la réponse (et la
+/// déchiffre si besoin) au moment de l'envoi. Une purge de réponse fait donc
+/// disparaître la donnée personnelle sans traitement supplémentaire.
+model IntegrationDelivery {
+  id     String @id @default(uuid())
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String
+
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  responseId String
+
+  target DeliveryTarget
+  status DeliveryStatus @default(PENDING)
+
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  /// Réponse du système distant, tronquée — aide au diagnostic.
+  lastResponse  String?
+  /// Référence créée côté distant (ex. "member:42"), pour traçabilité.
+  remoteRef     String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([formId])
+  @@index([responseId])
+}

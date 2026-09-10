@@ -26,7 +26,7 @@
 <svelte:head><title>Connexion — Admin</title></svelte:head>
 
 <div class="grid min-h-[80vh] place-items-center">
-  <form onsubmit={submit} class="gform-card w-full max-w-sm p-8">
+  <form onsubmit={submit} class="gform-card w-full max-w-sm p-8" data-testid="login-form">
     <div class="mb-6 text-center">
       <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500 text-white">
         <IconLeaf size={26} weight="fill" />
@@ -39,11 +39,11 @@
     <label class="label" for="pw">Mot de passe</label>
     <input id="pw" class="input mb-4" type="password" bind:value={password} required autocomplete="current-password" />
     {#if error}
-      <p class="mb-3 flex items-center gap-1.5 text-sm text-[color:var(--danger)]">
+      <p class="mb-3 flex items-center gap-1.5 text-sm text-[color:var(--danger)]" data-testid="login-error">
         <IconLock size={15} /> {error}
       </p>
     {/if}
-    <button class="btn-primary w-full mb-4" type="submit" disabled={loading}>
+    <button class="btn-primary w-full mb-4" type="submit" disabled={loading} data-testid="login-submit">
       {loading ? "Connexion…" : "Se connecter"}
     </button>
     <div class="text-center text-xs">

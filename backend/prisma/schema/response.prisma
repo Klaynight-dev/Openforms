@@ -15,7 +15,8 @@ model Response {
   ipHash    String?
   userAgent String?
 
-  files     FileUpload[]
+  files      FileUpload[]
+  deliveries IntegrationDelivery[]
 
   submittedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
