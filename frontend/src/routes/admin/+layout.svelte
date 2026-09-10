@@ -3,7 +3,7 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte.ts";
-  import { IconLeaf, IconUsers, IconLogout, IconTable, IconClose, IconChartBar } from "$lib/icons.ts";
+  import { IconLeaf, IconUsers, IconLogout, IconTable, IconClose, IconChartBar, IconKey } from "$lib/icons.ts";
   import LegalFooter from "$lib/components/LegalFooter.svelte";
 
   let { children } = $props();
@@ -60,6 +60,9 @@
                 <IconUsers size={18} /> Utilisateurs
               </a>
             {/if}
+            <a href="/admin/api-keys" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition">
+              <IconKey size={18} /> Clés d'API
+            </a>
             <span class="mx-2 text-xs font-semibold text-[color:var(--muted)] bg-slate-100 rounded-lg px-2.5 py-1.5">{auth.user?.email}</span>
             <span class="chip-muted">{auth.user?.role === "SUPER_ADMIN" ? "Super Admin" : "Éditeur"}</span>
             <button class="btn-text !py-2 hover:!text-[color:var(--danger)]" onclick={logout} title="Déconnexion">
@@ -113,14 +116,21 @@
               <IconTable size={20} /> Formulaires
             </a>
             {#if auth.isSuperAdmin}
-              <a 
-                href="/admin/users" 
+              <a
+                href="/admin/users"
                 class="flex items-center gap-3 rounded-xl p-3.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-brand-50 hover:text-brand-700 transition"
                 onclick={() => menuOpen = false}
               >
                 <IconUsers size={20} /> Utilisateurs
               </a>
             {/if}
+            <a
+              href="/admin/api-keys"
+              class="flex items-center gap-3 rounded-xl p-3.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-brand-50 hover:text-brand-700 transition"
+              onclick={() => menuOpen = false}
+            >
+              <IconKey size={20} /> Clés d'API
+            </a>
             <hr class="border-[color:var(--line)]" />
             <button 
               class="flex items-center gap-3 rounded-xl p-3.5 text-sm font-semibold text-[color:var(--danger)] hover:bg-red-50 transition w-full text-left"
