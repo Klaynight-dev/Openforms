@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { IconLeaf, IconTable, IconShield, IconEdit } from "$lib/icons.ts";
+  import LegalFooter from "$lib/components/LegalFooter.svelte";
 </script>
 
 <svelte:head><title>Formulaire Humanitour</title></svelte:head>
@@ -43,5 +44,7 @@
         <p class="mt-1 text-sm text-[color:var(--muted)]">Consentement explicite, anonymisation, chiffrement au repos.</p>
       </div>
     </div>
+
+    <LegalFooter />
   </main>
 </div>

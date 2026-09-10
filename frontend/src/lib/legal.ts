@@ -66,8 +66,8 @@ export const LEGAL = {
 
 /** Navigation commune aux pages légales. */
 export const LEGAL_PAGES = [
-  { href: "/legal/mentions-legales", label: "Mentions légales" },
-  { href: "/legal/cgu", label: "Conditions générales d'utilisation" },
-  { href: "/legal/confidentialite", label: "Politique de confidentialité" },
-  { href: "/legal/cookies", label: "Gestion des cookies" },
+  { href: "/legal/mentions-legales", label: "Mentions légales", short: "Mentions légales" },
+  { href: "/legal/cgu", label: "Conditions générales d'utilisation", short: "CGU" },
+  { href: "/legal/confidentialite", label: "Politique de confidentialité", short: "Confidentialité" },
+  { href: "/legal/cookies", label: "Gestion des cookies", short: "Cookies" },
 ] as const;

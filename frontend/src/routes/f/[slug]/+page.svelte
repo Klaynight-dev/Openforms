@@ -6,6 +6,7 @@
   import { JUSTIFICATION_SUFFIX, type FormDetail, type FieldDefinition } from "$lib/types.ts";
   import { IconCheckCircle, IconLock, IconShield, IconWarning } from "$lib/icons.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import LegalFooter from "$lib/components/LegalFooter.svelte";
 
   let form = $state<FormDetail | null>(null);
   let loading = $state(true);
@@ -439,7 +440,7 @@
           {#if currentPage.description}<p class="mt-3 text-sm text-[color:var(--muted)] leading-relaxed whitespace-pre-line">{currentPage.description}</p>{/if}
           {#if currentPage.isFirst && translatedForm.isAnonymized}
             <p class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
-              <IconLock size={14} /> Réponses anonymes — aucune donnée d'identification n'est collectée.
+              <IconLock size={14} /> Réponses anonymes- aucune donnée d'identification n'est collectée.
             </p>
           {/if}
         </div>
@@ -487,6 +488,11 @@
             <input type="checkbox" bind:checked={consent} class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
             <span class="text-[color:var(--ink)] font-medium leading-tight">{translatedForm.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
           </label>
+          <!-- Information de la personne concernée au moment de la collecte (art. 13 RGPD). -->
+          <p class="-mt-3 mb-5 px-1 text-xs text-[color:var(--muted)]">
+            Voir la <a class="underline underline-offset-2 hover:text-[color:var(--brand)]" href="/legal/confidentialite" target="_blank" rel="noopener">politique de confidentialité</a>
+            pour connaître vos droits sur ces données.
+          </p>
         {/if}
 
         {#if submitError || errorCount > 0}
@@ -505,7 +511,7 @@
                   class="mt-1 font-semibold text-red-700 underline underline-offset-2"
                   onclick={goToFirstError}
                 >
-                  {errorCount} champ{errorCount > 1 ? "s" : ""} à corriger — aller au premier
+                  {errorCount} champ{errorCount > 1 ? "s" : ""} à corriger- aller au premier
                 </button>
               {/if}
             </div>
@@ -535,5 +541,7 @@
         </div>
       </form>
     {/if}
+
+    <LegalFooter compact />
   </main>
 </div>

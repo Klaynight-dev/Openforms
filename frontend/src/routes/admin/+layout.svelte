@@ -4,6 +4,7 @@
   import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { IconLeaf, IconUsers, IconLogout, IconTable, IconClose, IconChartBar } from "$lib/icons.ts";
+  import LegalFooter from "$lib/components/LegalFooter.svelte";
 
   let { children } = $props();
   let menuOpen = $state(false);
@@ -133,6 +134,10 @@
     {/if}
     <div class="mx-auto max-w-7xl px-4 md:px-0" class:py-6={!isFormEditor} class:pb-6={isFormEditor}>
       {@render children()}
+      <!-- Liens légaux : l'éditeur du builder a son propre pied de page collant. -->
+      {#if !isFormEditor}
+        <LegalFooter compact />
+      {/if}
     </div>
   </div>
 {/if}
