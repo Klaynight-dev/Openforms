@@ -41,6 +41,8 @@
   let echarts: typeof import("echarts") | null = null;
 
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  /** En deçà de ce pourcentage, une part de camembert ne porte pas d'étiquette. */
+  const PIE_LABEL_MIN_PERCENT = 4;
 
   const formId = $derived($page.params.id as string);
 
@@ -682,16 +684,77 @@
       return;
     }
 
-    chart.setOption({
-      tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
-      legend: { show: false },
-      series: [{
-        type: "pie",
-        radius: ["42%", "72%"],
-        data: dist.map((d, i) => ({ name: d.label, value: d.count, itemStyle: { color: d.color ?? palette[i % palette.length] } })),
-        label: { show: false },
-        emphasis: { label: { show: true, fontSize: 12, fontWeight: "bold" } },
-      }],
+    // Un camembert sans étiquette n'est lisible qu'au survol : l'information
+    // disparaît à l'export et pour qui n'a pas de souris. On sort donc le
+    // libellé et l'effectif au bout d'une ligne de rappel. En dessous de
+    // PIE_LABEL_MIN_PERCENT, les parts sont trop fines pour porter une
+    // étiquette sans se chevaucher : elles restent lisibles dans la liste.
+    const unite = field.type === "checkbox" ? "occurrences" : "réponses";
+
+    chart.setOption(
+      {
+        tooltip: { trigger: "item", formatter: "{b}<br/><b>{c}</b> ({d}%)" },
+        legend: { show: false },
+        // Total au centre du donut : l'espace est libre et c'est le premier
+        // chiffre que l'on cherche.
+        title: {
+          text: String(total),
+          subtext: unite,
+          left: "center",
+          top: "center",
+          textAlign: "center",
+          textStyle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
+          subtextStyle: { fontSize: 10, color: "#94a3b8" },
+          itemGap: 2,
+        },
+        series: [
+          {
+            type: "pie",
+            radius: ["38%", "56%"],
+            center: ["50%", "50%"],
+            avoidLabelOverlap: true,
+            minAngle: 2,
+            data: dist.map((d, i) => {
+              const percent = total > 0 ? (d.count / total) * 100 : 0;
+              const labelled = percent >= PIE_LABEL_MIN_PERCENT;
+              return {
+                name: d.label,
+                value: d.count,
+                itemStyle: { color: d.color ?? palette[i % palette.length] },
+                label: { show: labelled },
+                labelLine: { show: labelled },
+              };
+            }),
+            label: {
+              position: "outside",
+              formatter: (p: any) => `{n|${p.name}}
+{v|${p.value} (${p.percent}%)}`,
+              rich: {
+                n: { fontSize: 11, fontWeight: "bold", color: "#1e293b", lineHeight: 15, width: 64, overflow: "truncate" },
+                v: { fontSize: 10, color: "#64748b", lineHeight: 13 },
+              },
+            },
+            labelLine: { length: 8, length2: 10, smooth: true, lineStyle: { color: "#cbd5e1" } },
+            emphasis: {
+              scaleSize: 6,
+              label: { show: true, fontWeight: "bold" },
+              labelLine: { show: true },
+            },
+          },
+        ],
+      },
+      // notMerge : sans ça, les `label.show` par donnée d'un rendu précédent
+      // survivent à un changement de filtre qui modifie la répartition.
+      true,
+    );
+  }
+
+  /** Met en avant la part correspondante quand on survole la liste. */
+  function highlightSlice(fieldKey: string, dataIndex: number, on: boolean) {
+    pieCharts[fieldKey]?.dispatchAction({
+      type: on ? "highlight" : "downplay",
+      seriesIndex: 0,
+      dataIndex,
     });
   }
 
@@ -703,7 +766,7 @@
     const sorted = [...fillRates].sort((a, b) => b.rate - a.rate);
     fillRateChart.setOption({
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value}%</b>` },
-      grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 44, top: 8, bottom: 8, containLabel: true },
       xAxis: { type: "value", max: 100, axisLabel: { formatter: "{value}%", color: "#94a3b8", fontSize: 11 }, splitLine: { lineStyle: { color: "#f1f5f9" } } },
       yAxis: { type: "category", data: sorted.map((f) => f.label.length > 22 ? f.label.slice(0, 22) + "…" : f.label), axisLabel: { color: "#475569", fontSize: 11 }, axisTick: { show: false } },
       series: [{
@@ -713,6 +776,7 @@
           itemStyle: { color: f.rate >= 75 ? "#22c55e" : f.rate >= 40 ? "#f59e0b" : "#ef4444", borderRadius: [0, 4, 4, 0] },
         })),
         barMaxWidth: 18,
+        label: { show: true, position: "right", fontSize: 10, color: "#475569", formatter: "{c} %" },
       }],
     });
   }
@@ -747,7 +811,7 @@
   function barOption(labels: string[], counts: number[], xLabelInterval: number | "auto" = "auto") {
     return {
       tooltip: { trigger: "axis", formatter: (p: any) => `${p[0].name}<br/><b>${p[0].value} réponse(s)</b>` },
-      grid: { left: 8, right: 8, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 8, top: 22, bottom: 8, containLabel: true },
       xAxis: { type: "category", data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: "#e2e8f0" } }, axisLabel: { color: "#94a3b8", fontSize: 10, interval: xLabelInterval } },
       yAxis: { type: "value", minInterval: 1, axisLine: { show: false }, splitLine: { lineStyle: { color: "#f1f5f9" } }, axisLabel: { color: "#94a3b8", fontSize: 10 } },
       series: [{
@@ -755,6 +819,16 @@
         data: counts,
         itemStyle: { color: accent, borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 22,
+        // Valeur au-dessus de la barre : à l'export, le survol n'existe plus.
+        // Au-delà d'une quinzaine de barres les étiquettes se chevauchent,
+        // l'axe suffit alors à situer les ordres de grandeur.
+        label: {
+          show: counts.length <= 14,
+          position: "top",
+          fontSize: 10,
+          color: "#475569",
+          formatter: (p: any) => (p.value > 0 ? p.value : ""),
+        },
       }],
     };
   }
@@ -1347,14 +1421,22 @@
               {#if total === 0}
                 <p class="text-xs text-[color:var(--muted)] text-center py-4">Aucune réponse</p>
               {:else}
+                <!-- Les étiquettes à ligne de rappel débordent du disque :
+                     la zone est plus haute que le donut lui-même. -->
                 <div
                   use:initPieChart={field}
-                  class="h-40 w-full"
+                  class="h-56 w-full"
                 ></div>
-                <div class="mt-3 space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <ul class="mt-2 space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {#each dist as item, i}
                     {@const isRealOption = field.options?.some((o) => o.value === item.value) ?? false}
-                    <div class="flex items-center gap-2 text-xs">
+                    <!-- Survoler une ligne met en avant la part correspondante :
+                         le lien liste ↔ graphique n'a pas à être deviné. -->
+                    <li
+                      class="flex items-center gap-2 rounded-md px-1 py-0.5 text-xs transition-colors hover:bg-slate-50"
+                      onmouseenter={() => highlightSlice(field.key, i, true)}
+                      onmouseleave={() => highlightSlice(field.key, i, false)}
+                    >
                       {#if canEdit && isRealOption}
                         <input
                           type="color"
@@ -1367,10 +1449,13 @@
                         <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:{item.color ?? palette[i % palette.length]}"></span>
                       {/if}
                       <span class="flex-1 truncate text-[color:var(--ink)]">{item.label}</span>
-                      <span class="font-bold text-[color:var(--muted)]">{total > 0 ? Math.round((item.count / total) * 100) : 0}%</span>
-                    </div>
+                      <span class="tabular-nums text-[color:var(--muted)]">{item.count}</span>
+                      <span class="w-10 text-right font-bold tabular-nums text-[color:var(--ink)]">
+                        {total > 0 ? Math.round((item.count / total) * 100) : 0} %
+                      </span>
+                    </li>
                   {/each}
-                </div>
+                </ul>
               {/if}
             </div>
           </div>
