@@ -6,7 +6,8 @@
   "license": "MIT",
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "mcp-server"
   ],
   "scripts": {
     "test": "bun run --cwd backend test && bun run --cwd frontend test",
