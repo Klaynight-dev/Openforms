@@ -69,6 +69,16 @@ import {
   PaperPlaneTilt,
   Funnel,
   Palette,
+  Image,
+  FileCsv,
+  BracketsCurly,
+  Info,
+  ArrowCounterClockwise,
+  Clipboard,
+  CaretRight,
+  CaretUp,
+  Spinner,
+  Tray,
 } from "phosphor-svelte";
 
 // Fallback Lucide (icône absente/peu claire côté Phosphor).
@@ -128,6 +138,16 @@ export {
   PaperPlaneTilt as IconSend,
   Funnel as IconFunnel,
   Palette as IconPalette,
+  Image as IconImage,
+  FileCsv as IconCsv,
+  BracketsCurly as IconJson,
+  Info as IconInfo,
+  ArrowCounterClockwise as IconReset,
+  Clipboard as IconClipboard,
+  CaretRight as IconCaretRight,
+  CaretUp as IconCaretUp,
+  Spinner as IconSpinner,
+  Tray as IconEmpty,
 };
 
 // --- Fallback Lucide ---

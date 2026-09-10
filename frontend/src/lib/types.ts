@@ -101,6 +101,8 @@ export interface FormDetail extends FormSummary {
   schema: FieldDefinition[];
   metaColumns: MetaColumn[];
   access?: FormAccessEntry[];
+  /** Habillage des exports statistiques ; voir $lib/exportTheme.ts. */
+  exportTheme?: unknown;
 }
 
 export interface FormAccessEntry {

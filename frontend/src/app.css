@@ -17,6 +17,9 @@
   --muted: #64748b; /* Gris secondaire */
   --danger: #ef4444; /* Rouge moderne */
   --radius: 12px; /* Coins plus arrondis pour un aspect moderne */
+  --surface-alt: #f8fafc; /* Fond des barres d'outils et pieds de carte */
+  --ink-soft: #475569; /* Texte secondaire lisible (contraste AA sur blanc) */
+  --focus-ring: 0 0 0 3px rgba(103, 58, 183, 0.35);
 }
 
 html {
@@ -28,6 +31,44 @@ html {
 }
 * {
   box-sizing: border-box;
+}
+
+/* Anneau de focus unique pour toute l'app : visible au clavier, invisible
+   à la souris. Sans cela, chaque composant réinventait son propre focus. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 0.5rem;
+}
+
+/* Les animations décoratives sont supprimées si l'utilisateur le demande. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Lien d'évitement : premier arrêt de tabulation des pages admin. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 300;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.75rem;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: top 0.15s;
+}
+.skip-link:focus {
+  top: 0.5rem;
 }
 
 /* ===== Boutons (Premium Material) ===== */
@@ -153,3 +194,80 @@ html {
   transform: translateY(100%);
 }
 
+
+/* ===== Compléments de design system ===== */
+
+/* Bouton icône carré : actions secondaires des barres d'outils.
+   Toujours accompagner d'un aria-label, l'icône seule ne suffit pas. */
+.btn-icon {
+  @apply inline-grid place-items-center rounded-xl transition-all duration-150;
+  height: 2.25rem;
+  width: 2.25rem;
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+.btn-icon:hover {
+  background: #f1f5f9;
+  color: var(--ink);
+}
+.btn-icon:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Bouton compact des barres d'outils de carte (export PNG, etc.) */
+.btn-chip {
+  @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-150;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.btn-chip:hover {
+  color: var(--brand);
+  border-color: var(--brand-100);
+  background: var(--brand-50);
+}
+
+/* Zone de réglages repliable, moins lourde qu'une carte */
+.panel {
+  @apply rounded-2xl bg-white;
+  border: 1px solid var(--line);
+}
+.panel-head {
+  @apply flex items-center justify-between gap-3 px-4 py-3;
+}
+.panel-body {
+  @apply px-4 pb-4 pt-1;
+  border-top: 1px solid var(--line);
+}
+
+/* Intitulé de groupe de réglages */
+.section-label {
+  @apply mb-2 block text-[11px] font-bold uppercase tracking-wider;
+  color: var(--muted);
+}
+
+.textarea {
+  @apply input;
+  min-height: 5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* Barre d'outils d'une carte : fond neutre, séparateur haut */
+.toolbar {
+  @apply flex flex-wrap items-center gap-2 px-4 py-2;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Damier signalant la transparence (aperçu de logo) */
+.checker {
+  background-image:
+    linear-gradient(45deg, #eef2f7 25%, transparent 25%),
+    linear-gradient(-45deg, #eef2f7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef2f7 75%),
+    linear-gradient(-45deg, transparent 75%, #eef2f7 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}

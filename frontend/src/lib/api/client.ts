@@ -110,6 +110,13 @@ export const api = {
   deleteForm: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/forms/${id}`),
   duplicateForm: (id: string) =>
     request<{ success: boolean; form: FormDetail }>("POST", `/api/v1/forms/${id}/duplicate`),
+  /** Identité visuelle des exports statistiques (endpoint dédié, sans le schéma). */
+  updateExportTheme: (id: string, theme: unknown) =>
+    request<{ success: boolean; exportTheme: unknown }>(
+      "PUT",
+      `/api/v1/forms/${id}/export-theme`,
+      theme,
+    ),
 
   // --- Réponses / tableur ---
   listResponses: (formId: string) =>
