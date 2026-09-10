@@ -43,6 +43,8 @@
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   /** En deçà de ce pourcentage, une part de camembert ne porte pas d'étiquette. */
   const PIE_LABEL_MIN_PERCENT = 4;
+  /** Nombre maximal d'étiquettes autour d'un camembert, les plus grosses parts d'abord. */
+  const PIE_MAX_LABELS = 6;
 
   const formId = $derived($page.params.id as string);
 
@@ -686,10 +688,12 @@
 
     // Un camembert sans étiquette n'est lisible qu'au survol : l'information
     // disparaît à l'export et pour qui n'a pas de souris. On sort donc le
-    // libellé et l'effectif au bout d'une ligne de rappel. En dessous de
-    // PIE_LABEL_MIN_PERCENT, les parts sont trop fines pour porter une
-    // étiquette sans se chevaucher : elles restent lisibles dans la liste.
+    // libellé et l'effectif au bout d'une ligne de rappel.
     const unite = field.type === "checkbox" ? "occurrences" : "réponses";
+    // Effectif de la PIE_MAX_LABELS-ième part : sert de seuil pour ne garder
+    // que les plus grosses (voir plus bas).
+    const labelCutoff =
+      [...dist].sort((a, b) => b.count - a.count)[PIE_MAX_LABELS - 1]?.count ?? 0;
 
     chart.setOption(
       {
@@ -703,20 +707,24 @@
           left: "center",
           top: "center",
           textAlign: "center",
-          textStyle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
-          subtextStyle: { fontSize: 10, color: "#94a3b8" },
-          itemGap: 2,
+          textStyle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
+          subtextStyle: { fontSize: 9, color: "#94a3b8" },
+          itemGap: 0,
         },
         series: [
           {
             type: "pie",
-            radius: ["38%", "56%"],
+            radius: ["40%", "54%"],
             center: ["50%", "50%"],
             avoidLabelOverlap: true,
             minAngle: 2,
             data: dist.map((d, i) => {
               const percent = total > 0 ? (d.count / total) * 100 : 0;
-              const labelled = percent >= PIE_LABEL_MIN_PERCENT;
+              // Deux conditions cumulées : une part trop fine ne peut pas
+              // porter d'étiquette sans chevaucher sa voisine, et au-delà de
+              // PIE_MAX_LABELS elles s'empilent quelle que soit leur taille.
+              // Les parts écartées restent lisibles dans la liste en dessous.
+              const labelled = percent >= PIE_LABEL_MIN_PERCENT && d.count >= labelCutoff;
               return {
                 name: d.label,
                 value: d.count,
@@ -727,14 +735,25 @@
             }),
             label: {
               position: "outside",
-              formatter: (p: any) => `{n|${p.name}}
-{v|${p.value} (${p.percent}%)}`,
+              // `alignTo: "edge"` colle l'étiquette au bord du canvas au lieu de
+              // la laisser s'échapper au bout de sa ligne de rappel. Le texte
+              // est coupé ici, à la main : `overflow: "truncate"` du texte
+              // enrichi n'a pas d'effet sur un libellé de camembert, ECharts
+              // déplaçant l'étiquette plutôt que de la rogner. Le libellé
+              // complet reste dans la liste et dans l'infobulle.
+              alignTo: "edge",
+              edgeDistance: 4,
+              // Pourcentage arrondi : « 180 (19.96%) » dépasse la place laissée
+              // à 3 h et 9 h, où la ligne de rappel est la plus courte.
+              // L'infobulle garde la valeur exacte.
+              formatter: (p: any) => `{n|${ellipsize(p.name, 24)}}
+{v|${p.value} (${Math.round(p.percent)} %)}`,
               rich: {
-                n: { fontSize: 11, fontWeight: "bold", color: "#1e293b", lineHeight: 15, width: 64, overflow: "truncate" },
+                n: { fontSize: 11, fontWeight: "bold", color: "#1e293b", lineHeight: 15 },
                 v: { fontSize: 10, color: "#64748b", lineHeight: 13 },
               },
             },
-            labelLine: { length: 8, length2: 10, smooth: true, lineStyle: { color: "#cbd5e1" } },
+            labelLine: { length: 10, length2: 8, smooth: true, lineStyle: { color: "#cbd5e1" } },
             emphasis: {
               scaleSize: 6,
               label: { show: true, fontWeight: "bold" },
@@ -747,6 +766,14 @@
       // survivent à un changement de filtre qui modifie la répartition.
       true,
     );
+  }
+
+  /** Coupe un libellé trop long pour la place disponible, sur une limite de mot. */
+  function ellipsize(text: string, max: number): string {
+    if (text.length <= max) return text;
+    const cut = text.slice(0, max);
+    const lastSpace = cut.lastIndexOf(" ");
+    return (lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut.trimEnd()) + "…";
   }
 
   /** Met en avant la part correspondante quand on survole la liste. */
@@ -1402,7 +1429,7 @@
         </span>
         Répartition des champs à choix
       </h2>
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid gap-4 lg:grid-cols-2">
         {#each choiceFields as field (field.key)}
           {@const dist = getChoiceDistribution(field)}
           {@const total = dist.reduce((s, d) => s + d.count, 0)}
@@ -1425,7 +1452,7 @@
                      la zone est plus haute que le donut lui-même. -->
                 <div
                   use:initPieChart={field}
-                  class="h-56 w-full"
+                  class="h-[300px] w-full"
                 ></div>
                 <ul class="mt-2 space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {#each dist as item, i}
