@@ -59,6 +59,7 @@ model Form {
   organizationId String?
   responses    Response[]
   access       FormAccess[]
+  comments     Comment[]
 
   @@index([ownerId])
   @@index([slug])

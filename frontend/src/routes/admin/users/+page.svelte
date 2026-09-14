@@ -4,7 +4,7 @@
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { askConfirm, askPrompt } from "$lib/stores/dialog.svelte.ts";
-  import type { User, FormSummary, FormAccessEntry } from "$lib/types.ts";
+  import type { User, FormSummary, FormAccessEntry, FormRole } from "$lib/types.ts";
   import { IconKey, IconTrash, IconClose, IconCheck, IconPlus, IconSend, IconDuplicate } from "$lib/icons.ts";
 
   let users = $state<User[]>([]);
@@ -22,7 +22,7 @@
   let selectedFormId = $state("");
   let accessList = $state<FormAccessEntry[]>([]);
   let accessUserId = $state("");
-  let accessPerm = $state<"READ" | "WRITE">("READ");
+  let accessRole = $state<FormRole>("VIEWER");
 
   onMount(async () => {
     try {
@@ -137,7 +137,7 @@
   async function grant() {
     if (!selectedFormId || !accessUserId) return;
     try {
-      await api.grantAccess(accessUserId, selectedFormId, accessPerm);
+      await api.grantAccess(accessUserId, selectedFormId, accessRole);
       await loadAccess();
       accessUserId = "";
       toasts.success("Accès accordé.");
@@ -279,7 +279,7 @@
               <div class="mb-1 flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-sm">
                 <span>{a.user.email}</span>
                 <span class="flex items-center gap-2">
-                  <span class="rounded bg-gray-200 px-1.5 text-xs">{a.permission === "WRITE" ? "Édition" : "Lecture"}</span>
+                  <span class="rounded bg-gray-200 px-1.5 text-xs">{{ VIEWER: "Lecture", COMMENTER: "Commentaire", EDITOR: "Édition" }[a.role]}</span>
                   <button class="text-[color:var(--danger)]" onclick={() => revoke(a.userId)} aria-label="Révoquer"><IconClose size={13} /></button>
                 </span>
               </div>
@@ -292,9 +292,10 @@
           <option value="">— Utilisateur-</option>
           {#each users.filter((u) => u.role === "EDITOR") as u}<option value={u.id}>{u.email}</option>{/each}
         </select>
-        <select class="input mb-2" bind:value={accessPerm}>
-          <option value="READ">Lecture seule</option>
-          <option value="WRITE">Édition</option>
+        <select class="input mb-2" bind:value={accessRole}>
+          <option value="VIEWER">Lecture seule</option>
+          <option value="COMMENTER">Commentaire</option>
+          <option value="EDITOR">Édition</option>
         </select>
         <button class="btn-secondary w-full text-sm" onclick={grant}>Accorder l'accès</button>
       {/if}

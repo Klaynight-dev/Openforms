@@ -90,19 +90,10 @@ export const authController = new Elysia({ prefix: "/api/v1/auth" })
         },
       });
 
-      // 2. Associer à l'organisation par défaut
-      const defaultOrg = await prisma.organization.findUnique({ where: { slug: "humanitours" } });
-      if (defaultOrg) {
-        await prisma.organizationMember.create({
-          data: {
-            organizationId: defaultOrg.id,
-            userId: user.id,
-            role: "MEMBER",
-          },
-        });
-      }
-
-      // 3. Connecter automatiquement
+      // 2. Connecter automatiquement- aucune organisation par défaut : un compte
+      //    créé par inscription publique n'a accès à rien tant qu'on ne lui
+      //    partage pas explicitement un formulaire ou qu'on ne l'invite pas
+      //    dans une organisation (cercles 1 et 2).
       const { token, csrfSecret, expiresAt } = await createSession(user.id, {
         ip: clientIp(request),
         userAgent: request.headers.get("user-agent") ?? undefined,

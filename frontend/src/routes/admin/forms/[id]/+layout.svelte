@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import { api } from "$api/client.ts";
   import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas } from "$lib/icons.ts";
-  import type { FormDetail } from "$lib/types.ts";
+  import type { FormDetail, Permission } from "$lib/types.ts";
 
   let { children } = $props();
 
@@ -14,6 +14,8 @@
   // Shared state class for subpages
   class FormEditorState {
     form = $state<FormDetail | null>(null);
+    /** Rôle effectif de l'utilisateur courant sur ce formulaire (cercle 1). */
+    permission = $state<Permission>("NONE");
     loading = $state(true);
     saving = $state(false);
     saved = $state(false);
@@ -26,6 +28,7 @@
       try {
         const res = await api.getForm(formId);
         this.form = res.form;
+        this.permission = res.permission;
       } catch (e: any) {
         this.error = e.message || "Erreur de chargement du formulaire.";
       } finally {

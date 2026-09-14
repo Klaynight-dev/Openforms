@@ -67,7 +67,7 @@
       fields = res.form.schema;
       metaColumns = res.form.metaColumns;
       rows = res.rows;
-      canEdit = res.permission === "WRITE";
+      canEdit = res.permission === "EDITOR";
       if (formRes) detail = formRes.form;
     } catch (e) {
       error = e instanceof Error ? e.message : "Chargement impossible.";

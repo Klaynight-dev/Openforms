@@ -49,18 +49,9 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
         select: { id: true, email: true, role: true, displayName: true, isActive: true },
       });
 
-      // Ajout automatique à l'organisation par défaut "Humanitours"
-      const defaultOrg = await prisma.organization.findUnique({ where: { slug: "humanitours" } });
-      if (defaultOrg) {
-        await prisma.organizationMember.create({
-          data: {
-            organizationId: defaultOrg.id,
-            userId: user.id,
-            role: "MEMBER",
-          },
-        });
-      }
-
+      // Aucune organisation par défaut : un compte créé ici n'a accès à rien
+      // tant qu'un SUPER_ADMIN ou un OWNER/ADMIN d'organisation ne lui
+      // accorde pas explicitement un accès (cercles 1 et 2).
       const { token } = await createPasswordSetupToken(user.id);
       const inviteLink = buildInviteLink(token);
       await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
@@ -151,14 +142,15 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
     { params: t.Object({ id: t.String() }), requireRole: ["SUPER_ADMIN"] },
   )
 
-  // --- Attribution d'un accès formulaire à un éditeur ---
+  // --- Attribution d'un accès formulaire à un collaborateur (recours SUPER_ADMIN- voir
+  // aussi PUT /forms/:id/access, en libre-service pour le propriétaire/éditeur du formulaire) ---
   .put(
     "/access",
     async ({ body }) => {
       const access = await prisma.formAccess.upsert({
         where: { userId_formId: { userId: body.userId, formId: body.formId } },
-        create: { userId: body.userId, formId: body.formId, permission: body.permission },
-        update: { permission: body.permission },
+        create: { userId: body.userId, formId: body.formId, role: body.role },
+        update: { role: body.role },
       });
       return { success: true, access };
     },
@@ -166,7 +158,7 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
       body: t.Object({
         userId: t.String(),
         formId: t.String(),
-        permission: t.Union([t.Literal("READ"), t.Literal("WRITE")]),
+        role: t.Union([t.Literal("VIEWER"), t.Literal("COMMENTER"), t.Literal("EDITOR")]),
       }),
       requireRole: ["SUPER_ADMIN"],
     },

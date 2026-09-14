@@ -45,7 +45,7 @@
         <IconLeaf size={26} weight="fill" />
       </div>
       <h1 class="text-xl font-bold">Créer un compte</h1>
-      <p class="mt-1 text-sm text-[color:var(--muted)]">Rejoignez Humanitours et commencez à concevoir vos formulaires</p>
+      <p class="mt-1 text-sm text-[color:var(--muted)]">Commencez à concevoir vos formulaires</p>
     </div>
 
     <label class="label animate-fade-in" for="displayName">Nom d'affichage (Optionnel)</label>

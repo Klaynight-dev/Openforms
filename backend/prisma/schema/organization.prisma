@@ -1,3 +1,12 @@
+/// Rôle d'un membre au sein d'une organisation (cercle 2).
+/// Ne confère par lui-même aucun droit sur les formulaires de l'organisation-
+/// voir FormRole et resolveFormPermission pour l'accès formulaire par formulaire.
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
 model Organization {
   id        String   @id @default(uuid())
   name      String
@@ -15,7 +24,7 @@ model OrganizationMember {
   organizationId String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId         String
-  role           String       // "OWNER" | "ADMIN" | "MEMBER"
+  role           OrgRole
   createdAt      DateTime     @default(now())
 
   @@unique([organizationId, userId])

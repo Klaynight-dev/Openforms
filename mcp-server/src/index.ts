@@ -265,11 +265,11 @@ server.registerTool(
   {
     title: "Donner accès à un formulaire",
     description:
-      "Attribue un droit de lecture ou d'écriture sur un formulaire à un utilisateur. Réservé aux super administrateurs.",
+      "Attribue un rôle (lecteur, commentateur ou éditeur) sur un formulaire à un utilisateur. Réservé aux super administrateurs.",
     inputSchema: {
       userId: z.string(),
       formId: z.string(),
-      permission: z.enum(["READ", "WRITE"]),
+      role: z.enum(["VIEWER", "COMMENTER", "EDITOR"]),
     },
   },
   (args) => toResult(() => callApi("PUT", "/api/v1/access", args)),

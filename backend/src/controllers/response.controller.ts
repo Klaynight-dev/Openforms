@@ -278,7 +278,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         return { success: false, error: "Formulaire introuvable." };
       }
       const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
-      if (perm !== "WRITE") {
+      if (perm !== "EDITOR") {
         set.status = 403;
         return { success: false, error: "Ajout non autorisé." };
       }
@@ -323,7 +323,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         response.form.id,
         response.form.ownerId,
       );
-      if (perm !== "WRITE") {
+      if (perm !== "EDITOR") {
         set.status = 403;
         return { success: false, error: "Édition non autorisée (lecture seule)." };
       }
@@ -374,7 +374,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         response.form.id,
         response.form.ownerId,
       );
-      if (perm !== "WRITE") {
+      if (perm !== "EDITOR") {
         set.status = 403;
         return { success: false, error: "Suppression non autorisée." };
       }

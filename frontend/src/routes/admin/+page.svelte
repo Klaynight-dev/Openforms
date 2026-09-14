@@ -348,7 +348,7 @@
   }
 </script>
 
-<svelte:head><title>Formulaires- Admin</title></svelte:head>
+<!-- <svelte:head><title>Formulaires- Admin</title></svelte:head> -->
 
 <!-- ══════════════════════════════════════════════════
      DASHBOARD STATS GLOBALES (SUPER_ADMIN seulement)

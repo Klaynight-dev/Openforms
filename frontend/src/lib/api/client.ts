@@ -12,6 +12,9 @@ import type {
   ResponseRow,
   User,
   Permission,
+  FormRole,
+  FormAccessEntry,
+  FormComment,
   UploadedFileInfo,
   GlobalStats,
   FormActivitySummary,
@@ -155,10 +158,32 @@ export const api = {
   updateUser: (id: string, data: Partial<{ role: string; displayName: string; isActive: boolean; password: string }>) =>
     request<{ success: boolean; user: User }>("PATCH", `/api/v1/users/${id}`, data),
   deleteUser: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/users/${id}`),
-  grantAccess: (userId: string, formId: string, permission: "READ" | "WRITE") =>
-    request<{ success: boolean }>("PUT", "/api/v1/access", { userId, formId, permission }),
+  /** Recours SUPER_ADMIN (attribue un accès depuis la page utilisateurs). */
+  grantAccess: (userId: string, formId: string, role: FormRole) =>
+    request<{ success: boolean }>("PUT", "/api/v1/access", { userId, formId, role }),
   revokeAccess: (userId: string, formId: string) =>
     request<{ success: boolean }>("DELETE", "/api/v1/access", { userId, formId }),
+
+  // --- Partage d'un formulaire (cercle 1, en libre-service pour son éditeur) ---
+  shareForm: (formId: string, email: string, role: FormRole) =>
+    request<{ success: boolean; access: FormAccessEntry }>("PUT", `/api/v1/forms/${formId}/access`, {
+      email,
+      role,
+    }),
+  unshareForm: (formId: string, userId: string) =>
+    request<{ success: boolean }>("DELETE", `/api/v1/forms/${formId}/access`, { userId }),
+
+  // --- Commentaires sur un formulaire ---
+  listComments: (formId: string) =>
+    request<{ success: boolean; comments: FormComment[] }>("GET", `/api/v1/forms/${formId}/comments`),
+  addComment: (formId: string, body: string) =>
+    request<{ success: boolean; comment: FormComment }>("POST", `/api/v1/forms/${formId}/comments`, { body }),
+  resolveComment: (commentId: string, resolved: boolean) =>
+    request<{ success: boolean; comment: FormComment }>("PATCH", `/api/v1/comments/${commentId}/resolve`, {
+      resolved,
+    }),
+  deleteComment: (commentId: string) =>
+    request<{ success: boolean }>("DELETE", `/api/v1/comments/${commentId}`),
 
   // --- Statistiques ---
   getGlobalStats: () =>

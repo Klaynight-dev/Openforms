@@ -1,18 +1,124 @@
 <script lang="ts">
   import { getContext, onMount } from "svelte";
   import { api } from "$api/client.ts";
-  import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings } from "$lib/icons.ts";
-  import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders } from "phosphor-svelte";
-  import type { FormDetail } from "$lib/types.ts";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
+  import { auth } from "$lib/stores/auth.svelte.ts";
+  import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings, IconUsers, IconClose, IconTrash } from "$lib/icons.ts";
+  import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders, ChatCircle as IconComment } from "phosphor-svelte";
+  import type { FormDetail, Permission, FormRole, FormComment } from "$lib/types.ts";
 
   const editorState = getContext<{
     form: FormDetail | null;
+    permission: Permission;
     saving: boolean;
     saved: boolean;
     error: string | null;
     saveCallback: (() => Promise<void>) | null;
     triggerSave: () => Promise<void>;
   }>("form-editor-context");
+
+  const canManageAccess = $derived(editorState.permission === "EDITOR");
+  const canComment = $derived(editorState.permission === "COMMENTER" || editorState.permission === "EDITOR");
+
+  // --- Partage (cercle 1 : viewer / commentateur / éditeur) ---
+  let shareEmail = $state("");
+  let shareRole = $state<FormRole>("VIEWER");
+  let sharing = $state(false);
+
+  async function addShare(e: Event) {
+    e.preventDefault();
+    if (!editorState.form || !shareEmail.trim()) return;
+    sharing = true;
+    try {
+      const res = await api.shareForm(editorState.form.id, shareEmail.trim(), shareRole);
+      const access = editorState.form.access ?? [];
+      const idx = access.findIndex((a) => a.userId === res.access.userId);
+      if (idx >= 0) access[idx] = res.access;
+      else access.push(res.access);
+      editorState.form.access = [...access];
+      shareEmail = "";
+      shareRole = "VIEWER";
+      toasts.success("Accès accordé.");
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Impossible de partager ce formulaire.");
+    } finally {
+      sharing = false;
+    }
+  }
+
+  async function removeShare(userId: string) {
+    if (!editorState.form) return;
+    try {
+      await api.unshareForm(editorState.form.id, userId);
+      editorState.form.access = (editorState.form.access ?? []).filter((a) => a.userId !== userId);
+      toasts.success("Accès révoqué.");
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Révocation impossible.");
+    }
+  }
+
+  const FORM_ROLE_LABEL: Record<FormRole, string> = {
+    VIEWER: "Lecteur",
+    COMMENTER: "Commentateur",
+    EDITOR: "Éditeur",
+  };
+
+  // --- Commentaires ---
+  let comments = $state<FormComment[]>([]);
+  let commentsLoading = $state(true);
+  let newComment = $state("");
+  let postingComment = $state(false);
+
+  async function loadComments(formId: string) {
+    commentsLoading = true;
+    try {
+      const res = await api.listComments(formId);
+      comments = res.comments;
+    } catch {
+      /* silencieux : un panneau de commentaires vide reste acceptable */
+    } finally {
+      commentsLoading = false;
+    }
+  }
+
+  async function postComment(e: Event) {
+    e.preventDefault();
+    if (!editorState.form || !newComment.trim()) return;
+    postingComment = true;
+    try {
+      const res = await api.addComment(editorState.form.id, newComment.trim());
+      comments = [...comments, res.comment];
+      newComment = "";
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Envoi du commentaire impossible.");
+    } finally {
+      postingComment = false;
+    }
+  }
+
+  async function toggleResolved(c: FormComment) {
+    try {
+      const res = await api.resolveComment(c.id, !c.resolved);
+      comments = comments.map((x) => (x.id === c.id ? res.comment : x));
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Action impossible.");
+    }
+  }
+
+  async function removeComment(c: FormComment) {
+    try {
+      await api.deleteComment(c.id);
+      comments = comments.filter((x) => x.id !== c.id);
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Suppression impossible.");
+    }
+  }
+
+  $effect(() => {
+    if (editorState.form?.id) {
+      loadComments(editorState.form.id);
+    }
+  });
 
   // Local settings copy bound to inputs
   let settings = $state({
@@ -414,6 +520,96 @@
         />
         <p class="text-[10px] text-[color:var(--muted)] mt-1">Le formulaire se fermera automatiquement lorsque ce nombre de réponses sera atteint.</p>
       </div>
+    </div>
+  </div>
+
+  <!-- Sharing Card (cercle 1 : viewer / commentateur / éditeur) -->
+  <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
+    <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+      <div class="p-2 rounded-lg bg-violet-50 text-[color:var(--brand)]"><IconUsers size={20} /></div>
+      <div>
+        <h3 class="font-bold text-sm text-[color:var(--ink)]">Partage</h3>
+        <p class="text-[11px] text-[color:var(--muted)]">Qui peut consulter, commenter ou modifier ce formulaire- l'appartenance à une organisation ne donne aucun accès automatique.</p>
+      </div>
+    </div>
+    <div class="p-6 space-y-3">
+      {#if (editorState.form?.access ?? []).length === 0}
+        <p class="text-xs text-[color:var(--muted)]">Personne d'autre que le propriétaire n'a accès à ce formulaire.</p>
+      {:else}
+        {#each editorState.form?.access ?? [] as a (a.id)}
+          <div class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm">
+            <div class="min-w-0">
+              <span class="truncate block">{a.user.displayName || a.user.email}</span>
+              {#if a.user.displayName}<span class="text-[10px] text-[color:var(--muted)]">{a.user.email}</span>{/if}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium">{FORM_ROLE_LABEL[a.role]}</span>
+              {#if canManageAccess}
+                <button type="button" class="text-[color:var(--danger)]" onclick={() => removeShare(a.userId)} aria-label="Révoquer l'accès">
+                  <IconClose size={14} />
+                </button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      {/if}
+
+      {#if canManageAccess}
+        <form onsubmit={addShare} class="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+          <input type="email" required class="input text-xs flex-1" placeholder="email@exemple.fr" bind:value={shareEmail} />
+          <select class="input text-xs sm:w-40" bind:value={shareRole}>
+            <option value="VIEWER">Lecteur</option>
+            <option value="COMMENTER">Commentateur</option>
+            <option value="EDITOR">Éditeur</option>
+          </select>
+          <button type="submit" class="btn-secondary text-xs shrink-0" disabled={sharing}>{sharing ? "…" : "Partager"}</button>
+        </form>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Comments Card -->
+  <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
+    <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+      <div class="p-2 rounded-lg bg-amber-50 text-amber-600"><IconComment size={20} /></div>
+      <div>
+        <h3 class="font-bold text-sm text-[color:var(--ink)]">Commentaires</h3>
+        <p class="text-[11px] text-[color:var(--muted)]">Échanges entre collaborateurs sur ce formulaire (réservés à COMMENTER et EDITOR)</p>
+      </div>
+    </div>
+    <div class="p-6 space-y-3">
+      {#if commentsLoading}
+        <p class="text-xs text-[color:var(--muted)]">Chargement…</p>
+      {:else if comments.length === 0}
+        <p class="text-xs text-[color:var(--muted)]">Aucun commentaire pour l'instant.</p>
+      {:else}
+        {#each comments as c (c.id)}
+          <div class="rounded-xl border border-slate-100 p-3 text-xs" class:opacity-50={c.resolved}>
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="font-semibold text-[color:var(--ink)]">{c.author.displayName || c.author.email}</span>
+              <div class="flex items-center gap-2 shrink-0">
+                {#if c.resolved}<span class="text-[10px] text-green-600 flex items-center gap-0.5"><IconCheck size={11} /> résolu</span>{/if}
+                {#if canComment || c.authorId === auth.user?.id}
+                  <button type="button" class="text-[color:var(--muted)] hover:text-[color:var(--ink)]" onclick={() => toggleResolved(c)} title={c.resolved ? "Marquer comme non résolu" : "Marquer comme résolu"}>
+                    <IconCheck size={13} />
+                  </button>
+                {/if}
+                {#if c.authorId === auth.user?.id || editorState.permission === "EDITOR"}
+                  <button type="button" class="text-[color:var(--danger)]" onclick={() => removeComment(c)} aria-label="Supprimer"><IconTrash size={13} /></button>
+                {/if}
+              </div>
+            </div>
+            <p class="text-[color:var(--ink)] whitespace-pre-wrap">{c.body}</p>
+          </div>
+        {/each}
+      {/if}
+
+      {#if canComment}
+        <form onsubmit={postComment} class="pt-2 border-t border-slate-100 flex gap-2">
+          <textarea class="input text-xs flex-1" rows="2" placeholder="Laisser un commentaire..." bind:value={newComment}></textarea>
+          <button type="submit" class="btn-secondary text-xs shrink-0" disabled={postingComment}>{postingComment ? "…" : "Envoyer"}</button>
+        </form>
+      {/if}
     </div>
   </div>
 

@@ -868,7 +868,7 @@
       activity = statsRes.summary.activity;
       schema = responseRes.form.schema as FieldDefinition[];
       rows = responseRes.rows;
-      canEdit = responseRes.permission === "WRITE";
+      canEdit = responseRes.permission === "EDITOR";
       formDetail = formRes?.form ?? null;
       exportTheme = normalizeExportTheme(formRes?.form?.exportTheme);
       savedThemeJson = JSON.stringify(exportTheme);

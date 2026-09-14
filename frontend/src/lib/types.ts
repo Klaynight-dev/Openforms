@@ -105,11 +105,24 @@ export interface FormDetail extends FormSummary {
   exportTheme?: unknown;
 }
 
+export type FormRole = "VIEWER" | "COMMENTER" | "EDITOR";
+
 export interface FormAccessEntry {
   id: string;
   userId: string;
-  permission: "READ" | "WRITE";
+  role: FormRole;
   user: { id: string; email: string; displayName: string | null };
+}
+
+export interface FormComment {
+  id: string;
+  formId: string;
+  authorId: string;
+  body: string;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; email: string; displayName: string | null };
 }
 
 /** Configuration de croisement enregistrée depuis la page Statistiques. */
@@ -181,7 +194,7 @@ export interface User {
   hasPassword?: boolean;
 }
 
-export type Permission = "NONE" | "READ" | "WRITE";
+export type Permission = "NONE" | "VIEWER" | "COMMENTER" | "EDITOR";
 
 export interface GlobalStats {
   forms: {
@@ -227,11 +240,13 @@ export interface Organization {
   updatedAt: string;
 }
 
+export type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
+
 export interface OrganizationMember {
   id: string;
   organizationId: string;
   userId: string;
-  role: string;
+  role: OrgRole;
   createdAt: string;
   user: {
     id: string;
