@@ -236,7 +236,7 @@ export const organizationController = new Elysia({ prefix: "/api/v1/organization
         }
       }
 
-      await prisma.organizationMember.delete({ where: { id: params.id } });
+      await prisma.organizationMember.delete({ where: { id: params.memberId } });
       return { success: true };
     },
     {
