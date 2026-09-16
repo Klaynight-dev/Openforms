@@ -5,6 +5,7 @@
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { askConfirm } from "$lib/stores/dialog.svelte.ts";
+  import { realtime, responsesTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import type { FormSummary, GlobalStats } from "$lib/types.ts";
   import {
@@ -180,7 +181,43 @@
   }
 
   onMount(load);
-  onDestroy(() => lineChart?.dispose());
+  onDestroy(() => {
+    if (statsRefreshTimer) clearTimeout(statsRefreshTimer);
+    lineChart?.dispose();
+  });
+
+  // Chaque formulaire listé est suivi en direct ; l'abonnement se recale dès
+  // que la liste change (création, suppression, changement d'organisation).
+  $effect(() => realtime.subscribe(forms.map((f) => responsesTopic(f.id)), applyRealtimeEvent));
+
+  let statsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function applyRealtimeEvent(event: RealtimeEvent) {
+    const delta = event.type === "response:created" ? 1 : event.type === "response:deleted" ? -1 : 0;
+    if (delta === 0) return;
+
+    forms = forms.map((form) =>
+      form.id === event.formId
+        ? { ...form, _count: { responses: Math.max(0, (form._count?.responses ?? 0) + delta) } }
+        : form,
+    );
+
+    // Les compteurs globaux se recalculent côté serveur : on les regroupe pour
+    // ne pas relancer la requête à chaque réponse d'une rafale.
+    if (!auth.isSuperAdmin) return;
+    if (statsRefreshTimer) clearTimeout(statsRefreshTimer);
+    statsRefreshTimer = setTimeout(async () => {
+      try {
+        const res = await api.getGlobalStats();
+        stats = res.stats;
+        await tick();
+        lineChart?.dispose();
+        await renderActivityChart();
+      } catch {
+        // Stats non critiques, on ignore l'erreur
+      }
+    }, 3000);
+  }
 
   async function load() {
     loading = true;

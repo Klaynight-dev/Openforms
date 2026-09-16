@@ -3,6 +3,8 @@
   import { onMount, setContext } from "svelte";
   import { goto } from "$app/navigation";
   import { api } from "$api/client.ts";
+  import { auth } from "$lib/stores/auth.svelte.ts";
+  import { realtime, presenceTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas } from "$lib/icons.ts";
   import type { FormDetail, Permission } from "$lib/types.ts";
 
@@ -62,6 +64,40 @@
       editorState.load(id);
     }
   });
+
+  // --- Présence : les autres collaborateurs ayant ce formulaire ouvert ---
+  let others = $state<PresenceUser[]>([]);
+
+  $effect(() => {
+    if (!id) return;
+    others = [];
+    return realtime.subscribe([presenceTopic(id)], applyPresenceEvent);
+  });
+
+  function applyPresenceEvent(event: RealtimeEvent) {
+    if (event.type === "presence:sync") {
+      others = event.users.filter((user) => user.id !== auth.user?.id);
+    } else if (event.type === "presence:join") {
+      // On reçoit aussi sa propre arrivée, et une par onglet ouvert.
+      if (event.user.id === auth.user?.id) return;
+      if (others.some((user) => user.id === event.user.id)) return;
+      others = [...others, event.user];
+    } else if (event.type === "presence:leave") {
+      others = others.filter((user) => user.id !== event.userId);
+    }
+  }
+
+  function initials(name: string): string {
+    const parts = name.split(/[\s.@_-]+/).filter(Boolean);
+    const letters = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2);
+    return letters.toUpperCase();
+  }
+
+  const presenceLabel = $derived(
+    others.length === 1
+      ? `${others[0].name} consulte aussi ce formulaire`
+      : `${others.map((user) => user.name).join(", ")} consultent aussi ce formulaire`,
+  );
 
   // Derived variables for tab highlights
   const pathname = $derived($page.url.pathname);
@@ -154,6 +190,22 @@
 
           <!-- Right Section: Actions -->
           <div class="flex items-center gap-2 shrink-0">
+            <!-- Qui d'autre a le formulaire ouvert en ce moment -->
+            {#if others.length > 0}
+              <div class="hidden sm:flex items-center -space-x-2 mr-1" aria-label={presenceLabel} title={presenceLabel}>
+                {#each others.slice(0, 3) as user (user.id)}
+                  <span class="grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-brand-50 text-[11px] font-bold text-brand-700">
+                    {initials(user.name)}
+                  </span>
+                {/each}
+                {#if others.length > 3}
+                  <span class="grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-slate-100 text-[11px] font-bold text-[color:var(--muted)]">
+                    +{others.length - 3}
+                  </span>
+                {/if}
+              </div>
+            {/if}
+
             <!-- Preview (Eye Icon) -->
             {#if editorState.form}
               <a 

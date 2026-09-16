@@ -5,6 +5,7 @@
   import Tableur from "$components/Tableur.svelte";
   import { api } from "$api/client.ts";
   import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
+  import { realtime, responsesTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import type { FieldDefinition, MetaColumn, ResponseRow, FormDetail } from "$lib/types.ts";
@@ -57,7 +58,12 @@
     }
   });
 
-  onMount(async () => {
+  onMount(() => {
+    load();
+    return realtime.subscribe([responsesTopic(id)], applyRealtimeEvent);
+  });
+
+  async function load() {
     try {
       const [res, formRes] = await Promise.all([
         getResponsesCached(id),
@@ -74,7 +80,29 @@
     } finally {
       loading = false;
     }
-  });
+  }
+
+  /** Applique une mutation venue d'un autre onglet, d'un collaborateur ou d'un répondant. */
+  function applyRealtimeEvent(event: RealtimeEvent) {
+    // Le cache est partagé avec les onglets Stats et Canvas : il doit repartir
+    // de zéro dès qu'une réponse bouge, d'où qu'elle vienne.
+    invalidateResponsesCache(id);
+
+    if (event.type === "response:created") {
+      // Nos propres ajouts sont déjà appliqués de façon optimiste.
+      if (rows.some((row) => row.id === event.row.id)) return;
+      rows = [event.row, ...rows];
+    } else if (event.type === "response:updated") {
+      rows = rows.map((row) => {
+        if (row.id !== event.responseId) return row;
+        return event.target === "meta"
+          ? { ...row, metadata: { ...row.metadata, [event.key]: event.value } }
+          : { ...row, values: { ...row.values, [event.key]: event.value } };
+      });
+    } else if (event.type === "response:deleted") {
+      rows = rows.filter((row) => row.id !== event.responseId);
+    }
+  }
 
   // Persist metadata columns in backend
   async function persistColumns(cols: MetaColumn[]) {

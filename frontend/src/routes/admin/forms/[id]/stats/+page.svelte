@@ -3,8 +3,9 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { api } from "$api/client.ts";
-  import { getResponsesCached } from "$lib/responsesCache.ts";
+  import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import { realtime, responsesTopic } from "$lib/stores/realtime.svelte.ts";
   import type {
     FieldDefinition,
     ResponseRow,
@@ -855,7 +856,36 @@
   });
 
   // ─── Data loading ────────────────────────────────────────────────────
-  onMount(async () => {
+  onMount(() => {
+    load();
+    return realtime.subscribe([responsesTopic(formId)], scheduleRefresh);
+  });
+
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Les soumissions arrivent souvent en rafale : on regroupe les évènements
+   * avant de recharger, plutôt que de redessiner tous les graphiques à chaque
+   * réponse.
+   */
+  function scheduleRefresh() {
+    invalidateResponsesCache(formId);
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      try {
+        const [statsRes, responseRes] = await Promise.all([
+          api.getFormStatsSummary(formId),
+          getResponsesCached(formId),
+        ]);
+        activity = statsRes.summary.activity;
+        rows = responseRes.rows;
+      } catch {
+        /* silencieux : la page reste sur les données déjà affichées */
+      }
+    }, 800);
+  }
+
+  async function load() {
     try {
       const [statsRes, responseRes, formRes, echartsMod] = await Promise.all([
         api.getFormStatsSummary(formId),
@@ -895,9 +925,10 @@
     await new Promise((r) => setTimeout(r, 50));
     renderLineChart();
     renderFillRateChart();
-  });
+  }
 
   onDestroy(() => {
+    if (refreshTimer) clearTimeout(refreshTimer);
     lineChart?.dispose();
     fillRateChart?.dispose();
     dayHourChart?.dispose();

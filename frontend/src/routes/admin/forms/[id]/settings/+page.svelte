@@ -3,6 +3,7 @@
   import { api } from "$api/client.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import { realtime, commentsTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings, IconUsers, IconClose, IconTrash } from "$lib/icons.ts";
   import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders, ChatCircle as IconComment } from "phosphor-svelte";
   import type { FormDetail, Permission, FormRole, FormComment } from "$lib/types.ts";
@@ -114,10 +115,23 @@
     }
   }
 
-  $effect(() => {
-    if (editorState.form?.id) {
-      loadComments(editorState.form.id);
+  /** Commentaires postés par les autres collaborateurs, sans rechargement. */
+  function applyCommentEvent(event: RealtimeEvent) {
+    if (event.type === "comment:created") {
+      if (comments.some((c) => c.id === event.comment.id)) return;
+      comments = [...comments, event.comment];
+    } else if (event.type === "comment:updated") {
+      comments = comments.map((c) => (c.id === event.comment.id ? event.comment : c));
+    } else if (event.type === "comment:deleted") {
+      comments = comments.filter((c) => c.id !== event.commentId);
     }
+  }
+
+  $effect(() => {
+    const formId = editorState.form?.id;
+    if (!formId) return;
+    loadComments(formId);
+    return realtime.subscribe([commentsTopic(formId)], applyCommentEvent);
   });
 
   // Local settings copy bound to inputs
