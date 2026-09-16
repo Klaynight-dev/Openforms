@@ -688,7 +688,7 @@
                 <span class="chip-muted shrink-0">Brouillon</span>
               {/if}
             </div>
-            <p class="mb-3 flex-1 text-sm text-[color:var(--muted)] line-clamp-2">{f.description ?? "Aucune description."}</p>
+            <p class="mb-3 flex-1 text-sm text-[color:var(--muted)]">{f.description ?? "Aucune description."}</p>
             <div class="mb-4 flex items-center gap-3 text-xs font-semibold text-[color:var(--muted)]">
               <span class="flex items-center gap-1"><IconTable size={14} /> {f._count?.responses ?? 0} réponse(s)</span>
               {#if f.isAnonymized}<span class="flex items-center gap-1"><IconLock size={14} /> Anonyme</span>{/if}
