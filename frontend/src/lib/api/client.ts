@@ -15,6 +15,7 @@ import type {
   FormRole,
   FormAccessEntry,
   FormComment,
+  FormVersion,
   UploadedFileInfo,
   GlobalStats,
   FormActivitySummary,
@@ -184,6 +185,15 @@ export const api = {
     }),
   deleteComment: (commentId: string) =>
     request<{ success: boolean }>("DELETE", `/api/v1/comments/${commentId}`),
+
+  // --- Historique des versions ---
+  listFormVersions: (formId: string) =>
+    request<{ success: boolean; versions: FormVersion[] }>("GET", `/api/v1/forms/${formId}/versions`),
+  restoreFormVersion: (formId: string, versionId: string) =>
+    request<{ success: boolean; form: FormDetail }>(
+      "POST",
+      `/api/v1/forms/${formId}/versions/${versionId}/restore`,
+    ),
 
   // --- Statistiques ---
   getGlobalStats: () =>

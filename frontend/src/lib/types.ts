@@ -118,6 +118,13 @@ export interface FormAccessEntry {
   user: { id: string; email: string; displayName: string | null };
 }
 
+/** Entrée d'historique : l'état du formulaire avant une modification. */
+export interface FormVersion {
+  id: string;
+  createdAt: string;
+  author: { id: string; email: string; displayName: string | null } | null;
+}
+
 export interface FormComment {
   id: string;
   formId: string;

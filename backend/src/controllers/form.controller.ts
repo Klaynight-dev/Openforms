@@ -259,7 +259,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         nextSlug = result.slug;
       }
 
-      // L'Ã©tat d'avant la modification rejoint l'historique (voir formVersion.ts).
+      // L'état d'avant la modification rejoint l'historique (voir formVersion.ts).
       await recordFormVersion(form, auth.user.id);
 
       const updated = await prisma.form.update({

@@ -1,17 +1,25 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import { onMount, setContext } from "svelte";
-  import { goto } from "$app/navigation";
+  import { goto, beforeNavigate } from "$app/navigation";
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
+  import { toasts } from "$lib/stores/toast.svelte.ts";
+  import { askConfirm } from "$lib/stores/dialog.svelte.ts";
+  import Modal from "$lib/components/Modal.svelte";
+  import { EditHistory } from "$lib/editHistory.svelte.ts";
+  import type { FormVersion } from "$lib/types.ts";
   import { realtime, presenceTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
-  import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas } from "$lib/icons.ts";
+  import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas, IconUndo, IconRedo, IconHistory, IconUser } from "$lib/icons.ts";
   import type { FormDetail, Permission } from "$lib/types.ts";
 
   let { children } = $props();
 
   // Reactive ID from route parameters
   const id = $derived($page.params.id);
+
+  /** Inactivité au bout de laquelle les modifications partent au serveur. */
+  const AUTOSAVE_DELAY_MS = 1200;
 
   // Shared state class for subpages
   class FormEditorState {
@@ -21,8 +29,14 @@
     loading = $state(true);
     saving = $state(false);
     saved = $state(false);
+    /** Modifications pas encore parties au serveur. */
+    dirty = $state(false);
     error = $state<string | null>(null);
     saveCallback = $state<(() => Promise<void>) | null>(null);
+    /** Pile d'annulation de l'onglet actif, alimentée par les sous-pages. */
+    history = $state<EditHistory<unknown> | null>(null);
+
+    #autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     async load(formId: string) {
       this.loading = true;
@@ -31,6 +45,7 @@
         const res = await api.getForm(formId);
         this.form = res.form;
         this.permission = res.permission;
+        this.dirty = false;
       } catch (e: any) {
         this.error = e.message || "Erreur de chargement du formulaire.";
       } finally {
@@ -38,12 +53,39 @@
       }
     }
 
+    /**
+     * Signale une modification : l'enregistrement part tout seul une fois la
+     * saisie retombée. Les lecteurs et commentateurs n'enregistrent rien- le
+     * serveur refuserait la requête.
+     */
+    markDirty() {
+      if (this.permission !== "EDITOR" || !this.saveCallback) return;
+      this.dirty = true;
+      if (this.#autosaveTimer) clearTimeout(this.#autosaveTimer);
+      this.#autosaveTimer = setTimeout(() => {
+        this.triggerSave().catch(() => {
+          /* l'erreur est déjà affichée dans l'en-tête */
+        });
+      }, AUTOSAVE_DELAY_MS);
+    }
+
+    /** Enregistre sans attendre (quitter la page, masquer l'onglet). */
+    flush() {
+      if (!this.dirty) return;
+      if (this.#autosaveTimer) clearTimeout(this.#autosaveTimer);
+      this.#autosaveTimer = null;
+      this.triggerSave().catch(() => {});
+    }
+
     async triggerSave() {
       if (!this.saveCallback) return;
+      if (this.#autosaveTimer) clearTimeout(this.#autosaveTimer);
+      this.#autosaveTimer = null;
       this.saving = true;
       this.error = null;
       try {
         await this.saveCallback();
+        this.dirty = false;
         this.saved = true;
         setTimeout(() => { this.saved = false; }, 2500);
       } catch (e: any) {
@@ -99,6 +141,89 @@
       : `${others.map((user) => user.name).join(", ")} consultent aussi ce formulaire`,
   );
 
+  // --- Annuler / Rétablir (Ctrl+Z, Ctrl+Maj+Z, Ctrl+Y) ---
+  function handleShortcut(event: KeyboardEvent) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+
+    // Dans un champ de saisie, l'annulation native du navigateur reste plus
+    // fine (caractère par caractère) : on la laisse faire.
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable || /^(input|textarea|select)$/i.test(target?.tagName ?? "")) return;
+
+    const history = editorState.history;
+    if (!history) return;
+    const wantsRedo = key === "y" || event.shiftKey;
+    if (wantsRedo ? history.redo() : history.undo()) {
+      event.preventDefault();
+      editorState.markDirty();
+    }
+  }
+
+  // Quitter l'écran ne doit pas perdre une modification encore en attente.
+  beforeNavigate(() => editorState.flush());
+
+  function handleVisibility() {
+    if (document.visibilityState === "hidden") editorState.flush();
+  }
+
+  // --- Historique des versions ---
+  let showHistory = $state(false);
+  let versions = $state<FormVersion[]>([]);
+  let versionsLoading = $state(false);
+  let restoringId = $state<string | null>(null);
+
+  async function openHistory() {
+    const formId = editorState.form?.id;
+    if (!formId) return;
+    showHistory = true;
+    versionsLoading = true;
+    try {
+      const res = await api.listFormVersions(formId);
+      versions = res.versions;
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Historique indisponible.");
+      showHistory = false;
+    } finally {
+      versionsLoading = false;
+    }
+  }
+
+  async function restoreVersion(version: FormVersion) {
+    const formId = editorState.form?.id;
+    if (!formId) return;
+
+    const ok = await askConfirm({
+      title: "Restaurer cette version ?",
+      message: `Le formulaire reviendra à son état du ${formatVersionDate(version.createdAt)}. L'état actuel reste récupérable dans l'historique.`,
+      confirmLabel: "Restaurer",
+    });
+    if (!ok) return;
+
+    restoringId = version.id;
+    try {
+      // La modification en attente part d'abord, sinon l'enregistrement
+      // automatique réécrirait la version tout juste restaurée.
+      editorState.flush();
+      await api.restoreFormVersion(formId, version.id);
+      await editorState.load(formId);
+      showHistory = false;
+      toasts.success("Version restaurée.");
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Restauration impossible.");
+    } finally {
+      restoringId = null;
+    }
+  }
+
+  function formatVersionDate(iso: string): string {
+    return new Date(iso).toLocaleString("fr-FR", {
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+  }
+
   // Derived variables for tab highlights
   const pathname = $derived($page.url.pathname);
   const activeTab = $derived.by(() => {
@@ -125,6 +250,45 @@
 <svelte:head>
   <title>{editorState.form ? `${editorState.form.title}- Édition` : "Chargement du formulaire..."}</title>
 </svelte:head>
+
+<svelte:window onkeydown={handleShortcut} onvisibilitychange={handleVisibility} />
+
+<Modal
+  open={showHistory}
+  title="Historique des versions"
+  description="Chaque entrée est l'état du formulaire avant une série de modifications."
+  size="md"
+  onclose={() => { showHistory = false; }}
+>
+  {#if versionsLoading}
+    <p class="text-sm text-[color:var(--muted)]">Chargement…</p>
+  {:else if versions.length === 0}
+    <p class="text-sm text-[color:var(--muted)]">
+      Aucune version antérieure pour l'instant : l'historique se remplit au fil des modifications.
+    </p>
+  {:else}
+    <ul class="divide-y divide-[color:var(--line)]">
+      {#each versions as version (version.id)}
+        <li class="flex items-center justify-between gap-4 py-3">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-[color:var(--ink)]">{formatVersionDate(version.createdAt)}</p>
+            <p class="text-xs text-[color:var(--muted)] flex items-center gap-1 truncate">
+              <IconUser size={12} />
+              {version.author?.displayName || version.author?.email || "Auteur supprimé"}
+            </p>
+          </div>
+          <button
+            class="btn-secondary !py-1.5 !px-3 text-xs font-bold shrink-0"
+            onclick={() => restoreVersion(version)}
+            disabled={restoringId !== null}
+          >
+            {restoringId === version.id ? "Restauration…" : "Restaurer"}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</Modal>
 
 <div class="min-h-screen bg-[color:var(--surface-bg)] flex flex-col">
   {#if activeTab === "preview"}
@@ -180,8 +344,10 @@
                     Enregistrement...
                   {:else if editorState.saved}
                     <span class="text-green-600 flex items-center gap-0.5"><IconCheck size={12} weight="bold" /> Enregistré dans le cloud</span>
+                  {:else if editorState.dirty}
+                    Modifications en attente...
                   {:else if editorState.form}
-                    Modifications prêtes à être sauvegardées
+                    Toutes les modifications sont enregistrées
                   {/if}
                 </span>
               {/if}
@@ -203,6 +369,38 @@
                     +{others.length - 3}
                   </span>
                 {/if}
+              </div>
+            {/if}
+
+            <!-- Annuler / Rétablir / Historique -->
+            {#if editorState.permission === "EDITOR"}
+              <div class="flex items-center">
+                <button
+                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                  onclick={() => { if (editorState.history?.undo()) editorState.markDirty(); }}
+                  disabled={!editorState.history?.canUndo}
+                  title="Annuler (Ctrl+Z)"
+                  aria-label="Annuler la dernière modification"
+                >
+                  <IconUndo size={18} />
+                </button>
+                <button
+                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                  onclick={() => { if (editorState.history?.redo()) editorState.markDirty(); }}
+                  disabled={!editorState.history?.canRedo}
+                  title="Rétablir (Ctrl+Maj+Z)"
+                  aria-label="Rétablir la modification annulée"
+                >
+                  <IconRedo size={18} />
+                </button>
+                <button
+                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition"
+                  onclick={openHistory}
+                  title="Historique des versions"
+                  aria-label="Ouvrir l'historique des versions"
+                >
+                  <IconHistory size={18} />
+                </button>
               </div>
             {/if}
 
@@ -231,15 +429,16 @@
               </button>
             {/if}
 
-            <!-- Save Button (Only shown if saveCallback is registered) -->
-            {#if editorState.saveCallback}
-              <button 
-                class="btn-primary !py-2 !px-4" 
-                onclick={() => editorState.triggerSave()} 
+            <!-- L'enregistrement est automatique : ce bouton ne sert qu'à ne
+                 pas attendre, quand une modification est encore en attente. -->
+            {#if editorState.saveCallback && (editorState.dirty || editorState.saving)}
+              <button
+                class="btn-primary !py-2 !px-4"
+                onclick={() => editorState.triggerSave()}
                 disabled={editorState.saving}
               >
                 <IconSave size={18} />
-                <span>{editorState.saving ? "Envoi..." : "Sauvegarder"}</span>
+                <span>{editorState.saving ? "Envoi..." : "Enregistrer maintenant"}</span>
               </button>
             {/if}
           </div>

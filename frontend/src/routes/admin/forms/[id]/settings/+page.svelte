@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { getContext, onMount } from "svelte";
+  import { getContext, onMount, untrack } from "svelte";
+  import { EditHistory } from "$lib/editHistory.svelte.ts";
   import { api } from "$api/client.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
@@ -16,6 +17,8 @@
     error: string | null;
     saveCallback: (() => Promise<void>) | null;
     triggerSave: () => Promise<void>;
+    history: EditHistory<unknown> | null;
+    markDirty: () => void;
   }>("form-editor-context");
 
   const canManageAccess = $derived(editorState.permission === "EDITOR");
@@ -134,43 +137,94 @@
     return realtime.subscribe([commentsTopic(formId)], applyCommentEvent);
   });
 
+  /** Réglages éditables ici, dans la forme attendue par les champs du formulaire. */
+  function settingsOf(form: FormDetail | null) {
+    return {
+      slug: form?.slug ?? "",
+      requireConsent: form?.requireConsent ?? true,
+      consentText: form?.consentText ?? "",
+      privacyPolicyUrl: form?.privacyPolicyUrl ?? "",
+      isAnonymized: form?.isAnonymized ?? false,
+      encryptResponses: form?.encryptResponses ?? false,
+      visibility: form?.visibility ?? "PUBLIC",
+      allowedEmails: form?.allowedEmails ?? ([] as string[]),
+      notifyOwner: form?.notifyOwner ?? false,
+      sendConfirmationEmail: form?.sendConfirmationEmail ?? false,
+      confirmationEmailText: form?.confirmationEmailText ?? "",
+      webhookUrl: form?.webhookUrl ?? "",
+      startsAt: (form?.startsAt ?? null) as string | null,
+      endsAt: (form?.endsAt ?? null) as string | null,
+      maxResponses: (form?.maxResponses ?? null) as number | null,
+    };
+  }
+
   // Local settings copy bound to inputs
-  let settings = $state({
-    slug: "",
-    requireConsent: true,
-    consentText: "",
-    isAnonymized: false,
-    encryptResponses: false,
-    visibility: "PUBLIC",
-    allowedEmails: [] as string[],
-    notifyOwner: false,
-    sendConfirmationEmail: false,
-    confirmationEmailText: "",
-    webhookUrl: "",
-    startsAt: null as string | null,
-    endsAt: null as string | null,
-    maxResponses: null as number | null,
-  });
+  let settings = $state(settingsOf(null));
 
   // Sync state once the form loads in the parent layout
   $effect(() => {
     if (editorState.form) {
-      settings.slug = editorState.form.slug;
-      settings.requireConsent = editorState.form.requireConsent;
-      settings.consentText = editorState.form.consentText ?? "";
-      settings.isAnonymized = editorState.form.isAnonymized;
-      settings.encryptResponses = editorState.form.encryptResponses;
-      settings.visibility = editorState.form.visibility ?? "PUBLIC";
-      settings.allowedEmails = editorState.form.allowedEmails ?? [];
-      settings.notifyOwner = editorState.form.notifyOwner ?? false;
-      settings.sendConfirmationEmail = editorState.form.sendConfirmationEmail ?? false;
-      settings.confirmationEmailText = editorState.form.confirmationEmailText ?? "";
-      settings.webhookUrl = editorState.form.webhookUrl ?? "";
-      settings.startsAt = editorState.form.startsAt ?? null;
-      settings.endsAt = editorState.form.endsAt ?? null;
-      settings.maxResponses = editorState.form.maxResponses ?? null;
+      settings = settingsOf(editorState.form);
     }
   });
+
+  // --- Enregistrement automatique & annulation ---
+
+  const history = new EditHistory({
+    snapshot: () => $state.snapshot(settings),
+    apply: (value) => {
+      const restored = value as typeof settings;
+      // Le lien public n'est jamais envoyé en cours de frappe (voir
+      // `commitSlug`) : une annulation qui le rétablit doit le faire partir,
+      // sinon l'écran et le serveur afficheraient deux liens différents.
+      if (restored.slug !== settings.slug) slugCommitted = true;
+      settings = restored;
+    },
+  });
+
+  $effect(() => {
+    editorState.history = history as EditHistory<unknown>;
+    return () => {
+      editorState.history = null;
+      history.dispose();
+    };
+  });
+
+  // `untrack` : l'instantané pris au chargement ferait sinon dépendre l'effet
+  // de tous les réglages, et l'historique repartirait de zéro à chaque frappe.
+  $effect(() => {
+    if (!editorState.form?.id) return;
+    untrack(() => history.reset());
+  });
+
+  /**
+   * Le lien public est comparé à part : il ne part qu'une fois le champ quitté
+   * (voir `commitSlug`), sinon l'URL publique changerait à chaque caractère
+   * tapé.
+   */
+  const comparable = (value: ReturnType<typeof settingsOf>) => {
+    const { slug, ...rest } = value;
+    return JSON.stringify(rest);
+  };
+
+  const savedSignature = $derived(comparable(settingsOf(editorState.form)));
+
+  $effect(() => {
+    if (comparable(settings) === savedSignature) return;
+    untrack(() => {
+      history.record();
+      editorState.markDirty();
+    });
+  });
+
+  /** Le lien saisi n'est proposé au serveur qu'une fois la saisie terminée. */
+  let slugCommitted = $state(false);
+
+  function commitSlug() {
+    if (!editorState.form || settings.slug === editorState.form.slug) return;
+    slugCommitted = true;
+    editorState.markDirty();
+  }
 
   // Allowed emails text helper
   let allowedEmailsText = $derived((settings.allowedEmails ?? []).join("\n"));
@@ -220,30 +274,35 @@
     
     const res = await api.updateForm(editorState.form.id, {
       title: editorState.form.title,
-      slug: settings.slug,
+      slug: slugCommitted ? settings.slug : undefined,
       description: editorState.form.description ?? undefined,
       schema: editorState.form.schema,
       metaColumns: editorState.form.metaColumns,
       requireConsent: settings.requireConsent,
-      consentText: settings.consentText || undefined,
+      // Les champs vidés partent tels quels : un `undefined` serait ignoré par
+      // le serveur, et l'ancienne valeur resterait en base.
+      consentText: settings.consentText,
+      privacyPolicyUrl: settings.privacyPolicyUrl,
       isAnonymized: settings.isAnonymized,
       encryptResponses: settings.encryptResponses,
       visibility: settings.visibility,
       allowedEmails: settings.allowedEmails,
       notifyOwner: settings.notifyOwner,
       sendConfirmationEmail: settings.sendConfirmationEmail,
-      confirmationEmailText: settings.confirmationEmailText || undefined,
-      webhookUrl: settings.webhookUrl || undefined,
-      startsAt: settings.startsAt || undefined,
-      endsAt: settings.endsAt || undefined,
-      maxResponses: settings.maxResponses || undefined,
+      confirmationEmailText: settings.confirmationEmailText,
+      webhookUrl: settings.webhookUrl,
+      startsAt: settings.startsAt,
+      endsAt: settings.endsAt,
+      maxResponses: settings.maxResponses ?? null,
     });
 
     // Update the parent's form object to keep layout title and details in sync
     editorState.form.slug = res.form.slug;
     settings.slug = res.form.slug;
+    slugCommitted = false;
     editorState.form.requireConsent = settings.requireConsent;
     editorState.form.consentText = settings.consentText;
+    editorState.form.privacyPolicyUrl = settings.privacyPolicyUrl;
     editorState.form.isAnonymized = settings.isAnonymized;
     editorState.form.encryptResponses = settings.encryptResponses;
     editorState.form.visibility = settings.visibility;
@@ -289,6 +348,7 @@
           placeholder="mon-formulaire"
           value={settings.slug}
           oninput={onSlugInput}
+          onblur={commitSlug}
         />
         <button
           type="button"
@@ -340,6 +400,18 @@
             placeholder="J'accepte que mes réponses soient traitées conformément au RGPD..." 
             bind:value={settings.consentText}
           ></textarea>
+        </div>
+
+        <div class="pt-2 animate-fade-in">
+          <label class="label text-xs" for="privacy-policy-url-input">Lien vers la politique de confidentialité</label>
+          <input
+            id="privacy-policy-url-input"
+            type="url"
+            class="input text-xs"
+            placeholder="Laisser vide pour utiliser la page /legal/confidentialite de l'instance"
+            bind:value={settings.privacyPolicyUrl}
+          />
+          <p class="text-[10px] text-[color:var(--muted)] mt-1">Affiché sous la case de consentement. Utile si votre organisation publie sa propre politique de confidentialité ailleurs.</p>
         </div>
       {/if}
     </div>
