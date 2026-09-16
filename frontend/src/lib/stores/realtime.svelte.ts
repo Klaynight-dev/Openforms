@@ -107,7 +107,10 @@ class RealtimeClient {
   private connect(): void {
     if (this.socket) return;
 
-    const socket = new WebSocket(`${api.base.replace(/^http/, "ws")}/api/v1/ws`);
+    // `VITE_API_BASE` est vide en déploiement same-origin (routage par chemin) :
+    // la socket suit alors le domaine visité, comme les appels REST.
+    const base = api.base || window.location.origin;
+    const socket = new WebSocket(`${base.replace(/^http/, "ws")}/api/v1/ws`);
     this.socket = socket;
 
     socket.onopen = () => {
