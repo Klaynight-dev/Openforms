@@ -60,6 +60,7 @@ model Form {
   responses    Response[]
   access       FormAccess[]
   comments     Comment[]
+  versions     FormVersion[]
 
   @@index([ownerId])
   @@index([slug])

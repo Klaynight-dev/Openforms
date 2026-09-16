@@ -6,6 +6,7 @@ import { requestLogger } from "./middleware/logger.ts";
 import { authController } from "./controllers/auth.controller.ts";
 import { usersController } from "./controllers/users.controller.ts";
 import { formController } from "./controllers/form.controller.ts";
+import { formVersionController } from "./controllers/form-version.controller.ts";
 import { responseController } from "./controllers/response.controller.ts";
 import { uploadController } from "./controllers/upload.controller.ts";
 import { statsController } from "./controllers/stats.controller.ts";
@@ -52,6 +53,7 @@ export const app = new Elysia()
   .use(authController)
   .use(usersController)
   .use(formController)
+  .use(formVersionController)
   .use(responseController)
   .use(uploadController)
   .use(statsController)

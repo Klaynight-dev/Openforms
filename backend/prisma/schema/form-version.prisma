@@ -1,0 +1,24 @@
+/// Instantané d'un formulaire avant une modification : alimente le panneau
+/// « Historique » et permet de restaurer un état antérieur.
+///
+/// Les enregistrements rapprochés d'un même auteur sont regroupés dans une
+/// seule version (voir `recordFormVersion` dans form.controller.ts) : sans ce
+/// regroupement, l'enregistrement automatique en créerait une par frappe.
+model FormVersion {
+  id     String @id @default(uuid())
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String
+
+  /// État des champs éditables du formulaire tel qu'il était avant la
+  /// modification. Les colonnes système (slug, publication, dates) en sont
+  /// exclues : une restauration ne doit pas déplacer l'URL publique.
+  snapshot Json
+
+  /// Auteur de la modification ; `null` si le compte a été supprimé depuis.
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([formId, createdAt])
+}

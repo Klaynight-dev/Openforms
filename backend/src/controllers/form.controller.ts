@@ -4,6 +4,7 @@ import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { ExportThemeSchema, FormSchemaArray, MetaColumnSchema } from "../lib/formSchema.ts";
 import { randomToken } from "../services/crypto.ts";
 import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
+import { recordFormVersion } from "../lib/formVersion.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
 
@@ -254,6 +255,9 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         }
         nextSlug = result.slug;
       }
+
+      // L'Ã©tat d'avant la modification rejoint l'historique (voir formVersion.ts).
+      await recordFormVersion(form, auth.user.id);
 
       const updated = await prisma.form.update({
         where: { id: params.id },

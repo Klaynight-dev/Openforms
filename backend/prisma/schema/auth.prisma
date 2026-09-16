@@ -37,6 +37,7 @@ model User {
   statsPresets        StatsPreset[]
   apiKeys             ApiKey[]
   comments            Comment[]
+  formVersions        FormVersion[]
 
   @@index([email])
 }
