@@ -82,6 +82,9 @@ export interface FormSummary {
   encryptResponses: boolean;
   requireConsent: boolean;
   consentText?: string | null;
+  /** Lien vers la politique de confidentialité affiché sous le consentement.
+   *  Vide = page générique /legal/confidentialite de l'instance. */
+  privacyPolicyUrl?: string | null;
   visibility: string;
   allowedEmails: string[];
   notifyOwner?: boolean;

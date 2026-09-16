@@ -261,6 +261,7 @@ export interface FormPayload {
   metaColumns?: MetaColumn[];
   requireConsent?: boolean;
   consentText?: string;
+  privacyPolicyUrl?: string;
   isAnonymized?: boolean;
   encryptResponses?: boolean;
   organizationId?: string;

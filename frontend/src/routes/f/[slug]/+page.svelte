@@ -490,7 +490,7 @@
           </label>
           <!-- Information de la personne concernée au moment de la collecte (art. 13 RGPD). -->
           <p class="-mt-3 mb-5 px-1 text-xs text-[color:var(--muted)]">
-            Voir la <a class="underline underline-offset-2 hover:text-[color:var(--brand)]" href="/legal/confidentialite" target="_blank" rel="noopener">politique de confidentialité</a>
+            Voir la <a class="underline underline-offset-2 hover:text-[color:var(--brand)]" href={translatedForm.privacyPolicyUrl?.trim() || "/legal/confidentialite"} target="_blank" rel="noopener">politique de confidentialité</a>
             pour connaître vos droits sur ces données.
           </p>
         {/if}
