@@ -19,6 +19,7 @@ export const FIELD_TYPES = [
   "linear_scale",
   "checkbox_grid",
   "section",
+  "text_block",
   "signature",
   "address",
   "stripe_payment",
@@ -182,6 +183,11 @@ export function validateSubmission(
     }
 
     visibleFields.add(field.key);
+
+    if (field.type === "text_block") {
+      // Bloc de texte purement décoratif : aucune valeur à valider.
+      continue;
+    }
 
     const raw = data[field.key];
     const isEmpty =

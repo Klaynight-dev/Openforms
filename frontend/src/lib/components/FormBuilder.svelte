@@ -13,7 +13,8 @@
     IconSparkle,
     IconSection,
     IconSave,
-    IconCheck
+    IconCheck,
+    IconInfo
   } from "../icons.ts";
 
   interface Settings {
@@ -317,13 +318,15 @@
             <div class="flex flex-col sm:flex-row gap-4 items-start">
               <!-- Label Input -->
               <div class="flex-1 w-full">
-                <label class="label text-[10px] text-slate-400 uppercase tracking-wide" for={`fb-q-${field.key}`}>Question</label>
+                <label class="label text-[10px] text-slate-400 uppercase tracking-wide" for={`fb-q-${field.key}`}>
+                  {field.type === "text_block" ? "Titre (facultatif)" : "Question"}
+                </label>
                 {#if editingLocale === "fr"}
-                  <input 
+                  <input
                     id={`fb-q-${field.key}`}
-                    class="input font-bold" 
-                    bind:value={field.label} 
-                    placeholder="Question sans titre" 
+                    class="input font-bold"
+                    bind:value={field.label}
+                    placeholder={field.type === "text_block" ? "Titre du bloc de texte" : "Question sans titre"}
                   />
                 {:else}
                   <input 
@@ -348,26 +351,46 @@
 
             <!-- Description & Placeholder -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label class="label text-[10px] text-slate-400 uppercase" for={`fb-desc-${field.key}`}>Description explicative</label>
+              <div class={field.type === "text_block" ? "sm:col-span-2" : ""}>
+                <label class="label text-[10px] text-slate-400 uppercase" for={`fb-desc-${field.key}`}>
+                  {field.type === "text_block" ? "Texte à afficher" : "Description explicative"}
+                </label>
                 {#if editingLocale === "fr"}
-                  <input 
+                  {#if field.type === "text_block"}
+                    <textarea
+                      id={`fb-desc-${field.key}`}
+                      class="input text-xs"
+                      rows="4"
+                      bind:value={field.description}
+                      placeholder="ex: Merci de lire attentivement les informations suivantes avant de continuer..."
+                    ></textarea>
+                  {:else}
+                    <input
+                      id={`fb-desc-${field.key}`}
+                      class="input text-xs"
+                      bind:value={field.description}
+                      placeholder="ex: Merci de saisir vos informations..."
+                    />
+                  {/if}
+                {:else if field.type === "text_block"}
+                  <textarea
                     id={`fb-desc-${field.key}`}
-                    class="input text-xs" 
-                    bind:value={field.description} 
-                    placeholder="ex: Merci de saisir vos informations..." 
-                  />
+                    class="input text-xs"
+                    rows="4"
+                    placeholder={field.description}
+                    bind:value={settings.translations[editingLocale].fields[field.key].description}
+                  ></textarea>
                 {:else}
-                  <input 
+                  <input
                     id={`fb-desc-${field.key}`}
-                    class="input text-xs" 
-                    placeholder={field.description} 
-                    bind:value={settings.translations[editingLocale].fields[field.key].description} 
+                    class="input text-xs"
+                    placeholder={field.description}
+                    bind:value={settings.translations[editingLocale].fields[field.key].description}
                   />
                 {/if}
               </div>
-              
-              {#if field.type !== "section" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment"}
+
+              {#if field.type !== "section" && field.type !== "text_block" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment"}
                 <div>
                   <label class="label text-[10px] text-slate-400 uppercase" for={`fb-ph-${field.key}`}>Placeholder (Indication)</label>
                   {#if editingLocale === "fr"}
@@ -783,7 +806,7 @@
               </button>
               <span class="w-[1px] h-6 bg-slate-200"></span>
               
-              {#if field.type !== "section"}
+              {#if field.type !== "section" && field.type !== "text_block"}
                 <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 select-none cursor-pointer">
                   <span>Obligatoire</span>
                   <input 
@@ -874,6 +897,10 @@
                   <div class="w-full bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-indigo-700 font-bold text-xs flex items-center gap-2">
                     <IconSection size={14} /> Délimitation de page- Saut de section
                   </div>
+                {:else if field.type === "text_block"}
+                  <div class="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-400 text-xs flex items-center gap-2">
+                    <IconInfo size={14} /> Texte affiché aux répondants, sans saisie
+                  </div>
                 {/if}
               </div>
 
@@ -898,12 +925,19 @@
     >
       <IconPlus size={20} />
     </button>
-    <button 
-      onclick={() => addField("section")} 
-      class="p-3 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all duration-200 flex items-center justify-center" 
+    <button
+      onclick={() => addField("section")}
+      class="p-3 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all duration-200 flex items-center justify-center"
       title="Saut de page (Section)"
     >
       <IconSection size={20} />
+    </button>
+    <button
+      onclick={() => addField("text_block")}
+      class="p-3 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-all duration-200 flex items-center justify-center"
+      title="Ajouter un bloc de texte"
+    >
+      <IconInfo size={20} />
     </button>
   </div>
 
@@ -922,6 +956,13 @@
       title="Saut de page"
     >
       <IconSection size={20} />
+    </button>
+    <button
+      onclick={() => addField("text_block")}
+      class="p-3 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-full transition"
+      title="Ajouter un bloc de texte"
+    >
+      <IconInfo size={20} />
     </button>
   </div>
 </div>

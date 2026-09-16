@@ -18,6 +18,7 @@ export type FieldType =
   | "linear_scale"
   | "checkbox_grid"
   | "section"
+  | "text_block"
   | "signature"
   | "address"
   | "stripe_payment";

@@ -108,6 +108,8 @@ const WIDGET_CSS = `
 .of-label { display: block; font-size: .875rem; font-weight: 600; margin-bottom: .375rem; }
 .of-required { color: #d93025; }
 .of-field-desc { font-size: .75rem; color: #5f6368; margin: 0 0 .5rem; }
+.of-text-block-title { font-size: 1rem; font-weight: 700; margin: 0 0 .375rem; color: #202124; }
+.of-text-block-desc { font-size: .875rem; color: #5f6368; margin: 0; white-space: pre-line; line-height: 1.5; }
 .of-input, .of-select, .of-textarea {
   width: 100%; border: 1px solid #dadce0; border-radius: .5rem; padding: .5rem .75rem;
   font-size: .875rem; font-family: inherit; color: #202124; background: #fff;
@@ -580,6 +582,13 @@ class OpenFormsWidget {
   }
 
   private renderField(field: FieldDefinition): HTMLElement {
+    if (field.type === "text_block") {
+      const block = el("div", { class: "of-field of-text-block" });
+      if (field.label) block.append(el("h3", { class: "of-text-block-title" }, field.label));
+      if (field.description) block.append(el("p", { class: "of-text-block-desc" }, field.description));
+      return block;
+    }
+
     const wrap = el("div", { class: "of-field" });
     wrap.append(
       el("label", { class: "of-label" }, field.label, field.required ? el("span", { class: "of-required" }, " *") : ""),

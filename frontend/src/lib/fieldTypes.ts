@@ -11,6 +11,7 @@ export interface FieldTypeMeta {
 
 export const FIELD_TYPE_META: FieldTypeMeta[] = [
   { type: "section", label: "Section / Page suivante", icon: "S", hasOptions: false, hasGrid: false, isFile: false },
+  { type: "text_block", label: "Bloc de texte", icon: "¶", hasOptions: false, hasGrid: false, isFile: false },
   { type: "short_text", label: "Texte court", icon: "T", hasOptions: false, hasGrid: false, isFile: false },
   { type: "paragraph", label: "Paragraphe", icon: "P", hasOptions: false, hasGrid: false, isFile: false },
   { type: "email", label: "Email", icon: "@", hasOptions: false, hasGrid: false, isFile: false },

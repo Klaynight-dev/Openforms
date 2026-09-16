@@ -433,7 +433,7 @@
               <!-- Responses content list -->
               <div class="space-y-5">
                 {#each fields as field}
-                  {#if field.type !== "section"}
+                  {#if field.type !== "section" && field.type !== "text_block"}
                     {@const val = selectedRow.values[field.key]}
                     <div class="border-b border-slate-100 pb-3 break-inside-avoid">
                       <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">{field.label}</h4>

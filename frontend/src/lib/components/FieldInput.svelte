@@ -228,6 +228,16 @@
   }
 </script>
 
+{#if field.type === "text_block"}
+  <div class="field field-text-block">
+    {#if field.label}
+      <h3 class="text-base font-bold text-[color:var(--ink)]">{field.label}</h3>
+    {/if}
+    {#if field.description}
+      <p class="mt-1 text-sm text-[color:var(--muted)] leading-relaxed whitespace-pre-line">{field.description}</p>
+    {/if}
+  </div>
+{:else}
 <div class="field">
   <label class="label" for={field.key}>
     {field.label}
@@ -629,6 +639,7 @@
     <p class="mt-1 text-xs text-red-600">{error}</p>
   {/if}
 </div>
+{/if}
 
 <style lang="scss">
   .field {
