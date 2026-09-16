@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { api } from "$api/client.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
@@ -202,13 +202,15 @@
       try {
         const res = await api.getGlobalStats();
         stats = res.stats;
-        await new Promise((r) => setTimeout(r, 50));
-        await renderActivityChart();
       } catch {
         // Stats non critiques, on ignore l'erreur
       } finally {
         statsLoading = false;
       }
+      // Le graphique a besoin de `lineChartEl`, monté seulement une fois
+      // `statsLoading` repassé à false (bascule {:else if stats} du template).
+      await tick();
+      await renderActivityChart();
     }
   }
 
