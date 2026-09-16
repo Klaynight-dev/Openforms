@@ -13,6 +13,7 @@ import { statsPresetController } from "./controllers/stats-preset.controller.ts"
 import { apiKeyController } from "./controllers/api-key.controller.ts";
 import { organizationController } from "./controllers/organization.controller.ts";
 import { commentController } from "./controllers/comment.controller.ts";
+import { wsController } from "./controllers/ws.controller.ts";
 import { purgeExpiredSessions } from "./lib/session.ts";
 
 export const app = new Elysia()
@@ -56,7 +57,8 @@ export const app = new Elysia()
   .use(statsPresetController)
   .use(apiKeyController)
   .use(organizationController)
-  .use(commentController);
+  .use(commentController)
+  .use(wsController);
 
 // Purge périodique des sessions expirées (toutes les heures).
 setInterval(() => {

@@ -28,6 +28,17 @@ const isDevLocalhost = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
 
 /**
+ * Origine autorisée à ouvrir une connexion authentifiée par cookie.
+ * Partagé avec le handshake WebSocket, que le CORS ne protège pas : sans ce
+ * contrôle, un site tiers pourrait ouvrir une socket sur l'API avec le cookie
+ * de session de la victime (CSWSH).
+ */
+export function isAllowedOrigin(origin: string): boolean {
+  if (env.frontendOrigins.includes(origin)) return true;
+  return !env.isProduction && isDevLocalhost(origin);
+}
+
+/**
  * Routes publiques destinées à être appelées depuis n'importe quel site tiers
  * (widget d'embed : lecture d'un formulaire publié, soumission, upload de
  * fichier). Elles ne s'appuient jamais sur le cookie de session- seuls les
@@ -42,8 +53,7 @@ const isEmbeddablePublicRoute = (pathname: string) =>
 export const corsPlugin = cors({
   origin: (request: Request) => {
     const origin = request.headers.get("origin") ?? "";
-    if (env.frontendOrigins.includes(origin)) return true;
-    if (!env.isProduction && isDevLocalhost(origin)) return true;
+    if (isAllowedOrigin(origin)) return true;
     if (origin && isEmbeddablePublicRoute(new URL(request.url).pathname)) return true;
     return false;
   },

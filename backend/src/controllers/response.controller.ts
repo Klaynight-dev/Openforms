@@ -5,10 +5,35 @@ import { makeRateLimit } from "../middleware/security.ts";
 import { validateSubmission, type FieldDefinition } from "../lib/formSchema.ts";
 import { sealContent, openContent, hashIp, verifyDescriptor } from "../services/crypto.ts";
 import { sendEmail } from "../services/mailer.ts";
+import { broadcast, responsesTopic, type RealtimeResponseRow } from "../lib/realtime.ts";
 
 function clientIp(request: Request): string | undefined {
   const fwd = request.headers.get("x-forwarded-for");
   return fwd ? fwd.split(",")[0]?.trim() : undefined;
+}
+
+/** Sélection des champs de fichier exposés avec une ligne du tableur. */
+const fileFields = {
+  select: { id: true, fieldKey: true, originalName: true, mimeType: true, sizeBytes: true },
+} as const;
+
+/** Ligne du tableur, servie à l'identique par l'API REST et par le canal temps réel. */
+function toRow(response: {
+  id: string;
+  submittedAt: Date;
+  updatedAt: Date;
+  content: unknown;
+  metadata: unknown;
+  files: RealtimeResponseRow["files"];
+}): RealtimeResponseRow {
+  return {
+    id: response.id,
+    submittedAt: response.submittedAt,
+    updatedAt: response.updatedAt,
+    values: openContent(response.content) as Record<string, unknown>,
+    metadata: (response.metadata as Record<string, unknown>) ?? {},
+    files: response.files,
+  };
 }
 
 /** Descripteur de fichier signé, renvoyé par /uploads puis rejoué à la soumission. */
@@ -40,7 +65,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   )
   .post(
     "/submit",
-    async ({ body, set, request, auth }) => {
+    async ({ body, set, request, auth, server }) => {
       const form = await prisma.form.findUnique({
         where: { id: body.formId },
         include: { owner: { select: { email: true } } },
@@ -159,9 +184,17 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
           userAgent: form.isAnonymized ? null : (request.headers.get("user-agent")?.slice(0, 300) ?? null),
           files: filesToCreate.length ? { create: filesToCreate } : undefined,
         },
+        include: { files: fileFields },
       });
 
-      // 5. Notifications par email & Webhook
+      // 5. Diffusion temps réel aux collaborateurs ayant le formulaire ouvert.
+      broadcast(server, responsesTopic(form.id), {
+        type: "response:created",
+        formId: form.id,
+        row: toRow(response),
+      });
+
+      // 6. Notifications par email & Webhook
       if (form.webhookUrl) {
         fetch(form.webhookUrl, {
           method: "POST",
@@ -237,19 +270,10 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
       const responses = await prisma.response.findMany({
         where: { formId: form.id },
         orderBy: { submittedAt: "desc" },
-        include: {
-          files: { select: { id: true, fieldKey: true, originalName: true, mimeType: true, sizeBytes: true } },
-        },
+        include: { files: fileFields },
       });
 
-      const rows = responses.map((r) => ({
-        id: r.id,
-        submittedAt: r.submittedAt,
-        updatedAt: r.updatedAt,
-        values: openContent(r.content) as Record<string, unknown>,
-        metadata: (r.metadata as Record<string, unknown>) ?? {},
-        files: r.files,
-      }));
+      const rows = responses.map(toRow);
 
       return {
         success: true,
@@ -271,7 +295,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   // =========================================================================
   .post(
     "/form/:formId",
-    async ({ auth, params, set }) => {
+    async ({ auth, params, set, server }) => {
       const form = await prisma.form.findUnique({ where: { id: params.formId } });
       if (!form) {
         set.status = 404;
@@ -285,20 +309,12 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
       const content = sealContent({}, form.encryptResponses);
       const response = await prisma.response.create({
         data: { formId: form.id, content: content as object, ipHash: null },
-        include: { files: true },
+        include: { files: fileFields },
       });
+      const row = toRow(response);
+      broadcast(server, responsesTopic(form.id), { type: "response:created", formId: form.id, row });
       set.status = 201;
-      return {
-        success: true,
-        row: {
-          id: response.id,
-          submittedAt: response.submittedAt,
-          updatedAt: response.updatedAt,
-          values: {},
-          metadata: {},
-          files: [],
-        },
-      };
+      return { success: true, row };
     },
     { params: t.Object({ formId: t.String() }), requireRole: true },
   )
@@ -308,7 +324,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   // =========================================================================
   .patch(
     "/:id/cell",
-    async ({ auth, params, body, set }) => {
+    async ({ auth, params, body, set, server }) => {
       const response = await prisma.response.findUnique({
         where: { id: params.id },
         include: { form: { select: { id: true, ownerId: true, encryptResponses: true } } },
@@ -341,6 +357,15 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         const content = sealContent(values, response.form.encryptResponses);
         await prisma.response.update({ where: { id: params.id }, data: { content: content as object } });
       }
+
+      broadcast(server, responsesTopic(response.form.id), {
+        type: "response:updated",
+        formId: response.form.id,
+        responseId: params.id,
+        target: body.target,
+        key: body.key,
+        value: body.value,
+      });
       return { success: true };
     },
     {
@@ -359,7 +384,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   // =========================================================================
   .delete(
     "/:id",
-    async ({ auth, params, set }) => {
+    async ({ auth, params, set, server }) => {
       const response = await prisma.response.findUnique({
         where: { id: params.id },
         include: { form: { select: { id: true, ownerId: true } } },
@@ -379,6 +404,11 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         return { success: false, error: "Suppression non autorisée." };
       }
       await prisma.response.delete({ where: { id: params.id } });
+      broadcast(server, responsesTopic(response.form.id), {
+        type: "response:deleted",
+        formId: response.form.id,
+        responseId: params.id,
+      });
       return { success: true };
     },
     { params: t.Object({ id: t.String() }), requireRole: true },
