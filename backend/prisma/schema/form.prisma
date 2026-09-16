@@ -18,6 +18,11 @@ model Form {
   /// Consentement explicite obligatoire avant soumission.
   requireConsent Boolean @default(true)
   consentText    String?
+  /// Lien vers la politique de confidentialité affiché sous la case de
+  /// consentement. `null` = page générique /legal/confidentialite de
+  /// l'instance ; permet à chaque organisation (ou compte personnel) de
+  /// pointer vers sa propre politique plutôt que celle de l'instance.
+  privacyPolicyUrl String?
   /// Anonymisation complète : aucune métadonnée d'identification stockée.
   isAnonymized   Boolean @default(false)
   /// Chiffrement au repos du contenu des réponses (AES-256-GCM).
