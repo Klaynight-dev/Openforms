@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin } from "../middleware/auth.ts";
 import { isAllowedOrigin } from "../middleware/security.ts";
-import { presenceTopic, type RealtimePublisher } from "../lib/realtime.ts";
+import { broadcast, presenceTopic, type PresenceUser, type RealtimeEvent } from "../lib/realtime.ts";
 import type { SessionContext } from "../lib/session.ts";
 
 /**
@@ -19,11 +19,6 @@ import type { SessionContext } from "../lib/session.ts";
  */
 
 const TOPIC_PATTERN = /^form:([0-9a-fA-F-]{36}):(responses|comments|presence)$/;
-
-interface PresenceUser {
-  id: string;
-  name: string;
-}
 
 /** Roster de présence en mémoire : formId -> userId -> nombre d'onglets ouverts. */
 const presenceByForm = new Map<string, Map<string, { user: PresenceUser; sockets: number }>>();
@@ -107,12 +102,8 @@ function leavePresence(socketId: string, formId: string, userId: string): boolea
   return true;
 }
 
-function publishPresence(
-  server: RealtimePublisher | null | undefined,
-  formId: string,
-  event: Record<string, unknown>,
-): void {
-  server?.publish(presenceTopic(formId), JSON.stringify({ ...event, formId }));
+function publishPresence(formId: string, event: RealtimeEvent): void {
+  broadcast(presenceTopic(formId), event);
 }
 
 export const wsController = new Elysia()
@@ -144,7 +135,6 @@ export const wsController = new Elysia()
         return;
       }
 
-      const server = ws.data.server as RealtimePublisher | null;
       const presenceUser: PresenceUser = {
         id: auth.user.id,
         name: auth.user.displayName ?? auth.user.email,
@@ -157,7 +147,11 @@ export const wsController = new Elysia()
           const parsed = parseTopic(topic);
           if (parsed?.channel !== "presence") continue;
           if (joinPresence(ws.id, parsed.formId, presenceUser)) {
-            publishPresence(server, parsed.formId, { type: "presence:join", user: presenceUser });
+            publishPresence(parsed.formId, {
+              type: "presence:join",
+              formId: parsed.formId,
+              user: presenceUser,
+            });
           }
           ws.send({ type: "presence:sync", formId: parsed.formId, users: roster(parsed.formId) });
         }
@@ -170,17 +164,20 @@ export const wsController = new Elysia()
         const parsed = parseTopic(topic);
         if (parsed?.channel !== "presence") continue;
         if (leavePresence(ws.id, parsed.formId, auth.user.id)) {
-          publishPresence(server, parsed.formId, { type: "presence:leave", userId: auth.user.id });
+          publishPresence(parsed.formId, {
+            type: "presence:leave",
+            formId: parsed.formId,
+            userId: auth.user.id,
+          });
         }
       }
     },
 
     close(ws) {
       const auth = ws.data.auth as SessionContext | null;
-      const server = ws.data.server as RealtimePublisher | null;
       for (const formId of [...(presenceBySocket.get(ws.id) ?? [])]) {
         if (auth && leavePresence(ws.id, formId, auth.user.id)) {
-          publishPresence(server, formId, { type: "presence:leave", userId: auth.user.id });
+          publishPresence(formId, { type: "presence:leave", formId, userId: auth.user.id });
         }
       }
       presenceBySocket.delete(ws.id);

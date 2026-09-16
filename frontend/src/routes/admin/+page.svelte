@@ -186,9 +186,15 @@
     lineChart?.dispose();
   });
 
-  // Chaque formulaire listé est suivi en direct ; l'abonnement se recale dès
-  // que la liste change (création, suppression, changement d'organisation).
-  $effect(() => realtime.subscribe(forms.map((f) => responsesTopic(f.id)), applyRealtimeEvent));
+  // Chaque formulaire listé est suivi en direct. La dépendance porte sur la
+  // liste des identifiants et non sur `forms` : mettre à jour un compteur ne
+  // doit pas relancer tous les abonnements.
+  const trackedFormIds = $derived(forms.map((f) => f.id).join(","));
+
+  $effect(() => {
+    const ids = trackedFormIds ? trackedFormIds.split(",") : [];
+    return realtime.subscribe(ids.map(responsesTopic), applyRealtimeEvent);
+  });
 
   let statsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 

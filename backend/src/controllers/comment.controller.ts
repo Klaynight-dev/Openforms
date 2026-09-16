@@ -39,7 +39,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
   // --- Ajouter un commentaire (COMMENTER ou EDITOR) ---
   .post(
     "/forms/:id/comments",
-    async ({ auth, params, body, set, server }) => {
+    async ({ auth, params, body, set }) => {
       const form = await prisma.form.findUnique({ where: { id: params.id } });
       if (!form) {
         set.status = 404;
@@ -54,7 +54,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
         data: { formId: form.id, authorId: auth!.user.id, body: body.body.trim() },
         include: { author: { select: { id: true, email: true, displayName: true } } },
       });
-      broadcast(server, commentsTopic(form.id), {
+      broadcast(commentsTopic(form.id), {
         type: "comment:created",
         formId: form.id,
         comment,
@@ -72,7 +72,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
   // --- Marquer un commentaire comme résolu / non résolu ---
   .patch(
     "/comments/:commentId/resolve",
-    async ({ auth, params, body, set, server }) => {
+    async ({ auth, params, body, set }) => {
       const comment = await prisma.comment.findUnique({
         where: { id: params.commentId },
         include: { form: { select: { id: true, ownerId: true } } },
@@ -92,7 +92,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
         data: { resolved: body.resolved },
         include: { author: { select: { id: true, email: true, displayName: true } } },
       });
-      broadcast(server, commentsTopic(comment.form.id), {
+      broadcast(commentsTopic(comment.form.id), {
         type: "comment:updated",
         formId: comment.form.id,
         comment: updated,
@@ -109,7 +109,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
   // --- Supprimer un commentaire (auteur, éditeur du formulaire, ou SUPER_ADMIN) ---
   .delete(
     "/comments/:commentId",
-    async ({ auth, params, set, server }) => {
+    async ({ auth, params, set }) => {
       const comment = await prisma.comment.findUnique({
         where: { id: params.commentId },
         include: { form: { select: { id: true, ownerId: true } } },
@@ -125,7 +125,7 @@ export const commentController = new Elysia({ prefix: "/api/v1" })
         return { success: false, error: "Action non autorisée." };
       }
       await prisma.comment.delete({ where: { id: params.commentId } });
-      broadcast(server, commentsTopic(comment.form.id), {
+      broadcast(commentsTopic(comment.form.id), {
         type: "comment:deleted",
         formId: comment.form.id,
         commentId: params.commentId,

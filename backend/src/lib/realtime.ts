@@ -2,9 +2,11 @@
  * Diffusion temps réel (WebSocket).
  *
  * Les topics sont cloisonnés par formulaire : un client ne peut s'y abonner
- * qu'avec un accès effectif sur le formulaire (voir ws.controller.ts). Les
- * contrôleurs HTTP publient via le serveur Bun exposé par le contexte Elysia
- * (`server`), qui porte le pub/sub natif des WebSockets.
+ * qu'avec un accès effectif sur le formulaire (voir ws.controller.ts).
+ *
+ * La diffusion passe par le serveur Bun, qui porte le pub/sub natif des
+ * WebSockets. On le mémorise au démarrage plutôt que de le lire dans le
+ * contexte Elysia : celui-ci ne le transmet pas aux handlers WebSocket.
  */
 
 export interface RealtimeResponseRow {
@@ -22,6 +24,11 @@ export interface RealtimeResponseRow {
   }[];
 }
 
+export interface PresenceUser {
+  id: string;
+  name: string;
+}
+
 export type RealtimeEvent =
   | { type: "response:created"; formId: string; row: RealtimeResponseRow }
   | {
@@ -35,7 +42,9 @@ export type RealtimeEvent =
   | { type: "response:deleted"; formId: string; responseId: string }
   | { type: "comment:created"; formId: string; comment: unknown }
   | { type: "comment:updated"; formId: string; comment: unknown }
-  | { type: "comment:deleted"; formId: string; commentId: string };
+  | { type: "comment:deleted"; formId: string; commentId: string }
+  | { type: "presence:join"; formId: string; user: PresenceUser }
+  | { type: "presence:leave"; formId: string; userId: string };
 
 /** Sous-ensemble du serveur Bun dont dépend la diffusion. */
 export interface RealtimePublisher {
@@ -46,11 +55,14 @@ export const responsesTopic = (formId: string) => `form:${formId}:responses`;
 export const commentsTopic = (formId: string) => `form:${formId}:comments`;
 export const presenceTopic = (formId: string) => `form:${formId}:presence`;
 
-/** Diffuse un évènement métier aux abonnés d'un topic. */
-export function broadcast(
-  server: RealtimePublisher | null | undefined,
-  topic: string,
-  event: RealtimeEvent,
-): void {
-  server?.publish(topic, JSON.stringify(event));
+let publisher: RealtimePublisher | null = null;
+
+/** Appelé une fois l'API démarrée, avec le serveur qui porte les sockets. */
+export function bindRealtime(server: RealtimePublisher | null): void {
+  publisher = server;
+}
+
+/** Diffuse un évènement aux abonnés d'un topic. */
+export function broadcast(topic: string, event: RealtimeEvent): void {
+  publisher?.publish(topic, JSON.stringify(event));
 }

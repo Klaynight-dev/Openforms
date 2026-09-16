@@ -15,6 +15,7 @@ import { organizationController } from "./controllers/organization.controller.ts
 import { commentController } from "./controllers/comment.controller.ts";
 import { wsController } from "./controllers/ws.controller.ts";
 import { purgeExpiredSessions } from "./lib/session.ts";
+import { bindRealtime } from "./lib/realtime.ts";
 
 export const app = new Elysia()
   .use(requestLogger)
@@ -65,7 +66,10 @@ setInterval(() => {
   purgeExpiredSessions().catch(() => {});
 }, 60 * 60 * 1000);
 
-app.listen(env.port, () => {
+app.listen(env.port, (server) => {
+  // Le pub/sub des WebSockets vit sur le serveur Bun : les contrôleurs y
+  // accèdent par cette référence, le contexte Elysia ne la transmet pas.
+  bindRealtime(server);
   console.log(`🌱 API Formulaire Humanitour sur http://localhost:${env.port}`);
   console.log(`   Docs Swagger : http://localhost:${env.port}/docs`);
   console.log(`   Origines CORS autorisées : ${env.frontendOrigins.join(", ")}`);
