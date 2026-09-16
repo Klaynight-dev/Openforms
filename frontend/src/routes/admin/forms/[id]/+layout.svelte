@@ -224,6 +224,23 @@
     });
   }
 
+  /**
+   * L'aperçu recharge le formulaire depuis le serveur : sans ça, il peut
+   * s'ouvrir avant que l'enregistrement automatique (avec son délai
+   * d'inactivité) n'ait eu le temps de partir, et montrer une version
+   * périmée.
+   */
+  async function openPreview(event: MouseEvent) {
+    if (!editorState.dirty) return;
+    event.preventDefault();
+    try {
+      await editorState.triggerSave();
+    } catch {
+      // l'erreur est déjà affichée dans l'en-tête
+    }
+    window.open(`/admin/forms/${id}/preview`, "_blank");
+  }
+
   // Derived variables for tab highlights
   const pathname = $derived($page.url.pathname);
   const activeTab = $derived.by(() => {
@@ -406,11 +423,12 @@
 
             <!-- Preview (Eye Icon) -->
             {#if editorState.form}
-              <a 
-                href={`/admin/forms/${id}/preview`} 
-                target="_blank" 
-                class="btn-secondary !py-2 !px-3" 
+              <a
+                href={`/admin/forms/${id}/preview`}
+                target="_blank"
+                class="btn-secondary !py-2 !px-3"
                 title="Prévisualiser le formulaire"
+                onclick={openPreview}
               >
                 <IconEye size={18} />
                 <span class="hidden sm:inline">Prévisualiser</span>
