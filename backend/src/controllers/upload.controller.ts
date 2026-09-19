@@ -7,6 +7,7 @@ import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { makeRateLimit } from "../middleware/security.ts";
 import { sha256, randomToken, signDescriptor } from "../services/crypto.ts";
 import type { FieldDefinition } from "../lib/formSchema.ts";
+import { checkEmbedAccess } from "../lib/embed.ts";
 
 const UPLOAD_ROOT = resolve(env.uploadDir);
 await mkdir(UPLOAD_ROOT, { recursive: true });
@@ -33,11 +34,22 @@ export const uploadController = new Elysia({ prefix: "/api/v1/uploads" })
   )
   .post(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, request }) => {
       const form = await prisma.form.findUnique({ where: { id: body.formId } });
       if (!form || !form.isPublished) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
+      }
+
+      // Un champ fichier reste utilisable depuis un formulaire intégré, mais
+      // seulement depuis un site autorisé à l'intégrer.
+      const origin = request.headers.get("origin");
+      if (origin && !env.frontendOrigins.includes(origin)) {
+        const refusal = checkEmbedAccess(form, origin);
+        if (refusal) {
+          set.status = refusal.status;
+          return { success: false, error: refusal.error };
+        }
       }
 
       const fields = form.schema as unknown as FieldDefinition[];

@@ -5,6 +5,8 @@ import { makeRateLimit } from "../middleware/security.ts";
 import { validateSubmission, type FieldDefinition } from "../lib/formSchema.ts";
 import { sealContent, openContent, hashIp, verifyDescriptor } from "../services/crypto.ts";
 import { sendEmail } from "../services/mailer.ts";
+import { checkEmbedAccess } from "../lib/embed.ts";
+import { env } from "../config/env.ts";
 import { broadcast, responsesTopic, type RealtimeResponseRow } from "../lib/realtime.ts";
 
 function clientIp(request: Request): string | undefined {
@@ -65,7 +67,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   )
   .post(
     "/submit",
-    async ({ body, set, request, auth }) => {
+    async ({ body, set, request, auth, apiKey }) => {
       const form = await prisma.form.findUnique({
         where: { id: body.formId },
         include: { owner: { select: { email: true } } },
@@ -95,7 +97,23 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         }
       }
 
-      if (form.visibility === "PRIVATE") {
+      // Soumission venue d'un autre site : soumise aux mêmes règles d'embed que
+      // la lecture du formulaire (voir GET /forms/public/:slug).
+      const origin = request.headers.get("origin");
+      if (origin && !env.frontendOrigins.includes(origin)) {
+        const refusal = checkEmbedAccess(form, origin);
+        if (refusal) {
+          set.status = refusal.status;
+          return { success: false, error: refusal.error };
+        }
+      }
+
+      // Une clé d'embed autorise la soumission à son formulaire, sans session.
+      const embedKey = apiKey?.scope === "EMBED" && apiKey.formId === form.id;
+
+      if (embedKey) {
+        // autorisé : la visibilité est couverte par la clé
+      } else if (form.visibility === "PRIVATE") {
         if (!auth) {
           set.status = 401;
           return { success: false, error: "Ce formulaire est réservé aux membres connectés." };

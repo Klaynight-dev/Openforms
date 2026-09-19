@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
-import { authPlugin } from "../middleware/auth.ts";
+import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { createApiKey } from "../lib/apiKey.ts";
 
 /**
@@ -18,7 +18,16 @@ export const apiKeyController = new Elysia({ prefix: "/api/v1/api-keys" })
       const keys = await prisma.apiKey.findMany({
         where: { userId: auth!.user.id },
         orderBy: { createdAt: "desc" },
-        select: { id: true, name: true, lastUsedAt: true, expiresAt: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          lastUsedAt: true,
+          expiresAt: true,
+          createdAt: true,
+          scope: true,
+          formId: true,
+          form: { select: { title: true, slug: true } },
+        },
       });
       return { success: true, keys };
     },
@@ -35,10 +44,38 @@ export const apiKeyController = new Elysia({ prefix: "/api/v1/api-keys" })
         return { success: false, error: "Date d'expiration invalide." };
       }
 
-      const { id, token } = await createApiKey(auth!.user.id, body.name.trim(), expiresAt);
+      const scope = body.scope === "EMBED" ? "EMBED" : "FULL";
+      let formId: string | null = null;
+
+      if (scope === "EMBED") {
+        // Une clé d'embed cible un formulaire précis : sans lui, elle
+        // n'autoriserait rien. Et on ne délivre une clé que sur un formulaire
+        // que le demandeur a le droit d'éditer.
+        if (!body.formId) {
+          set.status = 422;
+          return { success: false, error: "Une clé d'intégration doit cibler un formulaire." };
+        }
+        const form = await prisma.form.findUnique({ where: { id: body.formId } });
+        if (!form) {
+          set.status = 404;
+          return { success: false, error: "Formulaire introuvable." };
+        }
+        const perm = await resolveFormPermission(prisma.formAccess, auth!.user, form.id, form.ownerId);
+        if (perm !== "EDITOR") {
+          set.status = 403;
+          return { success: false, error: "Édition non autorisée sur ce formulaire." };
+        }
+        formId = form.id;
+      }
+
+      const { id, token } = await createApiKey(auth!.user.id, body.name.trim(), {
+        expiresAt,
+        scope,
+        formId,
+      });
       return {
         success: true,
-        key: { id, name: body.name.trim(), expiresAt: expiresAt ?? null },
+        key: { id, name: body.name.trim(), expiresAt: expiresAt ?? null, scope, formId },
         token,
       };
     },
@@ -46,6 +83,8 @@ export const apiKeyController = new Elysia({ prefix: "/api/v1/api-keys" })
       body: t.Object({
         name: t.String({ minLength: 1, maxLength: 120 }),
         expiresAt: t.Optional(t.String()),
+        scope: t.Optional(t.Union([t.Literal("FULL"), t.Literal("EMBED")])),
+        formId: t.Optional(t.String()),
       }),
       requireRole: true,
     },

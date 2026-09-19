@@ -52,11 +52,21 @@ model ApiKey {
   name   String
   /// SHA-256 du token remis à la création- jamais stocké en clair.
   tokenHash  String    @unique
+  /// Portée de la clé :
+  /// - FULL  : agit au nom du titulaire sur toute l'API (serveur MCP, scripts).
+  /// - EMBED : lit la définition d'un seul formulaire et y soumet des réponses,
+  ///           rien d'autre- ni les réponses déjà collectées, ni les réglages.
+  ///           Prévue pour être publiée dans le code d'une page tierce.
+  scope      String    @default("FULL")
+  /// Formulaire ciblé par une clé EMBED (`null` pour une clé FULL).
+  form       Form?     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId     String?
   lastUsedAt DateTime?
   expiresAt  DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([userId])
+  @@index([formId])
 }
 
 /// Jeton à usage unique envoyé par email permettant de définir (ou

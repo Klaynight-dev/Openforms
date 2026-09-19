@@ -7,6 +7,12 @@ import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
 import { recordFormVersion } from "../lib/formVersion.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
+import {
+  checkEmbedAccess,
+  frameAncestors,
+  parseEmbedOrigins,
+  sanitizeEmbedOrigins,
+} from "../lib/embed.ts";
 
 function slugify(title: string): string {
   const base = title
@@ -69,6 +75,8 @@ const FormSettings = {
   endsAt: t.Optional(t.Union([t.String(), t.Null()])),
   maxResponses: t.Optional(t.Union([t.Integer(), t.Null()])),
   translations: t.Optional(t.Any()),
+  embedEnabled: t.Optional(t.Boolean()),
+  embedOrigins: t.Optional(t.Array(t.String({ maxLength: 300 }), { maxItems: 50 })),
 };
 
 export const formController = new Elysia({ prefix: "/api/v1/forms" })
@@ -77,14 +85,33 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   // --- Définition publique d'un formulaire publié (remplissage, sans auth) ---
   .get(
     "/public/:slug",
-    async ({ params, set, auth }) => {
+    async ({ params, set, auth, apiKey, request }) => {
       const form = await prisma.form.findUnique({ where: { slug: params.slug } });
       if (!form || !form.isPublished) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
 
-      if (form.visibility === "PRIVATE") {
+      // Requête émise depuis un autre site : elle relève de l'intégration, pas
+      // du remplissage sur l'instance. Le formulaire doit l'autoriser.
+      const origin = request.headers.get("origin");
+      const external = !!origin && !env.frontendOrigins.includes(origin);
+      if (external) {
+        const refusal = checkEmbedAccess(form, origin);
+        if (refusal) {
+          set.status = refusal.status;
+          return { success: false, error: refusal.error };
+        }
+      }
+
+      // Une clé d'embed vaut autorisation pour son formulaire, et pour lui seul :
+      // c'est ce qui permet d'intégrer un formulaire PRIVATE ou RESTRICTED dans
+      // le site d'un partenaire sans y ouvrir de session.
+      const embedKey = apiKey?.scope === "EMBED" && apiKey.formId === form.id;
+
+      if (embedKey) {
+        // autorisé : la visibilité est couverte par la clé
+      } else if (form.visibility === "PRIVATE") {
         if (!auth) {
           set.status = 401;
           return { success: false, error: "Ce formulaire est réservé aux membres connectés." };
@@ -117,6 +144,36 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           privacyPolicyUrl: form.privacyPolicyUrl,
           isAnonymized: form.isAnonymized,
           visibility: form.visibility,
+        },
+      };
+    },
+    { params: t.Object({ slug: t.String() }) },
+  )
+
+  // --- Réglages d'intégration d'un formulaire publié (sans auth) ---
+  // Sert à la page /embed/:slug pour poser sa directive CSP `frame-ancestors`
+  // avant même de charger le formulaire. Ne révèle rien de plus que ce que
+  // l'en-tête CSP rend de toute façon visible.
+  .get(
+    "/public/:slug/embed",
+    async ({ params, set }) => {
+      const form = await prisma.form.findUnique({
+        where: { slug: params.slug },
+        select: { id: true, title: true, isPublished: true, embedEnabled: true, embedOrigins: true },
+      });
+      if (!form || !form.isPublished) {
+        set.status = 404;
+        return { success: false, error: "Formulaire introuvable." };
+      }
+      const origins = parseEmbedOrigins(form.embedOrigins);
+      return {
+        success: true,
+        embed: {
+          formId: form.id,
+          title: form.title,
+          enabled: form.embedEnabled,
+          origins,
+          frameAncestors: frameAncestors(origins, form.embedEnabled),
         },
       };
     },
@@ -195,6 +252,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           endsAt: body.endsAt ? new Date(body.endsAt) : null,
           maxResponses: body.maxResponses ?? null,
           translations: body.translations ?? {},
+          embedEnabled: body.embedEnabled ?? true,
+          embedOrigins: sanitizeEmbedOrigins(body.embedOrigins ?? []).origins,
           ownerId: auth.user.id,
           organizationId: body.organizationId ?? null,
         },
@@ -259,6 +318,21 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         nextSlug = result.slug;
       }
 
+      // Une origine mal recopiée passerait silencieusement à la trappe et
+      // l'intégration échouerait sans explication : on le dit tout de suite.
+      let nextEmbedOrigins: string[] | undefined;
+      if (body.embedOrigins !== undefined) {
+        const { origins, rejected } = sanitizeEmbedOrigins(body.embedOrigins);
+        if (rejected.length > 0) {
+          set.status = 422;
+          return {
+            success: false,
+            error: `Origine d'intégration invalide : ${rejected.join(", ")}. Attendu : https://exemple.org`,
+          };
+        }
+        nextEmbedOrigins = origins;
+      }
+
       // L'état d'avant la modification rejoint l'historique (voir formVersion.ts).
       await recordFormVersion(form, auth.user.id);
 
@@ -285,6 +359,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           endsAt: body.endsAt ? new Date(body.endsAt) : null,
           maxResponses: body.maxResponses,
           translations: body.translations,
+          embedEnabled: body.embedEnabled,
+          embedOrigins: nextEmbedOrigins,
         },
       });
       return { success: true, form: updated };

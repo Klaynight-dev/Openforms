@@ -46,7 +46,7 @@ export function isAllowedOrigin(origin: string): boolean {
  * ne fuite aucune donnée protégée par cookie.
  */
 const isEmbeddablePublicRoute = (pathname: string) =>
-  /^\/api\/v1\/forms\/public\/[^/]+$/.test(pathname) ||
+  /^\/api\/v1\/forms\/public\/[^/]+(\/embed)?$/.test(pathname) ||
   pathname === "/api/v1/responses/submit" ||
   pathname === "/api/v1/uploads";
 
@@ -59,7 +59,9 @@ export const corsPlugin = cors({
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "X-CSRF-Token"],
+  // `Authorization` : une page tierce peut présenter une clé d'embed (ofe_…)
+  // pour afficher un formulaire non public.
+  allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
 });
 
 /**

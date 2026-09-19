@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { resolveSession, type SessionContext } from "../lib/session.ts";
-import { resolveApiKey } from "../lib/apiKey.ts";
+import { resolveApiKey, type ApiKeyContext } from "../lib/apiKey.ts";
 
 export type Role = "SUPER_ADMIN" | "EDITOR";
 
@@ -25,7 +25,13 @@ export const authPlugin = new Elysia({ name: "auth" })
     const header = request.headers.get("authorization");
     if (header?.startsWith("Bearer ")) {
       const auth = await resolveApiKey(header.slice(7).trim());
-      if (auth) return { auth: auth as SessionContext | null, authSource: "apikey" as AuthSource };
+      if (auth) {
+        return {
+          auth: auth as SessionContext | null,
+          authSource: "apikey" as AuthSource,
+          apiKey: auth.apiKey as ApiKeyContext | null,
+        };
+      }
     }
 
     const token = cookie.session?.value;
@@ -33,6 +39,7 @@ export const authPlugin = new Elysia({ name: "auth" })
     return {
       auth: auth as SessionContext | null,
       authSource: (auth ? "session" : null) as AuthSource,
+      apiKey: null as ApiKeyContext | null,
     };
   })
   // Syntaxe de macro Elysia >= 1.3. L'ancienne forme
@@ -51,6 +58,7 @@ export const authPlugin = new Elysia({ name: "auth" })
 type GuardContext = {
   auth: SessionContext | null;
   authSource: AuthSource;
+  apiKey?: ApiKeyContext | null;
   set: { status?: number | string };
   request: Request;
 };
@@ -60,13 +68,24 @@ type GuardFailure = { success: false; error: string };
 /** Applique la garde : 401 si non connecté, 403 si CSRF absent ou rôle insuffisant. */
 function enforceRole(
   roles: Role[] | true | undefined,
-  { auth, authSource, set, request }: GuardContext,
+  { auth, authSource, apiKey, set, request }: GuardContext,
 ): GuardFailure | undefined {
   if (roles === undefined) return;
 
   if (!auth) {
     set.status = 401;
     return { success: false, error: "Authentification requise." };
+  }
+
+  // Une clé d'embed est publiée dans le code d'un site tiers : elle n'ouvre que
+  // les routes publiques (définition du formulaire, soumission), jamais une
+  // route gardée- sinon le simple fait de l'intégrer donnerait accès au compte.
+  if (apiKey?.scope === "EMBED") {
+    set.status = 403;
+    return {
+      success: false,
+      error: "Cette clé d'API est limitée à l'intégration d'un formulaire.",
+    };
   }
 
   // Protection CSRF : toute mutation authentifiée par cookie doit présenter le

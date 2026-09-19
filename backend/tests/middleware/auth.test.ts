@@ -13,7 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { Elysia } from "elysia";
 import { authPlugin } from "../../src/middleware/auth.ts";
 
-type TestMode = "anon" | "session" | "apikey";
+type TestMode = "anon" | "session" | "apikey" | "embedkey";
 
 /**
  * Monte une app protégée par le vrai `authPlugin`. L'identité est injectée par
@@ -36,7 +36,13 @@ function buildApp() {
             displayName: null,
           },
         },
-        authSource: mode === "apikey" ? "apikey" : "session",
+        authSource: mode === "session" ? "session" : "apikey",
+        apiKey:
+          mode === "embedkey"
+            ? { id: "k1", scope: "EMBED", formId: "f1" }
+            : mode === "apikey"
+              ? { id: "k1", scope: "FULL", formId: null }
+              : null,
       };
     })
     .get("/read", () => ({ ok: true }), { requireRole: true })
@@ -109,5 +115,35 @@ describe("protection CSRF", () => {
   it("exempte les clés d'API, non rejouables par un navigateur", async () => {
     const res = await call("/mutate", { method: "POST", headers: { "x-test-mode": "apikey" } });
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * Une clé d'embed est publiée en clair dans le code d'un site tiers. Si elle
+ * ouvrait ne serait-ce qu'une route gardée, intégrer un formulaire reviendrait
+ * à publier les accès du compte qui l'héberge.
+ */
+describe("clé d'API restreinte à l'intégration", () => {
+  it("refuse une lecture sur une route gardée", async () => {
+    const res = await call("/read", { headers: { "x-test-mode": "embedkey" } });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toContain("intégration");
+  });
+
+  it("refuse une mutation sur une route gardée", async () => {
+    const res = await call("/mutate", { method: "POST", headers: { "x-test-mode": "embedkey" } });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuse une route d'administration, même avec le rôle SUPER_ADMIN", async () => {
+    const res = await call("/admin", {
+      method: "POST",
+      headers: { "x-test-mode": "embedkey", "x-test-role": "SUPER_ADMIN" },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("laisse passer une route publique", async () => {
+    expect((await call("/public", { headers: { "x-test-mode": "embedkey" } })).status).toBe(200);
   });
 });
