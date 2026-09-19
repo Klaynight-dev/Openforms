@@ -21,10 +21,16 @@
 {:else}
   <div class="p-6 text-center">
     <p class="text-sm text-[color:var(--muted)]">
-      L'intégration de ce formulaire sur un site externe est désactivée.
+      {#if data.notFound}
+        Ce formulaire n'existe pas ou n'est pas publié.
+      {:else}
+        L'intégration de ce formulaire sur un site externe est désactivée.
+      {/if}
     </p>
-    <a class="mt-3 inline-block text-sm underline underline-offset-2" href={standaloneUrl} target="_blank" rel="noopener">
-      Ouvrir le formulaire
-    </a>
+    {#if !data.notFound}
+      <a class="mt-3 inline-block text-sm underline underline-offset-2" href={standaloneUrl} target="_blank" rel="noopener">
+        Ouvrir le formulaire
+      </a>
+    {/if}
   </div>
 {/if}
