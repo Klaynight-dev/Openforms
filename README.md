@@ -18,6 +18,11 @@
 * **Tri & Filtres** : Recherche globale, tri par colonne et filtres multi-critères.
 * **Import / Export** : Importation et exportation réelles de fichiers `.xlsx` (Excel) et `.csv`.
 
+### 🧩 Intégration dans un site tiers
+* **Trois voies au choix** : un `<iframe>`, un script qui ajuste le cadre à la hauteur du formulaire, ou l'API pour construire sa propre interface- [voir la section dédiée](#-intégrer-un-formulaire-dans-un-autre-site).
+* **Sites autorisés par formulaire** : liste d'origines (jokers de sous-domaine compris) appliquée au cadrage comme aux appels d'API.
+* **Clés d'intégration** : une clé restreinte à un formulaire, en lecture et en soumission, publiable dans le code du site hôte.
+
 ### 🔒 Sécurité renforcée
 * **Authentification robuste** : Hachage Argon2id via `Bun.password`, sessions par cookie sécurisé `HttpOnly`.
 * **Protections intégrées** : Validation stricte des données avec Typebox, en-têtes de sécurité, jetons CSRF (Double-Submit Cookie), limitation de requêtes (rate-limiting) et CORS restreints.
@@ -58,12 +63,14 @@ Formulaire_Humanitour/
 │       └── index.ts             # Point d'entrée de l'API & Swagger
 │
 └── frontend/                    # Application SvelteKit + Svelte 5 (SPA / SSR Node)
+    ├── embed/widget.ts          # Widget autonome bundlé vers static/embed.js
     └── src/
+        ├── hooks.server.ts      # Politique de cadrage (iframe) des pages servies
         ├── lib/
-        │   ├── components/      # FormBuilder, Tableur, FieldInput...
+        │   ├── components/      # FormBuilder, Tableur, FieldInput, PublicForm...
         │   ├── api/client.ts    # Client API typé avec gestion automatique du CSRF
         │   └── formulaEngine.ts # Évaluateur de formules arithmétiques sécurisé
-        └── routes/              # Routes et pages SvelteKit (Administration et Remplissage)
+        └── routes/              # Routes et pages SvelteKit (admin, /f/:slug, /embed/:slug)
 ```
 
 ---
@@ -218,27 +225,60 @@ Chaque formulaire dispose d'un onglet **Paramètres → Lien personnalisé** per
 
 ---
 
-## 🧩 Widget d'embed (intégrer un formulaire sur un site tiers)
+## 🧩 Intégrer un formulaire dans un autre site
 
-Un formulaire **publié et en visibilité `PUBLIC`** peut être intégré directement dans le DOM de n'importe quel site (pas d'iframe) via un petit script autonome, `embed.js`, généré depuis `frontend/embed/widget.ts` et servi comme asset statique du frontend (`/embed.js`).
+Un formulaire publié peut être affiché sur n'importe quel site, de trois façons. Tout se règle depuis **Réglages → Intégration sur un autre site**, qui affiche aussi le code prêt à coller.
 
-### Usage déclaratif
+| Voie | Pour qui | Ce que ça donne |
+| --- | --- | --- |
+| **iframe** | tout le monde | Une ligne de HTML. Isolation totale : ni CSS ni script n'entrent dans la page hôte. Hauteur fixe, à régler une fois. |
+| **Script** (`embed.js`) | site que vous maîtrisez | Même cadre, mais sa hauteur suit le contenu. Un formulaire à plusieurs pages n'a plus de défilement interne. |
+| **API** | équipe technique | Votre propre interface. L'API sert la définition du formulaire en JSON et applique les mêmes validations à la soumission. |
+
+### Autoriser (et restreindre) l'intégration
+
+Deux réglages par formulaire :
+
+* **Autoriser l'intégration** : décoché, aucun cadre externe ne peut afficher le formulaire- le navigateur le bloque (`frame-ancestors 'none'`).
+* **Sites autorisés** : une origine par ligne, `https://*.exemple.org` couvrant les sous-domaines. **Laisser la liste vide autorise tous les sites**, ce qui est le comportement attendu d'un formulaire public ; la renseigner restreint à la fois le cadrage (CSP) et les appels d'API portant un en-tête `Origin` non déclaré.
+
+Un appel serveur à serveur (curl, script, intégration Dolibarr) n'envoie pas d'en-tête `Origin` : il n'est jamais concerné par cette liste.
+
+### iframe
 
 ```html
-<div data-openforms="mon-slug"></div>
+<iframe
+  src="https://forms.exemple.com/embed/mon-slug"
+  title="Formulaire d'adhésion"
+  style="width:100%;border:0;height:720px"
+  loading="lazy"
+></iframe>
+```
+
+La page `/embed/:slug` sert exactement le même formulaire que `/f/:slug`, sans le fond pleine page.
+
+### Script (cadre auto-dimensionné)
+
+```html
+<div data-openforms="mon-slug" data-openforms-mode="iframe"></div>
 <script src="https://forms.exemple.com/embed.js" defer></script>
 ```
 
-Au chargement, le script scanne le DOM à la recherche de tout élément `[data-openforms]` et y monte le formulaire correspondant (rendu dans un **Shadow DOM**, donc sans collision avec le CSS du site hôte).
+`embed.js` est généré depuis `frontend/embed/widget.ts` et servi comme asset statique du frontend. Il scanne le DOM à la recherche des éléments `[data-openforms]` et y monte le formulaire.
 
-* Si le frontend et l'API sont servis en routage par chemin same-origin (voir la section domaines ci-dessus), rien d'autre à faire : l'API est déduite de l'origine du `<script src>`.
-* Si l'API est sur un sous-domaine séparé, précisez-la par élément avec `data-openforms-api="https://api-forms.exemple.com"`, ou globalement avant l'inclusion du script :
-  ```html
-  <script>window.OpenFormsConfig = { apiBase: "https://api-forms.exemple.com" };</script>
-  <script src="https://forms.exemple.com/embed.js" defer></script>
-  ```
+Attributs reconnus :
 
-### Usage programmatique
+| Attribut | Rôle |
+| --- | --- |
+| `data-openforms` | Slug du formulaire (obligatoire). |
+| `data-openforms-mode` | `iframe` (cadre isolé, auto-dimensionné) ou `inline` (défaut). |
+| `data-openforms-api` | Origine de l'API, si elle n'est pas celle du `<script src>`. |
+| `data-openforms-app` | Origine des pages, si l'API vit sur un domaine séparé. |
+| `data-openforms-key` | Clé d'intégration, pour un formulaire non public. |
+
+Sans `data-openforms-mode="iframe"`, le widget construit le formulaire **dans la page hôte**, à l'intérieur d'un Shadow DOM (aucune collision CSS). Le site hôte doit alors figurer dans les sites autorisés, puisque c'est lui qui appelle l'API.
+
+Usage programmatique :
 
 ```html
 <div id="mon-form"></div>
@@ -247,30 +287,69 @@ Au chargement, le script scanne le DOM à la recherche de tout élément `[data-
   window.addEventListener("DOMContentLoaded", () => {
     OpenForms.mount(document.getElementById("mon-form"), {
       slug: "mon-slug",
-      apiBase: "https://api-forms.exemple.com",
+      mode: "iframe",
       onSubmit: (responseId) => console.log("Réponse enregistrée :", responseId),
     });
   });
 </script>
 ```
 
+Le cadre communique avec la page hôte par `postMessage` : `openforms:resize` (hauteur), `openforms:scroll` (changement de page) et `openforms:submitted` (réponse enregistrée). `embed.js` filtre ces messages sur l'origine **et** sur le cadre émetteur.
+
+### API
+
+```bash
+# Définition du formulaire
+curl https://forms.exemple.com/api/v1/forms/public/mon-slug
+
+# Envoi d'une réponse
+curl -X POST https://forms.exemple.com/api/v1/responses/submit \
+  -H 'Content-Type: application/json' \
+  -d '{"formId":"<uuid>","consent":true,"data":{"nom":"Dupont"}}'
+```
+
+Le champ `consent` est obligatoire dès que le formulaire exige un consentement : c'est la même règle RGPD que sur le formulaire hébergé, elle ne se contourne pas par l'API.
+
+### Formulaires non publics : les clés d'intégration
+
+Un formulaire `PRIVATE` ou `RESTRICTED` demande une connexion, impossible dans un cadre tiers : le cookie de session y serait bloqué comme cookie tiers. Créez alors une **clé d'intégration** depuis les réglages du formulaire.
+
+Une clé `ofe_…` ne permet que deux choses, et sur ce seul formulaire : lire sa définition, et y soumettre une réponse. Elle ne donne accès ni aux réponses collectées, ni aux réglages, ni à quoi que ce soit d'autre du compte- **toute route authentifiée la refuse**, même si son titulaire est SUPER_ADMIN. Elle peut donc rester visible dans le code du site hôte.
+
+```html
+<!-- iframe -->
+<iframe src="https://forms.exemple.com/embed/mon-slug?key=ofe_…"></iframe>
+
+<!-- script -->
+<div data-openforms="mon-slug" data-openforms-mode="iframe" data-openforms-key="ofe_…"></div>
+```
+
+```bash
+# API
+curl https://forms.exemple.com/api/v1/forms/public/mon-slug \
+  -H 'Authorization: Bearer ofe_…'
+```
+
+Une clé se révoque à tout moment depuis les réglages du formulaire. À ne pas confondre avec les clés `ofk_…` de la page **Clés d'API**, qui portent, elles, tous les droits de leur titulaire et ne doivent jamais quitter un serveur.
+
 ### Limites connues
 
-* Uniquement les formulaires en visibilité **PUBLIC** (les formulaires `PRIVATE`/`RESTRICTED` nécessitent une connexion par cookie, incompatible avec un site tiers cross-origin- le widget affiche un message d'erreur dans ce cas).
 * Le champ `stripe_payment` reste, comme dans l'app principale, un module de **démonstration** (aucune transaction réelle n'est effectuée).
-* Pas de sélecteur de langue (le widget affiche toujours la langue par défaut du formulaire).
+* En mode `inline`, le widget n'affiche pas le sélecteur de langue (le mode `iframe`, lui, sert la page complète et en dispose).
 
 ### Build
 
-`embed.js` est régénéré automatiquement par `bun run build` (via le script `build:embed` du frontend, qui bundle `frontend/embed/widget.ts` avec `esbuild` vers `frontend/static/embed.js`). En développement, régénérez-le manuellement après une modification :
+`embed.js` est régénéré par `bun run build` (script `build:embed` du frontend : `esbuild` bundle `frontend/embed/widget.ts` vers `frontend/static/embed.js`). En développement, après modification du widget :
 
 ```bash
 cd frontend && bun run build:embed
 ```
 
-### CORS
+### CORS et cadrage
 
-Les endpoints nécessaires au widget (`GET /api/v1/forms/public/:slug`, `POST /api/v1/responses/submit`, `POST /api/v1/uploads`) sont volontairement ouverts à **toute origine** côté backend (voir `isEmbeddablePublicRoute` dans `backend/src/middleware/security.ts`), puisqu'ils ne s'appuient jamais sur le cookie de session- seuls les formulaires publics y répondent sans authentification. Le reste de l'API reste restreint à `FRONTEND_ORIGIN`.
+Les endpoints publics nécessaires à l'intégration (`GET /api/v1/forms/public/:slug`, son sous-chemin `/embed`, `POST /api/v1/responses/submit`, `POST /api/v1/uploads`) acceptent toute origine côté CORS- voir `isEmbeddablePublicRoute` dans `backend/src/middleware/security.ts`. Ils ne s'appuient jamais sur le cookie de session, et c'est la liste des sites autorisés du formulaire qui décide réellement de les servir ou non. Le reste de l'API reste restreint à `FRONTEND_ORIGIN`.
+
+Côté pages, le frontend refuse d'être encadré partout sauf sur `/embed/:slug` (voir `frontend/src/hooks.server.ts`) : sans cela, un site hostile pourrait encadrer l'écran d'administration et détourner les clics.
 
 ---
 
