@@ -95,6 +95,10 @@ export interface FormSummary {
   endsAt?: string | null;
   maxResponses?: number | null;
   translations?: any;
+  /** Intégration du formulaire dans un site tiers (iframe, widget, clé d'embed). */
+  embedEnabled?: boolean;
+  /** Origines autorisées à l'intégrer ; liste vide = toutes. */
+  embedOrigins?: string[];
   ownerId: string;
   organizationId?: string | null;
   updatedAt: string;
@@ -161,12 +165,34 @@ export interface StatsPreset {
   updatedAt: string;
 }
 
+/**
+ * Portée d'une clé d'API :
+ *  - FULL  : agit au nom du titulaire sur toute l'API (serveur MCP, scripts) ;
+ *  - EMBED : lit un seul formulaire et y soumet des réponses. Publiable dans
+ *            le code d'un site tiers.
+ */
+export type ApiKeyScope = "FULL" | "EMBED";
+
 export interface ApiKeyInfo {
   id: string;
   name: string;
   lastUsedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
+  scope?: ApiKeyScope;
+  /** Formulaire ciblé par une clé EMBED. */
+  formId?: string | null;
+  form?: { title: string; slug: string } | null;
+}
+
+/** Réglages d'intégration d'un formulaire publié, servis sans authentification. */
+export interface EmbedConfig {
+  formId: string;
+  title: string;
+  enabled: boolean;
+  origins: string[];
+  /** Valeur prête à l'emploi pour la directive CSP `frame-ancestors`. */
+  frameAncestors: string;
 }
 
 export interface UploadedFileInfo {

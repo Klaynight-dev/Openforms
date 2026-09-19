@@ -24,6 +24,8 @@ import type {
   StatsPreset,
   StatsPresetConfig,
   ApiKeyInfo,
+  ApiKeyScope,
+  EmbedConfig,
 } from "../types.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
@@ -46,6 +48,19 @@ function readCookie(name: string): string | undefined {
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+/**
+ * Jeton d'intégration (clé `ofe_…`) présenté à la place du cookie de session.
+ * Un formulaire intégré dans un site tiers n'a pas de session sur l'instance :
+ * dans un navigateur moderne, son cookie serait de toute façon bloqué comme
+ * cookie tiers.
+ */
+let embedToken: string | null = null;
+
+/** Arme le client pour un formulaire intégré (voir /embed/[slug]). */
+export function setEmbedToken(token: string | null): void {
+  embedToken = token && token.trim() ? token.trim() : null;
+}
+
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -53,6 +68,7 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     const csrf = readCookie("csrf");
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
+  if (embedToken) headers["Authorization"] = `Bearer ${embedToken}`;
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
@@ -104,6 +120,9 @@ export const api = {
     request<{ success: boolean; form: FormDetail; permission: Permission }>("GET", `/api/v1/forms/${id}`),
   getPublicForm: (slug: string) =>
     request<{ success: boolean; form: FormDetail }>("GET", `/api/v1/forms/public/${slug}`),
+  /** Réglages d'intégration d'un formulaire publié (sans authentification). */
+  getEmbedConfig: (slug: string) =>
+    request<{ success: boolean; embed: EmbedConfig }>("GET", `/api/v1/forms/public/${slug}/embed`),
   createForm: (data: FormPayload) =>
     request<{ success: boolean; form: FormDetail }>("POST", "/api/v1/forms", data),
   updateForm: (id: string, data: FormPayload) =>
@@ -219,10 +238,15 @@ export const api = {
   // --- Clés d'API (serveur MCP, scripts) ---
   listApiKeys: () => request<{ success: boolean; keys: ApiKeyInfo[] }>("GET", "/api/v1/api-keys"),
   /** Le token en clair n'est renvoyé qu'à la création : il n'est plus jamais récupérable. */
-  createApiKey: (name: string, expiresAt?: string) =>
+  createApiKey: (
+    name: string,
+    options: { expiresAt?: string; scope?: ApiKeyScope; formId?: string } = {},
+  ) =>
     request<{ success: boolean; key: ApiKeyInfo; token: string }>("POST", "/api/v1/api-keys", {
       name,
-      expiresAt,
+      expiresAt: options.expiresAt,
+      scope: options.scope,
+      formId: options.formId,
     }),
   deleteApiKey: (id: string) => request<{ success: boolean }>("DELETE", `/api/v1/api-keys/${id}`),
 
@@ -253,6 +277,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/uploads`, {
       method: "POST",
       credentials: "include",
+      headers: embedToken ? { Authorization: `Bearer ${embedToken}` } : undefined,
       body: fd,
     });
     const payload = await res.json();
@@ -285,6 +310,10 @@ export interface FormPayload {
   endsAt?: string | null;
   maxResponses?: number | null;
   translations?: any;
+  /** Autorise l'affichage du formulaire hors de l'instance (iframe, widget). */
+  embedEnabled?: boolean;
+  /** Origines autorisées à l'intégrer ; liste vide = toutes. */
+  embedOrigins?: string[];
 }
 
 export interface SignedFileDescriptor {
