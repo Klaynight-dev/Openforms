@@ -33,7 +33,7 @@
  *   });
  */
 
-export {};
+import { interpretHostMessage } from "./hostMessages.ts";
 
 const JUSTIFICATION_SUFFIX = "__justification";
 const OTHER_KEY = "__other__";
@@ -1050,22 +1050,24 @@ class OpenFormsFrame {
   /**
    * N'écoute que les messages venus du cadre de cette instance : une autre
    * page ouverte dans le même onglet ne doit pas pouvoir redimensionner le
-   * formulaire ni déclencher le rappel de soumission.
+   * formulaire ni déclencher le rappel de soumission. Le tri lui-même vit dans
+   * hostMessages.ts, où il est testé.
    */
   private onMessage = (event: MessageEvent) => {
-    if (event.origin !== this.origin) return;
-    if (event.source !== this.frame.contentWindow) return;
-    const data = event.data as { type?: string; slug?: string; height?: number; responseId?: string };
-    if (!data || data.slug !== this.slug) return;
+    const action = interpretHostMessage(
+      { origin: event.origin, source: event.source, data: event.data },
+      { origin: this.origin, source: this.frame.contentWindow, slug: this.slug },
+    );
+    if (!action) return;
 
-    if (data.type === "openforms:resize" && typeof data.height === "number") {
+    if (action.kind === "resize") {
       // Marge basse : évite qu'une ombre portée ou un champ en focus ne
       // déclenche une barre de défilement d'un pixel.
-      this.frame.style.height = `${Math.max(120, Math.ceil(data.height) + 8)}px`;
-    } else if (data.type === "openforms:scroll") {
+      this.frame.style.height = `${Math.max(120, Math.ceil(action.height) + 8)}px`;
+    } else if (action.kind === "scroll") {
       this.frame.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (data.type === "openforms:submitted") {
-      this.onSubmitCb?.(data.responseId);
+    } else {
+      this.onSubmitCb?.(action.responseId);
     }
   };
 

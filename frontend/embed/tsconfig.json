@@ -1,12 +1,20 @@
 {
   "compilerOptions": {
     "target": "es2019",
-    "lib": ["es2019", "dom", "dom.iterable"],
+    "lib": [
+      "es2019",
+      "dom",
+      "dom.iterable"
+    ],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
-    "types": []
+    "types": [],
+    "allowImportingTsExtensions": true
   },
-  "include": ["widget.ts"]
+  "include": [
+    "widget.ts",
+    "hostMessages.ts"
+  ]
 }
