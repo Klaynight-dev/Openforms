@@ -109,19 +109,25 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
       // le site d'un partenaire sans y ouvrir de session.
       const embedKey = apiKey?.scope === "EMBED" && apiKey.formId === form.id;
 
+      // Hors de son formulaire, une clé d'embed ne vaut pas mieux qu'un
+      // visiteur anonyme. Sans cette mise à l'écart, l'identité qu'elle porte
+      // satisferait le « il faut être connecté » de n'importe quel formulaire
+      // PRIVATE- une clé publiée sur un site tiers les ouvrirait tous.
+      const identity = apiKey?.scope === "EMBED" ? null : auth;
+
       if (embedKey) {
         // autorisé : la visibilité est couverte par la clé
       } else if (form.visibility === "PRIVATE") {
-        if (!auth) {
+        if (!identity) {
           set.status = 401;
           return { success: false, error: "Ce formulaire est réservé aux membres connectés." };
         }
       } else if (form.visibility === "RESTRICTED") {
-        if (!auth) {
+        if (!identity) {
           set.status = 401;
           return { success: false, error: "Ce formulaire est restreint. Veuillez vous connecter." };
         }
-        const userEmail = auth.user.email;
+        const userEmail = identity.user.email;
         const hasAccess = ((form.allowedEmails as string[] | null) ?? []).some(
           (email) => email.toLowerCase() === userEmail.toLowerCase()
         );
