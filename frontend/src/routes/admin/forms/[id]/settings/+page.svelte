@@ -5,9 +5,10 @@
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { realtime, commentsTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
-  import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings, IconUsers, IconClose, IconTrash } from "$lib/icons.ts";
+  import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings, IconUsers, IconClose, IconTrash, IconCode } from "$lib/icons.ts";
+  import Segmented from "$components/Segmented.svelte";
   import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders, ChatCircle as IconComment } from "phosphor-svelte";
-  import type { FormDetail, Permission, FormRole, FormComment } from "$lib/types.ts";
+  import type { FormDetail, Permission, FormRole, FormComment, ApiKeyInfo } from "$lib/types.ts";
 
   const editorState = getContext<{
     form: FormDetail | null;
@@ -155,6 +156,8 @@
       startsAt: (form?.startsAt ?? null) as string | null,
       endsAt: (form?.endsAt ?? null) as string | null,
       maxResponses: (form?.maxResponses ?? null) as number | null,
+      embedEnabled: form?.embedEnabled ?? true,
+      embedOrigins: form?.embedOrigins ?? ([] as string[]),
     };
   }
 
@@ -254,6 +257,155 @@
     setTimeout(() => { slugCopied = false; }, 2000);
   }
 
+
+  // --- Intégration sur un site tiers ---------------------------------------
+
+  /** Onglet de code affiché : chacun correspond à une façon d'intégrer. */
+  let embedTab = $state<"iframe" | "script" | "api">("iframe");
+  let copiedSnippet = $state<string | null>(null);
+
+  const EMBED_TABS = [
+    { value: "iframe" as const, label: "iframe", title: "Un cadre isolé, à hauteur fixe" },
+    { value: "script" as const, label: "Script", title: "Cadre dont la hauteur suit le formulaire" },
+    { value: "api" as const, label: "API", title: "Votre propre interface, servie par l'API" },
+  ];
+
+  const ORIGINS_PLACEHOLDER = ["https://exemple.org", "https://*.partenaire.fr"].join("\n");
+
+  /** Saisie libre des origines, une par ligne : plus lisible qu'une liste de champs. */
+  let embedOriginsText = $state("");
+  let embedOriginsTouched = $state(false);
+
+  // Tant que l'administrateur n'a pas touché au champ, il suit le formulaire ;
+  // ensuite c'est sa saisie qui fait foi, sinon la frappe serait écrasée.
+  $effect(() => {
+    const origins = settings.embedOrigins;
+    if (embedOriginsTouched) return;
+    untrack(() => {
+      embedOriginsText = origins.join("\n");
+    });
+  });
+
+  function commitEmbedOrigins() {
+    settings.embedOrigins = embedOriginsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    embedOriginsTouched = false;
+  }
+
+  let embedUrl = $derived(`${origin || ""}/embed/${settings.slug || ""}`);
+
+  /**
+   * Les extraits sont construits à partir de l'origine courante : ils restent
+   * valables tels quels une fois collés, y compris derrière un domaine
+   * personnalisé.
+   */
+  let iframeSnippet = $derived(
+    [
+      "<iframe",
+      `  src="${embedUrl}"`,
+      `  title="${(editorState.form?.title ?? "Formulaire").replace(/"/g, "&quot;")}"`,
+      '  style="width:100%;border:0;height:720px"',
+      '  loading="lazy"',
+      "></iframe>",
+    ].join("\n"),
+  );
+
+  // Les balises de l'extrait sont assemblées morceau par morceau : le
+  // compilateur Svelte lit ce bloc à travers un scanner HTML, et une balise
+  // écrite en toutes lettres y ouvrirait ou refermerait le composant.
+  const SCRIPT_OPEN = "<" + "script";
+  const SCRIPT_CLOSE = "<" + "/script>";
+
+  let scriptSnippet = $derived(
+    [
+      `<div data-openforms="${settings.slug}" data-openforms-mode="iframe"></div>`,
+      `${SCRIPT_OPEN} src="${origin || ""}/embed.js" defer>${SCRIPT_CLOSE}`,
+    ].join("\n"),
+  );
+
+  let apiSnippet = $derived(
+    [
+      "# Définition du formulaire",
+      `curl ${origin || ""}/api/v1/forms/public/${settings.slug}`,
+      "",
+      "# Envoi d'une réponse",
+      `curl -X POST ${origin || ""}/api/v1/responses/submit \\`,
+      "  -H 'Content-Type: application/json' \\",
+      `  -d '{"formId":"${editorState.form?.id ?? ""}","consent":true,"data":{}}'`,
+    ].join("\n"),
+  );
+
+  let currentSnippet = $derived(
+    embedTab === "iframe" ? iframeSnippet : embedTab === "script" ? scriptSnippet : apiSnippet,
+  );
+
+  async function copySnippet() {
+    await navigator.clipboard.writeText(currentSnippet);
+    copiedSnippet = embedTab;
+    setTimeout(() => {
+      copiedSnippet = null;
+    }, 2000);
+  }
+
+  // --- Clés d'intégration ---------------------------------------------------
+  // Une clé d'embed ne donne accès qu'à ce formulaire, en lecture et en
+  // soumission : elle peut donc vivre en clair dans le code du site hôte.
+
+  let embedKeys = $state<ApiKeyInfo[]>([]);
+  let embedKeyName = $state("");
+  let creatingKey = $state(false);
+  /** Token en clair : affiché une seule fois, juste après sa création. */
+  let freshKey = $state<string | null>(null);
+
+  async function loadEmbedKeys(formId: string) {
+    try {
+      const res = await api.listApiKeys();
+      embedKeys = res.keys.filter((k) => k.scope === "EMBED" && k.formId === formId);
+    } catch {
+      // Les clés appartiennent au compte : un collaborateur sans droit d'y
+      // accéder voit simplement une liste vide.
+      embedKeys = [];
+    }
+  }
+
+  $effect(() => {
+    const formId = editorState.form?.id;
+    if (!formId) return;
+    loadEmbedKeys(formId);
+  });
+
+  async function createEmbedKey(e: Event) {
+    e.preventDefault();
+    if (!editorState.form || !embedKeyName.trim()) return;
+    creatingKey = true;
+    try {
+      const res = await api.createApiKey(embedKeyName.trim(), {
+        scope: "EMBED",
+        formId: editorState.form.id,
+      });
+      freshKey = res.token;
+      embedKeyName = "";
+      await loadEmbedKeys(editorState.form.id);
+      toasts.success("Clé d'intégration créée.");
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Création impossible.");
+    } finally {
+      creatingKey = false;
+    }
+  }
+
+  async function revokeEmbedKey(id: string) {
+    try {
+      await api.deleteApiKey(id);
+      embedKeys = embedKeys.filter((k) => k.id !== id);
+      toasts.success("Clé révoquée.");
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Révocation impossible.");
+    }
+  }
+
   // Date formatting helper
   function formatDate(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -294,6 +446,8 @@
       startsAt: settings.startsAt,
       endsAt: settings.endsAt,
       maxResponses: settings.maxResponses ?? null,
+      embedEnabled: settings.embedEnabled,
+      embedOrigins: settings.embedOrigins,
     });
 
     // Update the parent's form object to keep layout title and details in sync
@@ -314,6 +468,12 @@
     editorState.form.startsAt = settings.startsAt;
     editorState.form.endsAt = settings.endsAt;
     editorState.form.maxResponses = settings.maxResponses;
+    // Le serveur normalise les origines (schéma ajouté, chemin retiré) : on
+    // reprend sa version, sinon l'écran afficherait encore la saisie brute.
+    editorState.form.embedEnabled = res.form.embedEnabled;
+    editorState.form.embedOrigins = res.form.embedOrigins;
+    settings.embedEnabled = res.form.embedEnabled ?? true;
+    settings.embedOrigins = res.form.embedOrigins ?? [];
   }
 
   // Register save function to the layout's header "Sauvegarder" button
@@ -365,6 +525,160 @@
       </div>
       <p class="text-[10px] text-[color:var(--muted)] break-all">{publicUrl}</p>
       <p class="text-[10px] text-[color:var(--muted)]">3 à 80 caractères : minuscules, chiffres et tirets uniquement.</p>
+    </div>
+  </div>
+
+
+  <!-- Integration Card -->
+  <div class="bg-white rounded-2xl border border-[color:var(--line)] shadow-sm overflow-hidden">
+    <div class="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+      <div class="p-2 rounded-lg bg-emerald-50 text-emerald-600"><IconCode size={20} /></div>
+      <div>
+        <h3 class="font-bold text-sm text-[color:var(--ink)]">Intégration sur un autre site</h3>
+        <p class="text-[11px] text-[color:var(--muted)]">Afficher ce formulaire dans votre site, sans rediriger le visiteur</p>
+      </div>
+    </div>
+    <div class="p-6 space-y-5">
+      <label class="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={settings.embedEnabled}
+          class="mt-1 h-4 w-4 rounded border-gray-300 text-[color:var(--brand)] focus:ring-[color:var(--brand)] accent-[color:var(--brand)]"
+        />
+        <div>
+          <span class="text-sm font-semibold text-[color:var(--ink)]">Autoriser l'intégration</span>
+          <p class="text-xs text-[color:var(--muted)] mt-0.5">Décoché, le formulaire n'est accessible que sur cette instance : tout cadre externe est refusé par le navigateur.</p>
+        </div>
+      </label>
+
+      {#if settings.embedEnabled}
+        <div class="animate-fade-in space-y-5">
+          <div>
+            <label class="label text-xs" for="embed-origins-input">Sites autorisés</label>
+            <textarea
+              id="embed-origins-input"
+              class="input text-xs font-mono"
+              rows="3"
+              placeholder={ORIGINS_PLACEHOLDER}
+              bind:value={embedOriginsText}
+              oninput={() => (embedOriginsTouched = true)}
+              onblur={commitEmbedOrigins}
+            ></textarea>
+            <p class="text-[10px] text-[color:var(--muted)] mt-1">
+              Une adresse par ligne. <strong>Laisser vide autorise tous les sites</strong> ;
+              renseignez-les pour que le formulaire ne s'affiche que chez vous.
+              <code>https://*.exemple.org</code> couvre les sous-domaines.
+            </p>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <span class="label text-xs !mb-0">Code à coller</span>
+              <Segmented
+                dense
+                label="Méthode d'intégration"
+                value={embedTab}
+                options={EMBED_TABS}
+                onchange={(v) => (embedTab = v)}
+              />
+            </div>
+
+            <div class="relative">
+              <pre class="rounded-xl border border-[color:var(--line)] bg-slate-50 p-4 pr-12 text-[11px] leading-relaxed font-mono overflow-x-auto whitespace-pre">{currentSnippet}</pre>
+              <button
+                type="button"
+                class="btn-text absolute top-2 right-2 !px-2"
+                title="Copier le code"
+                onclick={copySnippet}
+              >
+                {#if copiedSnippet === embedTab}
+                  <IconCheck size={16} class="text-green-600" />
+                {:else}
+                  <IconLink size={16} />
+                {/if}
+              </button>
+            </div>
+
+            <p class="text-[10px] text-[color:var(--muted)] mt-2">
+              {#if embedTab === "iframe"}
+                Le plus simple, et le plus isolé : aucun script n'entre dans votre page. La hauteur est fixe, ajustez-la à votre formulaire.
+              {:else if embedTab === "script"}
+                Même cadre, mais sa hauteur suit le contenu : plus de défilement interne sur un formulaire à plusieurs pages.
+              {:else}
+                Pour construire votre propre interface. Le formulaire répond en JSON ; la soumission applique les mêmes règles que le formulaire hébergé.
+              {/if}
+            </p>
+          </div>
+
+          {#if settings.visibility !== "PUBLIC"}
+            <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p class="text-xs font-semibold text-amber-900">Ce formulaire n'est pas public</p>
+              <p class="text-[11px] text-amber-800 mt-1">
+                Un visiteur ne peut pas se connecter depuis un cadre externe : son cookie y serait
+                bloqué comme cookie tiers. Créez une clé d'intégration ci-dessous, puis ajoutez-la
+                à l'adresse (<code>?key=…</code>) ou à l'attribut <code>data-openforms-key</code>.
+              </p>
+            </div>
+          {/if}
+
+          {#if canManageAccess}
+            <div class="border-t border-slate-100 pt-5">
+              <span class="label text-xs">Clés d'intégration</span>
+              <p class="text-[10px] text-[color:var(--muted)] mb-3">
+                Une clé ne donne accès qu'à ce formulaire : le lire et y répondre, rien d'autre.
+                Elle peut donc rester visible dans le code de votre site.
+              </p>
+
+              {#if freshKey}
+                <div class="mb-3 rounded-xl border border-green-200 bg-green-50 p-4 animate-fade-in">
+                  <p class="text-xs font-semibold text-green-900 mb-2">
+                    Copiez cette clé maintenant : elle ne sera plus affichée.
+                  </p>
+                  <code class="block text-[11px] font-mono break-all bg-white border border-green-200 rounded-lg p-2.5">{freshKey}</code>
+                  <button type="button" class="btn-text text-[11px] mt-2" onclick={() => (freshKey = null)}>
+                    J'ai copié la clé
+                  </button>
+                </div>
+              {/if}
+
+              {#if embedKeys.length > 0}
+                <ul class="mb-3 space-y-2">
+                  {#each embedKeys as key (key.id)}
+                    <li class="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--line)] px-3 py-2">
+                      <div class="min-w-0">
+                        <p class="text-xs font-semibold truncate">{key.name}</p>
+                        <p class="text-[10px] text-[color:var(--muted)]">
+                          {key.lastUsedAt ? "Dernier appel le " + new Date(key.lastUsedAt).toLocaleDateString("fr-FR") : "Jamais utilisée"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn-text !px-2 text-[color:var(--danger)]"
+                        title="Révoquer cette clé"
+                        onclick={() => revokeEmbedKey(key.id)}
+                      >
+                        <IconTrash size={16} />
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+
+              <form class="flex items-center gap-2" onsubmit={createEmbedKey}>
+                <input
+                  class="input text-xs flex-1"
+                  type="text"
+                  placeholder="Nom de la clé (ex. site vitrine)"
+                  bind:value={embedKeyName}
+                />
+                <button type="submit" class="btn-secondary text-xs shrink-0" disabled={creatingKey || !embedKeyName.trim()}>
+                  {creatingKey ? "…" : "Créer"}
+                </button>
+              </form>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 

@@ -77,6 +77,7 @@ import {
   ArrowClockwise,
   ClockCounterClockwise,
   Clipboard,
+  CodeSimple,
   CaretRight,
   CaretUp,
   Spinner,
@@ -151,6 +152,7 @@ export {
   Clipboard as IconClipboard,
   CaretRight as IconCaretRight,
   CaretUp as IconCaretUp,
+  CodeSimple as IconCode,
   Spinner as IconSpinner,
   Tray as IconEmpty,
 };

@@ -5,14 +5,30 @@
  * d'iframe), dans un Shadow DOM pour ne jamais entrer en conflit avec le CSS
  * du site qui l'intègre. Ne dépend d'aucune librairie externe.
  *
+ * Deux modes d'intégration :
+ *  - "inline" (par défaut) : le formulaire est construit dans la page hôte.
+ *    Il hérite de sa largeur, n'ajoute aucun cadre, et parle directement à
+ *    l'API- l'origine du site doit donc être autorisée sur le formulaire.
+ *  - "iframe" : la page /embed/:slug est chargée dans un cadre qui s'ajuste
+ *    tout seul à la hauteur du contenu. Isolation totale (CSS, scripts), et
+ *    les mises à jour du formulaire arrivent sans rien retoucher chez l'hôte.
+ *
  * Usage déclaratif :
- *   <div data-openforms="mon-slug" data-openforms-api="https://api.exemple.com"></div>
+ *   <div data-openforms="mon-slug" data-openforms-api="https://exemple.com"></div>
  *   <script src="https://exemple.com/embed.js" defer></script>
+ *
+ * Attributs reconnus :
+ *   data-openforms       slug du formulaire (obligatoire)
+ *   data-openforms-api   origine de l'API (déduite du <script> sinon)
+ *   data-openforms-app   origine des pages, si l'API est sur un autre domaine
+ *   data-openforms-mode  "inline" (défaut) ou "iframe"
+ *   data-openforms-key   clé d'intégration ofe_… pour un formulaire non public
  *
  * Usage programmatique :
  *   OpenForms.mount(document.getElementById("mon-form"), {
  *     slug: "mon-slug",
- *     apiBase: "https://api.exemple.com",
+ *     apiBase: "https://exemple.com",
+ *     mode: "iframe",
  *     onSubmit: (responseId) => console.log("Soumis", responseId),
  *   });
  */
@@ -66,9 +82,20 @@ interface Page {
   isLast: boolean;
 }
 
+type WidgetMode = "inline" | "iframe";
+
 interface WidgetOptions {
   slug: string;
   apiBase?: string;
+  /** "inline" construit le formulaire dans la page ; "iframe" l'isole. */
+  mode?: WidgetMode;
+  /**
+   * Origine servant les pages (mode iframe). Déduite du <script> par défaut.
+   * Ne diffère de `apiBase` que si l'API vit sur un sous-domaine séparé.
+   */
+  appBase?: string;
+  /** Clé d'intégration (ofe_…) pour un formulaire qui n'est pas public. */
+  key?: string;
   onSubmit?: (responseId: string | undefined) => void;
 }
 
@@ -190,6 +217,7 @@ class OpenFormsWidget {
   private root: HTMLElement;
   private apiBase: string;
   private slug: string;
+  private embedKey: string | null;
   private onSubmitCb?: (id: string | undefined) => void;
 
   private form: PublicForm | null = null;
@@ -208,6 +236,7 @@ class OpenFormsWidget {
   constructor(host: HTMLElement, opts: WidgetOptions) {
     this.host = host;
     this.slug = opts.slug;
+    this.embedKey = opts.key ?? null;
     this.onSubmitCb = opts.onSubmit;
     this.apiBase = (opts.apiBase ?? inferApiBase(host)).replace(/\/$/, "");
     this.shadow = host.attachShadow({ mode: "open" });
@@ -219,13 +248,20 @@ class OpenFormsWidget {
     this.load();
   }
 
+  /** En-tête d'autorisation porté par une clé d'intégration, le cas échéant. */
+  private authHeaders(): Record<string, string> {
+    return this.embedKey ? { Authorization: `Bearer ${this.embedKey}` } : {};
+  }
+
   private async load() {
     this.loading = true;
     this.loadError = null;
     this.statusError = null;
     this.render();
     try {
-      const res = await fetch(`${this.apiBase}/api/v1/forms/public/${encodeURIComponent(this.slug)}`);
+      const res = await fetch(`${this.apiBase}/api/v1/forms/public/${encodeURIComponent(this.slug)}`, {
+        headers: this.authHeaders(),
+      });
       const payload = await res.json();
       if (!res.ok) {
         this.statusError = res.status;
@@ -354,7 +390,7 @@ class OpenFormsWidget {
 
       const res = await fetch(`${this.apiBase}/api/v1/responses/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...this.authHeaders() },
         body: JSON.stringify({
           formId: this.form.id,
           data: cleanValues,
@@ -399,7 +435,11 @@ class OpenFormsWidget {
         fd.append("formId", this.form!.id);
         fd.append("fieldKey", field.key);
         fd.append("file", file);
-        const res = await fetch(`${this.apiBase}/api/v1/uploads`, { method: "POST", body: fd });
+        const res = await fetch(`${this.apiBase}/api/v1/uploads`, {
+          method: "POST",
+          headers: this.authHeaders(),
+          body: fd,
+        });
         const payload = await res.json();
         if (!res.ok) throw new Error(payload?.error ?? "Échec de l'envoi.");
         refs.push({ file: payload.file, signature: payload.signature });
@@ -969,15 +1009,94 @@ class OpenFormsWidget {
   }
 }
 
-function inferApiBase(host: Element): string {
-  const script = document.currentScript as HTMLScriptElement | null;
-  if (script?.src) {
-    try {
-      return new URL(script.src).origin;
-    } catch {
-      /* ignore */
-    }
+/**
+ * Intégration par cadre : charge /embed/:slug et laisse la page d'embed
+ * annoncer sa hauteur. Sans ce dialogue, un iframe reste à sa hauteur
+ * déclarée et le formulaire se retrouve avec sa propre barre de défilement au
+ * milieu de la page hôte.
+ */
+class OpenFormsFrame {
+  private frame: HTMLIFrameElement;
+  private origin: string;
+  private slug: string;
+  private onSubmitCb?: (id: string | undefined) => void;
+
+  constructor(host: HTMLElement, opts: WidgetOptions) {
+    this.slug = opts.slug;
+    this.onSubmitCb = opts.onSubmit;
+    // La page /embed/:slug est servie par le frontend, c'est-à-dire par
+    // l'origine d'où provient ce script- pas forcément celle de l'API, que
+    // certains déploiements placent sur un sous-domaine séparé.
+    const appBase = (opts.appBase ?? scriptOrigin() ?? opts.apiBase ?? window.location.origin).replace(/\/$/, "");
+    this.origin = new URL(appBase, window.location.href).origin;
+
+    const url = new URL(`/embed/${encodeURIComponent(opts.slug)}`, `${this.origin}/`);
+    if (opts.key) url.searchParams.set("key", opts.key);
+
+    this.frame = document.createElement("iframe");
+    this.frame.src = url.toString();
+    this.frame.title = "Formulaire";
+    this.frame.loading = "lazy";
+    this.frame.style.cssText = "width:100%;border:0;display:block;height:520px;transition:height .2s";
+    // Le formulaire peut ouvrir un lien (politique de confidentialité) et
+    // téléverser un fichier ; il n'a besoin de rien d'autre.
+    this.frame.setAttribute("allow", "clipboard-write");
+    this.frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    host.replaceChildren(this.frame);
+
+    window.addEventListener("message", this.onMessage);
   }
+
+  /**
+   * N'écoute que les messages venus du cadre de cette instance : une autre
+   * page ouverte dans le même onglet ne doit pas pouvoir redimensionner le
+   * formulaire ni déclencher le rappel de soumission.
+   */
+  private onMessage = (event: MessageEvent) => {
+    if (event.origin !== this.origin) return;
+    if (event.source !== this.frame.contentWindow) return;
+    const data = event.data as { type?: string; slug?: string; height?: number; responseId?: string };
+    if (!data || data.slug !== this.slug) return;
+
+    if (data.type === "openforms:resize" && typeof data.height === "number") {
+      // Marge basse : évite qu'une ombre portée ou un champ en focus ne
+      // déclenche une barre de défilement d'un pixel.
+      this.frame.style.height = `${Math.max(120, Math.ceil(data.height) + 8)}px`;
+    } else if (data.type === "openforms:scroll") {
+      this.frame.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (data.type === "openforms:submitted") {
+      this.onSubmitCb?.(data.responseId);
+    }
+  };
+
+  destroy() {
+    window.removeEventListener("message", this.onMessage);
+    this.frame.remove();
+  }
+}
+
+/**
+ * Origine d'où ce script a été chargé. `document.currentScript` n'est
+ * renseigné que pendant l'exécution initiale : on le retient tout de suite,
+ * les montages ultérieurs se feront hors de cette fenêtre.
+ */
+const SCRIPT_ORIGIN = (() => {
+  const script = document.currentScript as HTMLScriptElement | null;
+  if (!script?.src) return null;
+  try {
+    return new URL(script.src).origin;
+  } catch {
+    return null;
+  }
+})();
+
+function scriptOrigin(): string | null {
+  return SCRIPT_ORIGIN;
+}
+
+function inferApiBase(host: Element): string {
+  const fromScript = scriptOrigin();
+  if (fromScript) return fromScript;
   const w = window as unknown as { OpenFormsConfig?: { apiBase?: string } };
   if (w.OpenFormsConfig?.apiBase) return w.OpenFormsConfig.apiBase;
   return window.location.origin;
@@ -985,9 +1104,11 @@ function inferApiBase(host: Element): string {
 
 const mounted = new WeakSet<Element>();
 
-function mount(target: Element, opts: WidgetOptions): OpenFormsWidget {
+function mount(target: Element, opts: WidgetOptions): OpenFormsWidget | OpenFormsFrame {
   mounted.add(target);
-  return new OpenFormsWidget(target as HTMLElement, opts);
+  return opts.mode === "iframe"
+    ? new OpenFormsFrame(target as HTMLElement, opts)
+    : new OpenFormsWidget(target as HTMLElement, opts);
 }
 
 function init() {
@@ -996,8 +1117,13 @@ function init() {
     if (mounted.has(node)) continue;
     const slug = node.getAttribute("data-openforms");
     if (!slug) continue;
-    const apiBase = node.getAttribute("data-openforms-api") ?? undefined;
-    mount(node, { slug, apiBase });
+    mount(node, {
+      slug,
+      apiBase: node.getAttribute("data-openforms-api") ?? undefined,
+      appBase: node.getAttribute("data-openforms-app") ?? undefined,
+      mode: node.getAttribute("data-openforms-mode") === "iframe" ? "iframe" : "inline",
+      key: node.getAttribute("data-openforms-key") ?? undefined,
+    });
   }
 }
 
