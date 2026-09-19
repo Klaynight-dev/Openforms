@@ -1352,15 +1352,15 @@
     };
   }
 
-  function formatResponseValue(v: unknown): string {
+  function formatResponseValue(v: unknown, field?: FieldDefinition): string {
     if (v == null || v === "") return "—";
     if (Array.isArray(v)) {
-      return v.map(formatResponseValue).join(", ");
+      return v.map((item) => formatResponseValue(item, field)).join(", ");
     }
     const s = String(v);
     if (s.startsWith("__other__:")) return s.slice(10);
     if (s === "__other__") return "Autre";
-    return s;
+    return field?.options?.find((o) => o.value === s)?.label ?? s;
   }
 
   // --- Export des données filtrées (Excel / CSV / JSON) ---
@@ -1389,7 +1389,7 @@
         out[field.key] =
           ["number", "linear_scale"].includes(field.type) && raw !== "" && raw != null
             ? Number(raw)
-            : formatResponseValue(raw);
+            : formatResponseValue(raw, field);
       }
       return out;
     });
@@ -2134,7 +2134,7 @@
                     {#if row.values[field.key] == null || row.values[field.key] === ""}
                       <span class="text-[color:var(--muted)] italic text-xs">—</span>
                     {:else}
-                      {formatResponseValue(row.values[field.key])}
+                      {formatResponseValue(row.values[field.key], field)}
                     {/if}
                   </td>
                 {/each}
