@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FieldDefinition, MetaColumn, FieldType } from "../types.ts";
-  import { FIELD_TYPE_META, metaFor, newField } from "../fieldTypes.ts";
+  import { FIELD_TYPE_META, metaFor, newField, toFieldKey, uniqueFieldKey } from "../fieldTypes.ts";
   import { 
     FIELD_ICONS, 
     IconDrag, 
@@ -83,8 +83,19 @@
       : []
   );
 
+  /**
+   * Clés créées pendant cette session d'édition.
+   *
+   * Elles ne nomment encore aucune réponse enregistrée : les aligner sur le
+   * libellé ne détache rien. Une clé déjà enregistrée, elle, nomme les valeurs
+   * en base et ne bouge plus.
+   */
+  const draftKeys = new Set<string>();
+
   function addField(type: FieldType) {
-    fields = [...fields, newField(type)];
+    const field = newField(type, fields.map((f) => f.key));
+    draftKeys.add(field.key);
+    fields = [...fields, field];
     selectedIndex = fields.length - 1;
     // Scroll active card into view
     setTimeout(() => {
@@ -96,17 +107,55 @@
   }
 
   function removeField(i: number) {
+    draftKeys.delete(fields[i].key);
     fields = fields.filter((_, idx) => idx !== i);
     selectedIndex = null;
   }
 
   function duplicateField(i: number) {
-    const copy = { 
-      ...structuredClone($state.snapshot(fields[i])), 
-      key: `champ_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}` 
-    };
-    fields = [...fields.slice(0, i + 1), copy, ...fields.slice(i + 1)];
+    const source = structuredClone($state.snapshot(fields[i]));
+    const key = uniqueFieldKey(toFieldKey(source.label), fields.map((f) => f.key));
+    draftKeys.add(key);
+    fields = [...fields.slice(0, i + 1), { ...source, key }, ...fields.slice(i + 1)];
     selectedIndex = i + 1;
+  }
+
+  /**
+   * Aligne la clé d'un champ neuf sur son libellé, à la sortie de la saisie.
+   *
+   * À la frappe, la clé changerait à chaque caractère et l'opérateur verrait
+   * défiler des clés intermédiaires ; à l'enregistrement, il serait trop tard
+   * pour que la liste des champs porte des noms lisibles.
+   */
+  function syncKeyToLabel(index: number) {
+    const field = fields[index];
+    if (!draftKeys.has(field.key)) return;
+
+    const next = uniqueFieldKey(
+      toFieldKey(field.label),
+      fields.filter((_, i) => i !== index).map((f) => f.key),
+    );
+    if (next !== field.key) renameKey(field.key, next);
+  }
+
+  /** Renomme une clé et la suit partout où le brouillon la référence. */
+  function renameKey(from: string, to: string) {
+    for (const field of fields) {
+      if (field.key === from) field.key = to;
+      // Un affichage conditionnel pointe une clé : le laisser sur l'ancienne
+      // ferait disparaître le champ dépendant sans rien signaler.
+      if (field.condition?.fieldKey === from) field.condition.fieldKey = to;
+    }
+
+    for (const locale of Object.keys(settings.translations ?? {})) {
+      const translated = settings.translations[locale]?.fields;
+      if (!translated?.[from]) continue;
+      translated[to] = translated[from];
+      delete translated[from];
+    }
+
+    draftKeys.delete(from);
+    draftKeys.add(to);
   }
 
   // --- Drag & drop for reordering ---
@@ -273,7 +322,13 @@
     {/if}
 
     <!-- Fields container list -->
-    {#each fields as field, i (field.key)}
+    <!--
+      Clavé sur le champ lui-même, pas sur sa clé : la clé d'un champ neuf suit
+      son libellé, et la re-claver détruirait la carte en cours d'édition. Un
+      objet d'état garde son identité tant qu'il est dans la liste, donc le
+      réordonnancement déplace les cartes au lieu de les recréer.
+    -->
+    {#each fields as field, i (field)}
       {@const FieldIcon = FIELD_ICONS[field.type]}
       {@const isActive = selectedIndex === i}
 
@@ -326,6 +381,7 @@
                     id={`fb-q-${field.key}`}
                     class="input font-bold"
                     bind:value={field.label}
+                    onblur={() => syncKeyToLabel(i)}
                     placeholder={field.type === "text_block" ? "Titre du bloc de texte" : "Question sans titre"}
                   />
                 {:else}
@@ -333,9 +389,17 @@
                     id={`fb-q-${field.key}`}
                     class="input font-bold bg-brand-50/20 text-brand-700 placeholder-brand-300" 
                     placeholder={field.label} 
-                    bind:value={settings.translations[editingLocale].fields[field.key].label} 
+                    bind:value={settings.translations[editingLocale].fields[field.key].label}
                   />
                 {/if}
+                <!--
+                  La clé est le nom de la colonne dans les exports et pour toute
+                  intégration : la cacher obligeait à ouvrir un export pour la
+                  connaître.
+                -->
+                <p class="text-[10px] text-slate-400 mt-1">
+                  Clé : <span class="font-mono">{field.key}</span>
+                </p>
               </div>
 
               <!-- Type Select dropdown -->

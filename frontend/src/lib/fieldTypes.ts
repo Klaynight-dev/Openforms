@@ -34,13 +34,54 @@ export function metaFor(type: FieldType): FieldTypeMeta {
   return FIELD_TYPE_META.find((m) => m.type === type) ?? FIELD_TYPE_META[0];
 }
 
-let counter = 0;
-export function newField(type: FieldType): FieldDefinition {
-  counter += 1;
+/** Longueur maximale d'une clé, imposée par `FieldDefinitionSchema` côté API. */
+const KEY_MAX_LENGTH = 64;
+
+/**
+ * Clé dérivée d'un libellé : « Quelle est votre priorité ? » donne
+ * `quelle_est_votre_priorite`.
+ *
+ * La clé nomme la colonne dans les exports, dans les formules du tableur et
+ * dans toute intégration qui relit les réponses. Engendrée
+ * (`champ_m3x9z1_4`), elle n'apprend rien à personne : un site qui synchronise
+ * ce formulaire ne peut rapprocher aucun champ de sa question, et doit tout
+ * apparier à la main.
+ */
+export function toFieldKey(label: string): string {
+  const key = label
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, KEY_MAX_LENGTH)
+    .replace(/_+$/, "");
+
+  return key === "" ? "champ" : key;
+}
+
+/** La même clé, rendue unique dans le formulaire par un suffixe numérique. */
+export function uniqueFieldKey(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const room = KEY_MAX_LENGTH - String(suffix).length - 1;
+    const candidate = `${base.slice(0, room)}_${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+
+  // Mille champs portant le même libellé relève de la saisie, mais une clé en
+  // double casserait le formulaire : on retombe sur l'horodatage.
+  return `${base.slice(0, 50)}_${Date.now().toString(36)}`;
+}
+
+export function newField(type: FieldType, taken: Iterable<string> = []): FieldDefinition {
+  const label = metaFor(type).label;
   const base: FieldDefinition = {
-    key: `champ_${Date.now().toString(36)}_${counter}`,
+    key: uniqueFieldKey(toFieldKey(label), taken),
     type,
-    label: metaFor(type).label,
+    label,
     required: false,
   };
   if (metaFor(type).hasOptions) {
