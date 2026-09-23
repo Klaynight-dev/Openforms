@@ -14,6 +14,9 @@ function clientIp(request: Request): string | undefined {
   return fwd ? fwd.split(",")[0]?.trim() : undefined;
 }
 
+/** Chevauchement entre deux synchros incrémentales du tableur (voir GET /form/:formId). */
+const SYNC_OVERLAP_MS = 5_000;
+
 /** Sélection des champs de fichier exposés avec une ligne du tableur. */
 const fileFields = {
   select: { id: true, fieldKey: true, originalName: true, mimeType: true, sizeBytes: true },
@@ -275,9 +278,18 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
   // =========================================================================
   //  LECTURE ADMIN  (alimente le tableur)
   // =========================================================================
+  //  Avec `?since=<syncedAt précédent>`, seules les lignes modifiées depuis
+  //  sont renvoyées, accompagnées de la liste complète des identifiants : le
+  //  client garde ses lignes en cache et en retire celles qui ont disparu.
+  //  Déchiffrer et sérialiser tout le formulaire à chaque visite coûtait
+  //  l'essentiel du temps de chargement du tableur.
   .get(
     "/form/:formId",
-    async ({ auth, params, set }) => {
+    async ({ auth, params, query, set }) => {
+      // Horodatage pris avant la lecture : une ligne écrite pendant la requête
+      // sera renvoyée à la synchro suivante plutôt que perdue.
+      const syncedAt = new Date();
+
       const form = await prisma.form.findUnique({ where: { id: params.formId } });
       if (!form) {
         set.status = 404;
@@ -289,13 +301,23 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         return { success: false, error: "Accès refusé." };
       }
 
+      const since = query.since ? new Date(query.since) : null;
+      const delta = since !== null && !Number.isNaN(since.getTime());
+
       const responses = await prisma.response.findMany({
-        where: { formId: form.id },
+        where: delta
+          ? // Recouvrement de quelques secondes : une transaction validée juste
+            // après la lecture précédente porte un `updatedAt` antérieur à elle.
+            { formId: form.id, updatedAt: { gte: new Date(since!.getTime() - SYNC_OVERLAP_MS) } }
+          : { formId: form.id },
         orderBy: { submittedAt: "desc" },
         include: { files: fileFields },
       });
 
       const rows = responses.map(toRow);
+      const ids = delta
+        ? (await prisma.response.findMany({ where: { formId: form.id }, select: { id: true } })).map((r) => r.id)
+        : undefined;
 
       return {
         success: true,
@@ -307,9 +329,16 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
           metaColumns: form.metaColumns,
         },
         rows,
+        delta,
+        ids,
+        syncedAt: syncedAt.toISOString(),
       };
     },
-    { params: t.Object({ formId: t.String() }), requireRole: true },
+    {
+      params: t.Object({ formId: t.String() }),
+      query: t.Object({ since: t.Optional(t.String()) }),
+      requireRole: true,
+    },
   )
 
   // =========================================================================
