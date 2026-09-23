@@ -7,6 +7,8 @@
   import { askConfirm } from "$lib/stores/dialog.svelte.ts";
   import { realtime, responsesTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import { peekForms, refreshForms, rememberForms } from "$lib/formsCache.ts";
+  import { cacheGet, cacheSet } from "$lib/localCache.ts";
   import type { FormSummary, GlobalStats } from "$lib/types.ts";
   import {
     IconTable,
@@ -196,7 +198,17 @@
     return realtime.subscribe(ids.map(responsesTopic), applyRealtimeEvent);
   });
 
+  // Toute modification de la liste (publication, suppression, compteurs en
+  // direct) est reportée dans le cache local, relu à la prochaine visite.
+  $effect(() => {
+    if (!loading) rememberForms(forms);
+  });
+
   let statsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Les stats globales changent peu : on ne les redemande qu'au-delà de ce délai. */
+  const GLOBAL_STATS_TTL_MS = 5 * 60_000;
+  type CachedStats = { stats: GlobalStats; fetchedAt: number };
 
   function applyRealtimeEvent(event: RealtimeEvent) {
     const delta = event.type === "response:created" ? 1 : event.type === "response:deleted" ? -1 : 0;
@@ -216,6 +228,7 @@
       try {
         const res = await api.getGlobalStats();
         stats = res.stats;
+        void cacheSet("globalStats", { stats: res.stats, fetchedAt: Date.now() } satisfies CachedStats);
         await tick();
         lineChart?.dispose();
         await renderActivityChart();
@@ -226,33 +239,51 @@
   }
 
   async function load() {
-    loading = true;
+    // Dernières données connues d'abord : le tableau de bord s'affiche sans
+    // attendre l'API, puis se met à jour.
+    const [cachedForms, cachedOrgs, cachedStats] = await Promise.all([
+      peekForms(),
+      cacheGet<Organization[]>("organizations"),
+      auth.isSuperAdmin ? cacheGet<CachedStats>("globalStats") : undefined,
+    ]);
+    if (cachedForms) {
+      forms = cachedForms;
+      organizations = cachedOrgs ?? organizations;
+      loading = false;
+    }
+    if (cachedStats) stats = cachedStats.stats;
+
     try {
-      const res = await api.listForms();
-      forms = res.forms;
-      
-      const orgsRes = await api.listOrganizations();
+      const [freshForms, orgsRes] = await Promise.all([refreshForms(), api.listOrganizations()]);
+      forms = freshForms;
       organizations = orgsRes.organizations;
+      void cacheSet("organizations", orgsRes.organizations);
+      error = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Erreur de chargement.";
+      if (!cachedForms) error = e instanceof Error ? e.message : "Erreur de chargement.";
     } finally {
       loading = false;
     }
 
     // Charger les stats globales pour les SUPER_ADMIN
     if (auth.isSuperAdmin) {
-      statsLoading = true;
-      try {
-        const res = await api.getGlobalStats();
-        stats = res.stats;
-      } catch {
-        // Stats non critiques, on ignore l'erreur
-      } finally {
-        statsLoading = false;
+      const stale = !cachedStats || Date.now() - cachedStats.fetchedAt > GLOBAL_STATS_TTL_MS;
+      if (stale) {
+        statsLoading = !stats;
+        try {
+          const res = await api.getGlobalStats();
+          stats = res.stats;
+          void cacheSet("globalStats", { stats: res.stats, fetchedAt: Date.now() } satisfies CachedStats);
+        } catch {
+          // Stats non critiques, on ignore l'erreur
+        } finally {
+          statsLoading = false;
+        }
       }
       // Le graphique a besoin de `lineChartEl`, monté seulement une fois
       // `statsLoading` repassé à false (bascule {:else if stats} du template).
       await tick();
+      lineChart?.dispose();
       await renderActivityChart();
     }
   }

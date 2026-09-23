@@ -4,6 +4,8 @@
   import { page } from "$app/stores";
   import { api } from "$api/client.ts";
   import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
+  import { activityFromRows } from "$lib/responsesSync.ts";
+  import { getFormsCached } from "$lib/formsCache.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import { realtime, responsesTopic } from "$lib/stores/realtime.svelte.ts";
   import type {
@@ -873,12 +875,9 @@
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(async () => {
       try {
-        const [statsRes, responseRes] = await Promise.all([
-          api.getFormStatsSummary(formId),
-          getResponsesCached(formId),
-        ]);
-        activity = statsRes.summary.activity;
+        const responseRes = await getResponsesCached(formId);
         rows = responseRes.rows;
+        activity = activityFromRows(rows);
       } catch {
         /* silencieux : la page reste sur les données déjà affichées */
       }
@@ -887,17 +886,18 @@
 
   async function load() {
     try {
-      const [statsRes, responseRes, formRes, echartsMod] = await Promise.all([
-        api.getFormStatsSummary(formId),
+      // L'activité se déduit des réponses, déjà en cache : pas de requête
+      // dédiée aux statistiques.
+      const [responseRes, formRes, echartsMod] = await Promise.all([
         getResponsesCached(formId),
         api.getForm(formId).catch(() => null),
         import("echarts"),
       ]);
       echarts = echartsMod;
-      formTitle = statsRes.summary.title;
-      activity = statsRes.summary.activity;
+      formTitle = responseRes.form.title;
       schema = responseRes.form.schema as FieldDefinition[];
       rows = responseRes.rows;
+      activity = activityFromRows(rows);
       canEdit = responseRes.permission === "EDITOR";
       formDetail = formRes?.form ?? null;
       exportTheme = normalizeExportTheme(formRes?.form?.exportTheme);
@@ -906,10 +906,9 @@
       // Sources croisables : les autres formulaires de la même organisation.
       // Chargées à part- leur absence ne doit pas casser la page.
       const orgId = formRes?.form?.organizationId ?? null;
-      api
-        .listForms()
-        .then((res) => {
-          availableForms = res.forms.filter(
+      getFormsCached()
+        .then((forms) => {
+          availableForms = forms.filter(
             (f) => f.id !== formId && (orgId ? f.organizationId === orgId : false),
           );
         })

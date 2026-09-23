@@ -145,13 +145,20 @@ export const api = {
     ),
 
   // --- Réponses / tableur ---
-  listResponses: (formId: string) =>
+  /** Sans `since`, toutes les lignes ; avec, celles modifiées depuis et la liste des `ids` restants. */
+  listResponses: (formId: string, since?: string) =>
     request<{
       success: boolean;
       permission: Permission;
       form: { id: string; title: string; schema: FieldDefinition[]; metaColumns: MetaColumn[] };
       rows: ResponseRow[];
-    }>("GET", `/api/v1/responses/form/${formId}`),
+      delta?: boolean;
+      ids?: string[];
+      syncedAt?: string;
+    }>(
+      "GET",
+      `/api/v1/responses/form/${formId}${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+    ),
   addResponseRow: (formId: string) =>
     request<{ success: boolean; row: ResponseRow }>("POST", `/api/v1/responses/form/${formId}`),
   updateCell: (responseId: string, target: "field" | "meta", key: string, value: unknown) =>

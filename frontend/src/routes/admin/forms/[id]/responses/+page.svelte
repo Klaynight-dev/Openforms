@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import Tableur from "$components/Tableur.svelte";
   import { api } from "$api/client.ts";
-  import { getResponsesCached, invalidateResponsesCache } from "$lib/responsesCache.ts";
+  import { getResponsesCached, invalidateResponsesCache, peekResponses } from "$lib/responsesCache.ts";
   import { realtime, responsesTopic, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import EmptyState from "$lib/components/EmptyState.svelte";
@@ -63,20 +63,31 @@
     return realtime.subscribe([responsesTopic(id)], applyRealtimeEvent);
   });
 
+  function applyResponses(res: Awaited<ReturnType<typeof getResponsesCached>>) {
+    title = res.form.title;
+    fields = res.form.schema;
+    metaColumns = res.form.metaColumns;
+    rows = res.rows;
+    canEdit = res.permission === "EDITOR";
+  }
+
   async function load() {
+    // Dernières réponses connues d'abord : la page s'affiche sans attendre
+    // l'API, qui ne renvoie ensuite que ce qui a changé.
+    const formPromise = api.getForm(id).catch(() => null);
+    const cached = await peekResponses(id);
+    if (cached && loading) {
+      applyResponses(cached);
+      loading = false;
+    }
     try {
-      const [res, formRes] = await Promise.all([
-        getResponsesCached(id),
-        api.getForm(id).catch(() => null),
-      ]);
-      title = res.form.title;
-      fields = res.form.schema;
-      metaColumns = res.form.metaColumns;
-      rows = res.rows;
-      canEdit = res.permission === "EDITOR";
+      const [res, formRes] = await Promise.all([getResponsesCached(id), formPromise]);
+      applyResponses(res);
       if (formRes) detail = formRes.form;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Chargement impossible.";
+      // Avec des données en cache, un échec réseau ne masque pas la page.
+      if (!cached) error = e instanceof Error ? e.message : "Chargement impossible.";
+      else toasts.error("Réponses non synchronisées : affichage des dernières données connues.");
     } finally {
       loading = false;
     }

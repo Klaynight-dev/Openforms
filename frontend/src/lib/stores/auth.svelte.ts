@@ -3,6 +3,8 @@
  * Exporté comme objet réactif : les composants lisent `auth.user`, `auth.ready`…
  */
 import { api } from "../api/client.ts";
+import { bindCacheOwner } from "../localCache.ts";
+import { forgetResponses } from "../responsesCache.ts";
 import type { User } from "../types.ts";
 
 class AuthState {
@@ -20,7 +22,7 @@ class AuthState {
   async refresh() {
     try {
       const res = await api.me();
-      this.user = res.authenticated && res.user ? res.user : null;
+      await this.#setUser(res.authenticated && res.user ? res.user : null);
     } catch {
       this.user = null;
     } finally {
@@ -28,27 +30,37 @@ class AuthState {
     }
   }
 
+  /**
+   * Le cache local (réponses, formulaires) appartient au compte connecté : on
+   * le lie avant de rendre la main aux pages, qui le lisent aussitôt.
+   */
+  async #setUser(user: User | null) {
+    if (user?.id !== this.user?.id) forgetResponses();
+    await bindCacheOwner(user?.id ?? null);
+    this.user = user;
+  }
+
   async login(email: string, password: string) {
     const res = await api.login(email, password);
-    this.user = res.user;
+    await this.#setUser(res.user);
     return res.user;
   }
 
   async register(email: string, password: string, displayName?: string) {
     const res = await api.register(email, password, displayName);
-    this.user = res.user;
+    await this.#setUser(res.user);
     return res.user;
   }
 
   async acceptInvite(token: string, password: string) {
     const res = await api.acceptInvite(token, password);
-    this.user = res.user;
+    await this.#setUser(res.user);
     return res.user;
   }
 
   async logout() {
     await api.logout().catch(() => {});
-    this.user = null;
+    await this.#setUser(null);
   }
 }
 
