@@ -1,7 +1,7 @@
 /// Rôles applicatifs (cercle 3 : administration de la plateforme OpenForms).
 /// - SUPER_ADMIN : gestion des comptes, des clés d'API et de l'app elle-même.
 /// - EDITOR      : compte standard- ses droits sur un formulaire donné dépendent
-///                 uniquement de FormAccess (cercle 1), jamais de ce rôle.
+///                 de FormAccess et de ses organisations, jamais de ce rôle.
 enum Role {
   SUPER_ADMIN
   EDITOR
@@ -104,8 +104,8 @@ model Session {
 }
 
 /// Attribution explicite d'un formulaire à un collaborateur, avec un rôle
-/// (cercle 1). L'appartenance à une organisation (cercle 2) ne donne par
-/// elle-même aucun droit sur un formulaire précis- voir resolveFormPermission.
+/// (cercle 1). S'ajoute à l'accès que donne l'appartenance à l'organisation
+/// du formulaire : la règle la plus large l'emporte (resolveFormPermission).
 model FormAccess {
   id        String   @id @default(uuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
