@@ -23,6 +23,7 @@ export const FIELD_TYPES = [
   "signature",
   "address",
   "stripe_payment",
+  "rotation",
 ] as const;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -236,7 +237,8 @@ export function validateSubmission(
         break;
       }
       case "radio":
-      case "select": {
+      case "select":
+      case "rotation": {
         const s = String(raw);
         const allowed = new Set((field.options ?? []).map((o) => o.value));
         const isOther = field.allowOther && (s === "__other__" || s.startsWith("__other__:"));
@@ -317,6 +319,28 @@ export function validateSubmission(
   }
 
   return { errors, clean };
+}
+
+/** Champs « Répartition » d'un formulaire, dans l'ordre du schéma. */
+export function rotationFields(fields: FieldDefinition[]): FieldDefinition[] {
+  return fields.filter((f) => f.type === "rotation" && (f.options?.length ?? 0) > 0);
+}
+
+/**
+ * Variante attribuée au participant n° `seed` (0, 1, 2…) : l'option de rang
+ * `seed % nombre d'options`. Avec quatre listes, les participants 0, 4, 8…
+ * reçoivent la première, 1, 5, 9… la deuxième, et ainsi de suite.
+ */
+export function assignRotation(field: FieldDefinition, seed: number): string {
+  const options = field.options ?? [];
+  return options[seed % options.length]!.value;
+}
+
+/** Variantes de tous les champs « Répartition » pour le participant n° `seed`. */
+export function rotationAssignments(fields: FieldDefinition[], seed: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of rotationFields(fields)) out[field.key] = assignRotation(field, seed);
+  return out;
 }
 
 /** Teste une regex utilisateur sans laisser une expression malformée planter le serveur. */

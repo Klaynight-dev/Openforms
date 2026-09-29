@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   JUSTIFICATION_SUFFIX,
+  assignRotation,
+  rotationAssignments,
   safeRegexTest,
   validateSubmission,
   type FieldDefinition,
@@ -231,5 +233,59 @@ describe("safeRegexTest", () => {
 
   test("laisse passer la saisie plutôt que de planter sur une regex malformée", () => {
     expect(safeRegexTest("([a-z", "peu importe")).toBe(true);
+  });
+});
+
+describe("Répartition entre variantes", () => {
+  const listes = field({
+    key: "liste",
+    type: "rotation",
+    options: ["A", "B", "C", "D"].map((l) => ({ value: `Liste ${l}`, label: `Liste ${l}` })),
+  });
+
+  test("attribue la variante de rang numéro % nombre de variantes", () => {
+    expect([0, 1, 2, 3, 4, 5, 11].map((n) => assignRotation(listes, n))).toEqual([
+      "Liste A",
+      "Liste B",
+      "Liste C",
+      "Liste D",
+      "Liste A",
+      "Liste B",
+      "Liste D",
+    ]);
+  });
+
+  test("répartit les participants à parts égales", () => {
+    const counts: Record<string, number> = {};
+    for (let n = 0; n < 400; n++) {
+      const v = assignRotation(listes, n);
+      counts[v] = (counts[v] ?? 0) + 1;
+    }
+    expect(Object.values(counts)).toEqual([100, 100, 100, 100]);
+  });
+
+  test("ignore les champs de répartition sans variante", () => {
+    const vide = field({ key: "vide", type: "rotation", options: [] });
+    expect(rotationAssignments([listes, vide], 2)).toEqual({ liste: "Liste C" });
+  });
+
+  test("n'affiche que la liste attribuée et ne valide qu'elle", () => {
+    const films = (l: string) =>
+      field({
+        key: `films_${l}`,
+        type: "checkbox",
+        required: true,
+        options: [{ value: "f1", label: "Film 1" }],
+        condition: { fieldKey: "liste", value: `Liste ${l}` },
+      });
+    const fields = [listes, films("A"), films("B")];
+    const { errors, clean } = validateSubmission(fields, { liste: "Liste B", films_B: ["f1"] });
+    expect(errors).toHaveLength(0);
+    expect(clean).toEqual({ liste: "Liste B", films_B: ["f1"] });
+  });
+
+  test("refuse une variante qui n'existe pas", () => {
+    const { errors } = validateSubmission([listes], { liste: "Liste Z" });
+    expect(errors).toHaveLength(1);
   });
 });

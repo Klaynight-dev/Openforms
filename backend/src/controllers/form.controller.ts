@@ -7,6 +7,7 @@ import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
 import { recordFormVersion } from "../lib/formVersion.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
+import { resolveRotation } from "../lib/rotation.ts";
 import {
   checkEmbedAccess,
   frameAncestors,
@@ -85,7 +86,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
   // --- Définition publique d'un formulaire publié (remplissage, sans auth) ---
   .get(
     "/public/:slug",
-    async ({ params, set, auth, apiKey, request }) => {
+    async ({ params, query, set, auth, apiKey, request }) => {
       const form = await prisma.form.findUnique({ where: { slug: params.slug } });
       if (!form || !form.isPublished) {
         set.status = 404;
@@ -137,6 +138,9 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         }
       }
 
+      // Variantes attribuées à ce participant (champs « Répartition »).
+      const rotation = await resolveRotation(form, query.seed);
+
       return {
         success: true,
         form: {
@@ -151,9 +155,14 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           isAnonymized: form.isAnonymized,
           visibility: form.visibility,
         },
+        rotation,
       };
     },
-    { params: t.Object({ slug: t.String() }) },
+    {
+      params: t.Object({ slug: t.String() }),
+      // Numéro de participant déjà attribué à ce navigateur (voir resolveRotation).
+      query: t.Object({ seed: t.Optional(t.Numeric()) }),
+    },
   )
 
   // --- Réglages d'intégration d'un formulaire publié (sans auth) ---

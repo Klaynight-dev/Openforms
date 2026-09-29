@@ -2,7 +2,8 @@ import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { makeRateLimit } from "../middleware/security.ts";
-import { validateSubmission, type FieldDefinition } from "../lib/formSchema.ts";
+import { assignRotation, rotationFields, validateSubmission, type FieldDefinition } from "../lib/formSchema.ts";
+import { drawRotationSeed } from "../lib/rotation.ts";
 import { sealContent, openContent, hashIp, verifyDescriptor } from "../services/crypto.ts";
 import { sendEmail } from "../services/mailer.ts";
 import { checkEmbedAccess } from "../lib/embed.ts";
@@ -148,7 +149,18 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
 
       // 2. Validation dynamique des réponses contre la définition du formulaire.
       const fields = form.schema as unknown as FieldDefinition[];
-      const { errors, clean } = validateSubmission(fields, body.data ?? {});
+      const data = { ...(body.data ?? {}) };
+
+      // Le formulaire public renvoie la variante reçue à l'ouverture. Une
+      // soumission qui n'en porte pas (API, MCP) en reçoit une ici, pour que
+      // les affichages conditionnels qui en dépendent soient évalués.
+      const pending = rotationFields(fields).filter((f) => data[f.key] == null || data[f.key] === "");
+      if (pending.length > 0) {
+        const seed = await drawRotationSeed(form.id);
+        for (const field of pending) data[field.key] = assignRotation(field, seed);
+      }
+
+      const { errors, clean } = validateSubmission(fields, data);
       if (errors.length > 0) {
         set.status = 422;
         return { success: false, error: "Réponses invalides.", details: errors };

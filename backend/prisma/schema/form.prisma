@@ -46,6 +46,12 @@ model Form {
   endsAt               DateTime?
   maxResponses         Int?
 
+  // --- Répartition des participants entre variantes ---
+  /// Nombre de participants à qui une variante a déjà été attribuée (champs
+  /// de type "rotation"). Le participant suivant reçoit le numéro
+  /// `rotationCounter`, et la variante de rang `numéro % nombre de variantes`.
+  rotationCounter      Int       @default(0)
+
   // --- Multilinguisme ---
   translations         Json      @default("{}")
 
