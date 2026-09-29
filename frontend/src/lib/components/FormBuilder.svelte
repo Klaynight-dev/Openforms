@@ -42,9 +42,42 @@
       visibility: "PUBLIC",
       allowedEmails: [] as string[],
     } as Settings),
+    onselectionchange,
+  }: {
+    fields?: FieldDefinition[];
+    metaColumns?: MetaColumn[];
+    settings?: Settings;
+    /** Appelé avec la clé de la question sélectionnée, ou `null`. */
+    onselectionchange?: (key: string | null) => void;
   } = $props();
 
-  let selectedIndex = $state<number | null>(null);
+  /**
+   * Question sélectionnée, suivie par son objet et non par sa position : une
+   * question ajoutée ou déplacée par un collaborateur décalerait les indices,
+   * et la sélection passerait sur une autre question.
+   */
+  let selectedField = $state<FieldDefinition | null>(null);
+  let selectedIndex = $derived.by(() => {
+    const index = selectedField ? fields.indexOf(selectedField) : -1;
+    return index >= 0 ? index : null;
+  });
+
+  /** Clé de la question sélectionnée, remontée pour la montrer aux collaborateurs. */
+  $effect(() => {
+    onselectionchange?.(selectedIndex === null ? null : fields[selectedIndex].key);
+  });
+
+  /**
+   * Un appui hors des questions et des barres d'outils les désélectionne,
+   * comme dans Google Forms ou Canva. Les barres gardent la sélection : leurs
+   * boutons agissent sur la question choisie ou en sélectionnent une nouvelle.
+   */
+  function deselectOnOutsidePointer(event: PointerEvent) {
+    if (selectedField === null) return;
+    const target = event.target as Element | null;
+    if (target?.closest("[data-builder-card], [data-builder-keep-selection]")) return;
+    selectedField = null;
+  }
   let dragIndex = $state<number | null>(null);
   let dragOverIndex = $state<number | null>(null);
   let dragOverPosition = $state<"top" | "bottom" | null>(null);
@@ -96,7 +129,7 @@
     const field = newField(type, fields.map((f) => f.key));
     draftKeys.add(field.key);
     fields = [...fields, field];
-    selectedIndex = fields.length - 1;
+    selectedField = fields[fields.length - 1];
     // Scroll active card into view
     setTimeout(() => {
       const activeEl = document.querySelector(".card-active");
@@ -109,7 +142,7 @@
   function removeField(i: number) {
     draftKeys.delete(fields[i].key);
     fields = fields.filter((_, idx) => idx !== i);
-    selectedIndex = null;
+    selectedField = null;
   }
 
   function duplicateField(i: number) {
@@ -117,7 +150,7 @@
     const key = uniqueFieldKey(toFieldKey(source.label), fields.map((f) => f.key));
     draftKeys.add(key);
     fields = [...fields.slice(0, i + 1), { ...source, key }, ...fields.slice(i + 1)];
-    selectedIndex = i + 1;
+    selectedField = fields[i + 1];
   }
 
   /**
@@ -200,7 +233,7 @@
     }
     next.splice(insertIndex, 0, moved);
     fields = next;
-    selectedIndex = insertIndex;
+    selectedField = fields[insertIndex];
     onDragEnd();
   }
 
@@ -294,6 +327,8 @@
   }
 </script>
 
+<svelte:window onpointerdown={deselectOnOutsidePointer} />
+
 <div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-4 sm:px-6 lg:px-0 pb-24 relative">
   <!-- Main canvas column -->
   <div class="flex-1 w-full space-y-5">
@@ -364,14 +399,15 @@
         class:border-l-[color:var(--brand)]={isActive}
         class:card-active={isActive}
         data-cursor-anchor={`field:${field.key}`}
+        data-builder-card
         draggable="true"
         ondragstart={() => onDragStart(i)}
         ondragover={(e) => onDragOver(e, i)}
         ondragleave={onDragLeave}
         ondragend={onDragEnd}
         ondrop={(e) => onDropCard(e, i)}
-        onclick={() => (selectedIndex = i)}
-        onkeydown={(e) => e.key === "Enter" && (selectedIndex = i)}
+        onclick={() => (selectedField = field)}
+        onkeydown={(e) => e.key === "Enter" && (selectedField = field)}
         role="button"
         tabindex="0"
       >
@@ -1052,7 +1088,7 @@
   </div>
 
   <!-- STICKY VERTICAL TOOLBAR (DESKTOP) -->
-  <div class="hidden md:flex flex-col gap-2 p-2 bg-white rounded-2xl shadow-sm border border-[color:var(--line)] sticky top-24 shrink-0">
+  <div class="hidden md:flex flex-col gap-2 p-2 bg-white rounded-2xl shadow-sm border border-[color:var(--line)] sticky top-24 shrink-0" data-builder-keep-selection>
     <button 
       onclick={() => addField("short_text")} 
       class="p-3 text-slate-500 hover:text-[color:var(--brand)] hover:bg-slate-50 rounded-xl transition-all duration-200 flex items-center justify-center" 
@@ -1077,7 +1113,7 @@
   </div>
 
   <!-- FIXED BOTTOM TOOLBAR (MOBILE) -->
-  <div class="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-4 p-2 bg-white rounded-full shadow-xl border border-[color:var(--line)]">
+  <div class="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-4 p-2 bg-white rounded-full shadow-xl border border-[color:var(--line)]" data-builder-keep-selection>
     <button 
       onclick={() => addField("short_text")} 
       class="p-3 text-slate-500 hover:text-[color:var(--brand)] hover:bg-slate-50 rounded-full transition" 
