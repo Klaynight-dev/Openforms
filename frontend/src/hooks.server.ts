@@ -45,16 +45,23 @@ export const handle: Handle = async ({ event, resolve }) => {
 };
 
 /**
- * Interroge l'API pour la directive à appliquer. En cas d'échec- API
- * injoignable, formulaire inconnu- on refuse le cadrage : mieux vaut une
- * intégration qui ne s'affiche pas qu'une page d'administration encadrable
- * parce qu'une requête a échoué.
+ * Interroge l'API pour la directive à appliquer.
+ *
+ * Formulaire inconnu, non publié ou à l'intégration désactivée : la page ne
+ * rend qu'un message, jamais le formulaire. On la laisse donc s'afficher dans
+ * le cadre, sinon le visiteur ne voit qu'une erreur de sécurité du
+ * navigateur sans comprendre pourquoi.
+ *
+ * API injoignable ou réponse inattendue : on refuse le cadrage, faute de
+ * savoir ce que la page afficherait.
  */
 async function frameAncestorsFor(slug: string, fetcher: typeof fetch): Promise<string> {
   try {
     const res = await fetcher(`${API_BASE}/api/v1/forms/public/${encodeURIComponent(slug)}/embed`);
+    if (res.status === 404) return "*";
     if (!res.ok) return "'none'";
-    const payload = (await res.json()) as { embed?: { frameAncestors?: string } };
+    const payload = (await res.json()) as { embed?: { enabled?: boolean; frameAncestors?: string } };
+    if (payload.embed?.enabled === false) return "*";
     return payload.embed?.frameAncestors ?? "'none'";
   } catch {
     return "'none'";

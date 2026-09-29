@@ -604,6 +604,12 @@
       </div>
     </div>
     <div class="p-6 space-y-5">
+      {#if editorState.form && !editorState.form.isPublished}
+        <p class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+          <IconWarning size={16} class="mt-px shrink-0" />
+          <span>Ce formulaire est en brouillon : une fois intégré, il affichera « non publié » tant que vous ne l'aurez pas publié.</span>
+        </p>
+      {/if}
       <label class="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
@@ -612,7 +618,7 @@
         />
         <div>
           <span class="text-sm font-semibold text-[color:var(--ink)]">Autoriser l'intégration</span>
-          <p class="text-xs text-[color:var(--muted)] mt-0.5">Décoché, le formulaire n'est accessible que sur cette instance : tout cadre externe est refusé par le navigateur.</p>
+          <p class="text-xs text-[color:var(--muted)] mt-0.5">Décoché, le formulaire n'est accessible que sur cette instance : un cadre externe affiche seulement un lien pour l'ouvrir.</p>
         </div>
       </label>
 

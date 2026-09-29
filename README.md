@@ -239,7 +239,7 @@ Un formulaire publié peut être affiché sur n'importe quel site, de trois faç
 
 Deux réglages par formulaire :
 
-* **Autoriser l'intégration** : décoché, aucun cadre externe ne peut afficher le formulaire- le navigateur le bloque (`frame-ancestors 'none'`).
+* **Autoriser l'intégration** : décoché, un cadre externe n'affiche jamais le formulaire, seulement un message et un lien pour l'ouvrir sur l'instance. Il en va de même pour un formulaire en brouillon.
 * **Sites autorisés** : une origine par ligne, `https://*.exemple.org` couvrant les sous-domaines. **Laisser la liste vide autorise tous les sites**, ce qui est le comportement attendu d'un formulaire public ; la renseigner restreint à la fois le cadrage (CSP) et les appels d'API portant un en-tête `Origin` non déclaré.
 
 Un appel serveur à serveur (curl, script, intégration Dolibarr) n'envoie pas d'en-tête `Origin` : il n'est jamais concerné par cette liste.
