@@ -32,7 +32,20 @@ export type RealtimeEvent =
   | { type: "comment:deleted"; formId: string; commentId: string }
   | { type: "presence:sync"; formId: string; users: PresenceUser[] }
   | { type: "presence:join"; formId: string; user: PresenceUser }
-  | { type: "presence:leave"; formId: string; userId: string };
+  | { type: "presence:leave"; formId: string; userId: string }
+  | ({ type: "cursor:move"; formId: string; user: PresenceUser } & Required<CursorPosition>);
+
+/** Position du pointeur partagée avec les autres personnes sur le formulaire. */
+export interface CursorPosition {
+  /** Onglet affiché (questions, réponses…) : un pointeur n'a de sens que là. */
+  view: string;
+  /** Élément `data-cursor-anchor` survolé, ou `null` pour la zone de contenu. */
+  anchor: string | null;
+  x: number;
+  y: number;
+  /** Vrai quand le pointeur quitte la page. */
+  hidden?: boolean;
+}
 
 export const responsesTopic = (formId: string) => `form:${formId}:responses`;
 export const commentsTopic = (formId: string) => `form:${formId}:comments`;
@@ -43,19 +56,31 @@ function topicOf(event: { type?: string; formId?: string }): string | null {
   if (typeof event.type !== "string" || typeof event.formId !== "string") return null;
   if (event.type.startsWith("response:")) return responsesTopic(event.formId);
   if (event.type.startsWith("comment:")) return commentsTopic(event.formId);
-  if (event.type.startsWith("presence:")) return presenceTopic(event.formId);
+  if (event.type.startsWith("presence:") || event.type.startsWith("cursor:")) {
+    return presenceTopic(event.formId);
+  }
   return null;
 }
 
 const HEARTBEAT_MS = 25_000;
-const MAX_BACKOFF_MS = 15_000;
-/** Au-delà, on considère que la session est perdue et on cesse de réessayer. */
-const MAX_ATTEMPTS = 8;
+const MAX_BACKOFF_MS = 30_000;
+/**
+ * Délai avant de fermer une socket qui n'a plus d'abonné. Une navigation ou un
+ * effet Svelte qui se relance se désabonne puis se réabonne aussitôt : fermer
+ * tout de suite coupait une socket encore en cours d'ouverture (« connexion
+ * interrompue pendant le chargement de la page ») pour en rouvrir une autre.
+ */
+const IDLE_CLOSE_MS = 2_000;
 
 interface Subscription {
   topics: string[];
   handler: (event: RealtimeEvent) => void;
 }
+
+type OutgoingMessage =
+  | { type: "subscribe" | "unsubscribe"; topics: string[] }
+  | { type: "ping" }
+  | ({ type: "cursor"; formId: string } & CursorPosition);
 
 class RealtimeClient {
   /** Vrai tant que la socket est ouverte : pilote l'indicateur « en direct ». */
@@ -67,6 +92,8 @@ class RealtimeClient {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private listening = false;
 
   /**
    * Abonne un consommateur à des topics et renvoie sa fonction de résiliation.
@@ -85,6 +112,7 @@ class RealtimeClient {
       return count === 0;
     });
 
+    this.cancelIdleClose();
     this.connect();
     if (added.length) this.send({ type: "subscribe", topics: added });
 
@@ -100,12 +128,20 @@ class RealtimeClient {
         return true;
       });
       if (removed.length) this.send({ type: "unsubscribe", topics: removed });
-      if (this.topicCounts.size === 0) this.disconnect();
+      if (this.topicCounts.size === 0) this.scheduleIdleClose();
     };
+  }
+
+  /** Diffuse la position du pointeur aux autres personnes sur ce formulaire. */
+  sendCursor(formId: string, cursor: CursorPosition): void {
+    this.send({ type: "cursor", formId, ...cursor });
   }
 
   private connect(): void {
     if (this.socket) return;
+    this.listenToEnvironment();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
 
     // `VITE_API_BASE` est vide en déploiement same-origin (routage par chemin) :
     // la socket suit alors le domaine visité, comme les appels REST.
@@ -113,29 +149,72 @@ class RealtimeClient {
     const socket = new WebSocket(`${base.replace(/^http/, "ws")}/api/v1/ws`);
     this.socket = socket;
 
+    // Chaque gestionnaire vérifie qu'il appartient encore à la socket
+    // courante : le `close` tardif d'une ancienne socket ne doit ni couper les
+    // minuteries de la nouvelle, ni l'oublier en remettant `socket` à null.
     socket.onopen = () => {
+      if (this.socket !== socket) return;
       this.attempt = 0;
       this.connected = true;
       const topics = [...this.topicCounts.keys()];
       if (topics.length) this.send({ type: "subscribe", topics });
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = setInterval(() => this.send({ type: "ping" }), HEARTBEAT_MS);
     };
 
-    socket.onmessage = (event) => this.dispatch(String(event.data));
-    socket.onerror = () => socket.close();
+    socket.onmessage = (event) => {
+      if (this.socket === socket) this.dispatch(String(event.data));
+    };
+
     socket.onclose = () => {
-      this.clearTimers();
+      if (this.socket !== socket) return;
       this.socket = null;
       this.connected = false;
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
       if (this.topicCounts.size > 0) this.scheduleReconnect();
     };
   }
 
   private scheduleReconnect(): void {
-    if (this.attempt >= MAX_ATTEMPTS) return;
-    const delay = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
+    if (this.reconnectTimer) return;
+    // Hors ligne ou onglet masqué, inutile d'insister : `online` et
+    // `visibilitychange` relancent la connexion au bon moment.
+    if (!navigator.onLine || document.visibilityState === "hidden") return;
+    const ceiling = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
+    const delay = ceiling / 2 + Math.random() * (ceiling / 2);
     this.attempt += 1;
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  /** Reprend la connexion dès que le réseau ou l'onglet redevient disponible. */
+  private listenToEnvironment(): void {
+    if (this.listening) return;
+    this.listening = true;
+    const resume = () => {
+      if (this.socket || this.topicCounts.size === 0) return;
+      if (document.visibilityState === "hidden") return;
+      this.attempt = 0;
+      this.connect();
+    };
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
+  }
+
+  private scheduleIdleClose(): void {
+    this.cancelIdleClose();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.topicCounts.size === 0) this.disconnect();
+    }, IDLE_CLOSE_MS);
+  }
+
+  private cancelIdleClose(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
   }
 
   private disconnect(): void {
@@ -143,17 +222,25 @@ class RealtimeClient {
     const socket = this.socket;
     this.socket = null;
     this.connected = false;
-    socket?.close();
+    if (!socket) return;
+    if (socket.readyState === WebSocket.CONNECTING) {
+      // Fermer une socket en cours d'ouverture fait râler le navigateur :
+      // on la laisse aboutir puis on la ferme proprement.
+      socket.onopen = () => socket.close();
+    } else {
+      socket.close();
+    }
   }
 
   private clearTimers(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.cancelIdleClose();
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
   }
 
-  private send(message: { type: string; topics?: string[] }): void {
+  private send(message: OutgoingMessage): void {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
   }
 

@@ -623,7 +623,7 @@
         <tr>
           <th class="idx">#</th>
           {#each columns as col (col.key)}
-            <th class="clickable-header">
+            <th class="clickable-header" data-cursor-anchor={`column:${col.key}`}>
               <div class="th-inner">
                 <button class="th-sort" onclick={() => toggleSort(col.key)} type="button">
                   <span>{col.label}</span>
@@ -662,6 +662,7 @@
             {#each columns as col (col.key)}
               <td
                 class:editable={col.editable}
+                data-cursor-anchor={`cell:${row.id}:${col.key}`}
                 ondblclick={() => startEdit(row, col)}
                 title={col.editable ? "Double-cliquez pour modifier" : ""}
               >

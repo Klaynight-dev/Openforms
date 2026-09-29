@@ -269,12 +269,12 @@
   }
 </script>
 
-<div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-4 md:px-0 pb-24 relative">
+<div class="flex flex-col md:flex-row gap-6 items-start max-w-3xl mx-auto px-4 sm:px-6 lg:px-0 pb-24 relative">
   <!-- Main canvas column -->
   <div class="flex-1 w-full space-y-5">
-    
+
     <!-- Translation language and Form Title card -->
-    <div class="bg-white rounded-2xl border border-[color:var(--line)] border-t-[10px] border-t-[color:var(--brand)] shadow-sm overflow-hidden p-6 relative">
+    <div class="bg-white rounded-2xl border border-[color:var(--line)] border-t-[10px] border-t-[color:var(--brand)] shadow-sm overflow-hidden p-6 relative" data-cursor-anchor="form-header">
       <!-- Lang selector top right -->
       <div class="flex items-center gap-2 justify-end mb-4 border-b border-slate-100 pb-3">
         <span class="text-xs font-semibold text-[color:var(--muted)]">Langue de saisie :</span>
@@ -338,6 +338,7 @@
         class:border-l-[6px]={isActive}
         class:border-l-[color:var(--brand)]={isActive}
         class:card-active={isActive}
+        data-cursor-anchor={`field:${field.key}`}
         draggable="true"
         ondragstart={() => onDragStart(i)}
         ondragover={(e) => onDragOver(e, i)}

@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
-import { authPlugin } from "../middleware/auth.ts";
+import { authPlugin, readableFormsWhere } from "../middleware/auth.ts";
 import { isAllowedOrigin } from "../middleware/security.ts";
 import { broadcast, presenceTopic, type PresenceUser, type RealtimeEvent } from "../lib/realtime.ts";
 import type { SessionContext } from "../lib/session.ts";
@@ -11,7 +11,8 @@ import type { SessionContext } from "../lib/session.ts";
  * Le client ouvre une seule socket puis s'abonne aux topics dont il a besoin :
  *   - `form:<id>:responses` : lignes du tableur (création / édition / suppression)
  *   - `form:<id>:comments`  : fil de commentaires du formulaire
- *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment
+ *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment, et où
+ *                             se trouve son pointeur (message `cursor`)
  *
  * Chaque abonnement est vérifié contre les droits réels de l'utilisateur sur le
  * formulaire : la socket est authentifiée par le cookie de session, jamais par
@@ -50,10 +51,7 @@ async function authorizeTopics(user: SessionContext["user"], topics: string[]): 
     readable = new Set(formIds);
   } else {
     const forms = await prisma.form.findMany({
-      where: {
-        id: { in: formIds },
-        OR: [{ ownerId: user.id }, { access: { some: { userId: user.id } } }],
-      },
+      where: { id: { in: formIds }, ...readableFormsWhere(user) },
       select: { id: true },
     });
     readable = new Set(forms.map((form) => form.id));
@@ -110,8 +108,21 @@ export const wsController = new Elysia()
   .use(authPlugin)
   .ws("/api/v1/ws", {
     body: t.Object({
-      type: t.Union([t.Literal("subscribe"), t.Literal("unsubscribe"), t.Literal("ping")]),
+      type: t.Union([
+        t.Literal("subscribe"),
+        t.Literal("unsubscribe"),
+        t.Literal("ping"),
+        t.Literal("cursor"),
+      ]),
       topics: t.Optional(t.Array(t.String({ maxLength: 128 }), { maxItems: 200 })),
+      // Champs du message `cursor` : onglet affiché, élément survolé et
+      // position relative à cet élément (voir PresenceCursors côté front).
+      formId: t.Optional(t.String({ maxLength: 64 })),
+      view: t.Optional(t.String({ maxLength: 32 })),
+      anchor: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+      x: t.Optional(t.Number()),
+      y: t.Optional(t.Number()),
+      hidden: t.Optional(t.Boolean()),
     }),
 
     beforeHandle({ auth, request, set }) {
@@ -137,8 +148,28 @@ export const wsController = new Elysia()
 
       const presenceUser: PresenceUser = {
         id: auth.user.id,
-        name: auth.user.displayName ?? auth.user.email,
+        name: auth.user.displayName?.trim() || auth.user.email,
       };
+
+      if (message.type === "cursor") {
+        // Seule une socket déjà admise sur la présence du formulaire peut y
+        // diffuser son pointeur : l'autorisation a eu lieu à l'abonnement.
+        const formId = message.formId;
+        if (!formId || !presenceBySocket.get(ws.id)?.has(formId)) return;
+        const cursor: RealtimeEvent = {
+          type: "cursor:move",
+          formId,
+          user: presenceUser,
+          view: message.view ?? "",
+          anchor: message.anchor ?? null,
+          x: Number.isFinite(message.x) ? message.x! : 0,
+          y: Number.isFinite(message.y) ? message.y! : 0,
+          hidden: message.hidden === true,
+        };
+        // `ws.publish` n'envoie pas à l'émetteur, contrairement à `broadcast`.
+        ws.publish(presenceTopic(formId), JSON.stringify(cursor));
+        return;
+      }
 
       if (message.type === "subscribe") {
         const topics = await authorizeTopics(auth.user, message.topics ?? []);

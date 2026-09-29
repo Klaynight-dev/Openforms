@@ -44,7 +44,17 @@ export type RealtimeEvent =
   | { type: "comment:updated"; formId: string; comment: unknown }
   | { type: "comment:deleted"; formId: string; commentId: string }
   | { type: "presence:join"; formId: string; user: PresenceUser }
-  | { type: "presence:leave"; formId: string; userId: string };
+  | { type: "presence:leave"; formId: string; userId: string }
+  | {
+      type: "cursor:move";
+      formId: string;
+      user: PresenceUser;
+      view: string;
+      anchor: string | null;
+      x: number;
+      y: number;
+      hidden: boolean;
+    };
 
 /** Sous-ensemble du serveur Bun dont dépend la diffusion. */
 export interface RealtimePublisher {

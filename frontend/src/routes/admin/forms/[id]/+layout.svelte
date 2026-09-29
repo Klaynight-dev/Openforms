@@ -7,6 +7,8 @@
   import { toasts } from "$lib/stores/toast.svelte.ts";
   import { askConfirm } from "$lib/stores/dialog.svelte.ts";
   import Modal from "$lib/components/Modal.svelte";
+  import PresenceCursors from "$lib/components/PresenceCursors.svelte";
+  import { presenceColor, initials } from "$lib/presence.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
   import type { FormVersion } from "$lib/types.ts";
   import { realtime, presenceTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
@@ -127,12 +129,6 @@
     } else if (event.type === "presence:leave") {
       others = others.filter((user) => user.id !== event.userId);
     }
-  }
-
-  function initials(name: string): string {
-    const parts = name.split(/[\s.@_-]+/).filter(Boolean);
-    const letters = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2);
-    return letters.toUpperCase();
   }
 
   const presenceLabel = $derived(
@@ -334,9 +330,13 @@
       {@render children()}
     {/if}
   {:else}
+    {#if id}
+      <PresenceCursors formId={id} view={activeTab} selfId={auth.user?.id} />
+    {/if}
+
     <!-- Google Forms Header Bar -->
     <header class="bg-white border-b border-[color:var(--line)] sticky top-0 z-30 shadow-sm">
-      <div class="mx-auto max-w-7xl px-4 md:px-0">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6">
         <div class="flex items-center justify-between py-3">
           <!-- Left Section: Back, Title, and Save status -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -377,7 +377,11 @@
             {#if others.length > 0}
               <div class="hidden sm:flex items-center -space-x-2 mr-1" aria-label={presenceLabel} title={presenceLabel}>
                 {#each others.slice(0, 3) as user (user.id)}
-                  <span class="grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-brand-50 text-[11px] font-bold text-brand-700">
+                  <span
+                    class="grid h-8 w-8 place-items-center rounded-full border-2 border-white text-[11px] font-bold text-white"
+                    style="background:{presenceColor(user.id)}"
+                    title={user.name}
+                  >
                     {initials(user.name)}
                   </span>
                 {/each}
@@ -525,7 +529,7 @@
     {/if}
 
     <!-- Page Content Container -->
-    <main class="flex-1 w-full py-6">
+    <main class="flex-1 w-full py-6" data-cursor-root>
       {#if editorState.loading}
         <div class="mx-auto max-w-2xl px-4 py-6 space-y-6 animate-pulse">
           <!-- Title / Desc Card Skeleton -->
