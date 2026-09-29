@@ -26,6 +26,12 @@
     goto("/admin/login");
   }
 
+  const path = $derived($page.url.pathname);
+  /** Rubrique courante, pour marquer le lien de navigation actif. */
+  const section = $derived(
+    path.startsWith("/admin/users") ? "users" : path.startsWith("/admin/api-keys") ? "api-keys" : "forms",
+  );
+
   let showChrome = $derived(auth.isAuthenticated && $page.url.pathname !== "/admin/login" && !$page.url.pathname.includes("/preview"));
 
   // Les pages d'édition de formulaire ont leur propre en-tête collant : on retire le
@@ -43,7 +49,7 @@
   <div class="min-h-screen overflow-x-hidden bg-[color:var(--surface-bg)]">
     {#if showChrome}
       <header class="sticky top-0 z-20 border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
-        <div class="mx-auto flex max-w-7xl items-center justify-between px-4 md:px-0 py-3">
+        <div class="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-3">
           <a href="/admin" class="flex items-center gap-2.5 font-bold text-[color:var(--ink)] text-lg min-w-0 shrink-0">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-md shadow-brand-500/20 shrink-0">
               <IconLeaf size={20} weight="fill" />
@@ -52,15 +58,15 @@
             <span class="text-xs font-semibold px-2 py-0.5 rounded bg-brand-50 text-brand-700 shrink-0">admin</span>
           </a>
           <nav class="hidden md:flex items-center gap-1.5 text-sm font-semibold">
-            <a href="/admin" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition">
+            <a href="/admin" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition" class:nav-active={section === "forms"} aria-current={section === "forms" ? "page" : undefined}>
               <IconTable size={18} /> Formulaires
             </a>
             {#if auth.isSuperAdmin}
-              <a href="/admin/users" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition">
+              <a href="/admin/users" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition" class:nav-active={section === "users"} aria-current={section === "users" ? "page" : undefined}>
                 <IconUsers size={18} /> Utilisateurs
               </a>
             {/if}
-            <a href="/admin/api-keys" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition">
+            <a href="/admin/api-keys" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[color:var(--muted)] hover:bg-brand-50 hover:text-brand-700 transition" class:nav-active={section === "api-keys"} aria-current={section === "api-keys" ? "page" : undefined}>
               <IconKey size={18} /> Clés d'API
             </a>
             <span class="mx-2 text-xs font-semibold text-[color:var(--muted)] bg-slate-100 rounded-lg px-2.5 py-1.5">{auth.user?.email}</span>
@@ -142,7 +148,7 @@
         </div>
       {/if}
     {/if}
-    <div class="mx-auto max-w-7xl px-4 md:px-0" class:py-6={!isFormEditor} class:pb-6={isFormEditor}>
+    <div class="mx-auto max-w-7xl px-4 sm:px-6" class:py-6={!isFormEditor} class:pb-6={isFormEditor}>
       {@render children()}
       <!-- Liens légaux : l'éditeur du builder a son propre pied de page collant. -->
       {#if !isFormEditor}
@@ -151,3 +157,10 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .nav-active {
+    background: var(--brand-50);
+    color: var(--brand-700, var(--brand));
+  }
+</style>

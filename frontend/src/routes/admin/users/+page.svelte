@@ -16,6 +16,7 @@
   let nu = $state({ email: "", role: "EDITOR", displayName: "" });
   let creating = $state(false);
   let inviteLink = $state<string | null>(null);
+  let createError = $state<string | null>(null);
   let copied = $state(false);
 
   // Gestion des accès
@@ -39,16 +40,21 @@
   async function createUser(e: Event) {
     e.preventDefault();
     creating = true;
-    error = null;
+    createError = null;
     inviteLink = null;
     copied = false;
     try {
-      const res = await api.createUser(nu);
+      const res = await api.createUser({
+        email: nu.email.trim(),
+        role: nu.role,
+        displayName: nu.displayName.trim() || undefined,
+      });
       users = [...users, res.user];
       inviteLink = res.inviteLink;
+      toasts.success(`Compte créé pour ${res.user.email}, invitation envoyée.`);
       nu = { email: "", role: "EDITOR", displayName: "" };
     } catch (err) {
-      error = err instanceof Error ? err.message : "Création impossible.";
+      createError = err instanceof Error ? err.message : "Création impossible.";
     } finally {
       creating = false;
     }
@@ -77,15 +83,23 @@
   }
 
   async function toggleActive(u: User) {
-    const res = await api.updateUser(u.id, { isActive: !u.isActive });
-    Object.assign(u, res.user);
-    users = [...users];
+    try {
+      const res = await api.updateUser(u.id, { isActive: !u.isActive });
+      users = users.map((x) => (x.id === u.id ? { ...x, ...res.user } : x));
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Mise à jour impossible.");
+    }
   }
 
   async function changeRole(u: User, role: string) {
-    const res = await api.updateUser(u.id, { role });
-    Object.assign(u, res.user);
-    users = [...users];
+    try {
+      const res = await api.updateUser(u.id, { role });
+      users = users.map((x) => (x.id === u.id ? { ...x, ...res.user } : x));
+    } catch (e) {
+      // Le <select> affiche déjà le nouveau rôle : on le ramène à l'état réel.
+      users = [...users];
+      toasts.error(e instanceof Error ? e.message : "Changement de rôle impossible.");
+    }
   }
 
   async function resetPassword(u: User) {
@@ -125,30 +139,63 @@
     }
   }
 
-  async function loadAccess() {
-    if (!selectedFormId) {
+  let accessLoading = $state(false);
+  let selectedForm = $derived(forms.find((f) => f.id === selectedFormId) ?? null);
+
+  // Suivre la sélection par un effet plutôt que par `onchange` : l'ordre entre
+  // ce gestionnaire et la mise à jour de `bind:value` n'est pas garanti.
+  $effect(() => {
+    const formId = selectedFormId;
+    accessUserId = "";
+    if (!formId) {
       accessList = [];
       return;
     }
-    const res = await api.getForm(selectedFormId);
-    accessList = res.form.access ?? [];
+    void loadAccess(formId);
+  });
+
+  async function loadAccess(formId: string) {
+    accessLoading = true;
+    try {
+      const res = await api.getForm(formId);
+      if (formId === selectedFormId) accessList = res.form.access ?? [];
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Chargement des accès impossible.");
+    } finally {
+      accessLoading = false;
+    }
   }
 
-  async function grant() {
+  /** Comptes à qui l'on peut encore donner un accès : ni propriétaire, ni déjà invité, ni Super Admin. */
+  let grantableUsers = $derived(
+    users.filter(
+      (u) =>
+        u.role !== "SUPER_ADMIN" &&
+        u.id !== selectedForm?.ownerId &&
+        !accessList.some((a) => a.userId === u.id),
+    ),
+  );
+
+  async function grant(e: Event) {
+    e.preventDefault();
     if (!selectedFormId || !accessUserId) return;
     try {
       await api.grantAccess(accessUserId, selectedFormId, accessRole);
-      await loadAccess();
+      await loadAccess(selectedFormId);
       accessUserId = "";
       toasts.success("Accès accordé.");
-    } catch (e) {
-      toasts.error(e instanceof Error ? e.message : "Attribution de l'accès impossible.");
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : "Attribution de l'accès impossible.");
     }
   }
 
   async function revoke(userId: string) {
-    await api.revokeAccess(userId, selectedFormId);
-    await loadAccess();
+    try {
+      await api.revokeAccess(userId, selectedFormId);
+      accessList = accessList.filter((a) => a.userId !== userId);
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : "Révocation impossible.");
+    }
   }
 </script>
 
@@ -199,18 +246,28 @@
                 <tr class="border-t">
                   <td class="py-2">{u.email}{#if u.displayName}<span class="text-gray-400"> · {u.displayName}</span>{/if}</td>
                   <td>
-                    <select class="input !py-1 text-xs" value={u.role} onchange={(e) => changeRole(u, (e.target as HTMLSelectElement).value)}>
-                      <option value="EDITOR">Éditeur</option>
-                      <option value="SUPER_ADMIN">Super Admin</option>
-                    </select>
+                    {#if u.id === auth.user?.id}
+                      <span class="chip-muted">Super Admin (vous)</span>
+                    {:else}
+                      <select class="input !py-1 text-xs" value={u.role} aria-label="Rôle de {u.email}" onchange={(e) => changeRole(u, (e.target as HTMLSelectElement).value)}>
+                        <option value="EDITOR">Éditeur</option>
+                        <option value="SUPER_ADMIN">Super Admin</option>
+                      </select>
+                    {/if}
                   </td>
                   <td>
                     {#if u.hasPassword === false}
                       <span class="inline-flex items-center gap-1 text-xs text-amber-600" title="En attente de définition du mot de passe">
                         <IconSend size={13} weight="bold" /> invitation envoyée
                       </span>
+                    {:else if u.id === auth.user?.id}
+                      <span class="inline-flex items-center gap-1 text-xs text-brand-600"><IconCheck size={13} weight="bold" /> actif</span>
                     {:else}
-                      <button class="inline-flex items-center gap-1 text-xs {u.isActive ? 'text-brand-600' : 'text-gray-400'}" onclick={() => toggleActive(u)}>
+                      <button
+                        class="inline-flex items-center gap-1 text-xs {u.isActive ? 'text-brand-600' : 'text-gray-400'}"
+                        onclick={() => toggleActive(u)}
+                        title={u.isActive ? "Cliquer pour désactiver ce compte" : "Cliquer pour réactiver ce compte"}
+                      >
                         {#if u.isActive}<IconCheck size={13} weight="bold" /> actif{:else}désactivé{/if}
                       </button>
                     {/if}
@@ -248,56 +305,69 @@
       <!-- Création -->
       <form onsubmit={createUser} class="card mt-4">
         <h2 class="mb-3 font-semibold">Créer un compte</h2>
-        <p class="mb-3 text-xs text-[color:var(--muted)]">Un lien d'invitation sera généré (et envoyé par email) pour que la personne définisse elle-même son mot de passe.</p>
+        <p class="mb-3 text-xs text-[color:var(--muted)]">
+          La personne reçoit un lien pour choisir son mot de passe. Pour lui ouvrir des formulaires, ajoutez-la à une
+          organisation depuis les paramètres de celle-ci (l'ajout y crée aussi le compte s'il n'existe pas).
+        </p>
         <div class="grid gap-3 sm:grid-cols-2">
-          <input class="input" type="email" placeholder="Email" bind:value={nu.email} required />
-          <input class="input" type="text" placeholder="Nom affiché (facultatif)" bind:value={nu.displayName} />
-          <select class="input" bind:value={nu.role}>
+          <label class="sr-only" for="new-user-email">Email</label>
+          <input id="new-user-email" class="input" type="email" placeholder="Email" autocomplete="off" bind:value={nu.email} required />
+          <label class="sr-only" for="new-user-name">Nom affiché</label>
+          <input id="new-user-name" class="input" type="text" placeholder="Nom affiché (facultatif)" bind:value={nu.displayName} />
+          <label class="sr-only" for="new-user-role">Rôle</label>
+          <select id="new-user-role" class="input" bind:value={nu.role}>
             <option value="EDITOR">Éditeur</option>
-            <option value="SUPER_ADMIN">Super Admin</option>
+            <option value="SUPER_ADMIN">Super Admin (administre toute l'instance)</option>
           </select>
         </div>
-        <button class="btn-primary mt-3" type="submit" disabled={creating}><IconPlus size={17} weight="bold" /> {creating ? "…" : "Créer et inviter"}</button>
+        {#if createError}<p class="mt-2 text-sm text-[color:var(--danger)]" role="alert">{createError}</p>{/if}
+        <button class="btn-primary mt-3" type="submit" disabled={creating || !nu.email.trim()}><IconPlus size={17} weight="bold" /> {creating ? "Création…" : "Créer et inviter"}</button>
       </form>
     </div>
 
     <!-- Gestion des accès -->
     <div class="card h-fit">
-      <h2 class="mb-3 font-semibold">Accès par formulaire</h2>
+      <h2 class="mb-1 font-semibold">Accès à un formulaire</h2>
+      <p class="mb-3 text-xs text-[color:var(--muted)]">Pour un accès ponctuel. Les membres d'une organisation ont déjà accès à tous ses formulaires.</p>
       <label class="label" for="access-form">Formulaire</label>
-      <select id="access-form" class="input mb-3" bind:value={selectedFormId} onchange={loadAccess}>
-        <option value="">— Choisir-</option>
-        {#each forms as f}<option value={f.id}>{f.title}</option>{/each}
+      <select id="access-form" class="input mb-3" bind:value={selectedFormId}>
+        <option value="">Choisir un formulaire…</option>
+        {#each forms as f (f.id)}<option value={f.id}>{f.title}</option>{/each}
       </select>
 
       {#if selectedFormId}
         <div class="mb-3">
-          {#if accessList.length === 0}
-            <p class="text-xs text-gray-400">Aucun accès délégué.</p>
+          {#if accessLoading && accessList.length === 0}
+            <p class="text-xs text-[color:var(--muted)]">Chargement…</p>
+          {:else if accessList.length === 0}
+            <p class="text-xs text-[color:var(--muted)]">Aucune personne invitée individuellement.</p>
           {:else}
             {#each accessList as a (a.id)}
               <div class="mb-1 flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-sm">
-                <span>{a.user.email}</span>
+                <span class="min-w-0 truncate">{a.user.email}</span>
                 <span class="flex items-center gap-2">
                   <span class="rounded bg-gray-200 px-1.5 text-xs">{{ VIEWER: "Lecture", COMMENTER: "Commentaire", EDITOR: "Édition" }[a.role]}</span>
-                  <button class="text-[color:var(--danger)]" onclick={() => revoke(a.userId)} aria-label="Révoquer"><IconClose size={13} /></button>
+                  <button class="text-[color:var(--danger)]" onclick={() => revoke(a.userId)} aria-label="Révoquer l'accès de {a.user.email}"><IconClose size={13} /></button>
                 </span>
               </div>
             {/each}
           {/if}
         </div>
 
-        <label class="label" for="access-user">Ajouter un éditeur</label>
-        <select id="access-user" class="input mb-2" bind:value={accessUserId}>
-          <option value="">— Utilisateur-</option>
-          {#each users.filter((u) => u.role === "EDITOR") as u}<option value={u.id}>{u.email}</option>{/each}
-        </select>
-        <select class="input mb-2" bind:value={accessRole}>
-          <option value="VIEWER">Lecture seule</option>
-          <option value="COMMENTER">Commentaire</option>
-          <option value="EDITOR">Édition</option>
-        </select>
-        <button class="btn-secondary w-full text-sm" onclick={grant}>Accorder l'accès</button>
+        <form onsubmit={grant}>
+          <label class="label" for="access-user">Inviter une personne</label>
+          <select id="access-user" class="input mb-2" bind:value={accessUserId}>
+            <option value="">Choisir un compte…</option>
+            {#each grantableUsers as u (u.id)}<option value={u.id}>{u.displayName ? `${u.displayName} (${u.email})` : u.email}</option>{/each}
+          </select>
+          <label class="sr-only" for="access-role">Niveau d'accès</label>
+          <select id="access-role" class="input mb-2" bind:value={accessRole}>
+            <option value="VIEWER">Lecture seule</option>
+            <option value="COMMENTER">Commentaire</option>
+            <option value="EDITOR">Édition</option>
+          </select>
+          <button class="btn-secondary w-full text-sm" type="submit" disabled={!accessUserId}>Accorder l'accès</button>
+        </form>
       {/if}
     </div>
   </div>
