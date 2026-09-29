@@ -28,6 +28,7 @@ export const FIELD_TYPE_META: FieldTypeMeta[] = [
   { type: "signature", label: "Signature numérique", icon: "✍️", hasOptions: false, hasGrid: false, isFile: false },
   { type: "address", label: "Adresse géographique", icon: "📍", hasOptions: false, hasGrid: false, isFile: false },
   { type: "stripe_payment", label: "Paiement Stripe", icon: "💳", hasOptions: false, hasGrid: false, isFile: false },
+  { type: "rotation", label: "Répartition (variantes)", icon: "⇄", hasOptions: true, hasGrid: false, isFile: false },
 ];
 
 export function metaFor(type: FieldType): FieldTypeMeta {
@@ -84,7 +85,11 @@ export function newField(type: FieldType, taken: Iterable<string> = []): FieldDe
     label,
     required: false,
   };
-  if (metaFor(type).hasOptions) {
+  if (type === "rotation") {
+    base.label = "Liste attribuée";
+    base.key = uniqueFieldKey(toFieldKey(base.label), taken);
+    base.options = ["A", "B", "C", "D"].map((l) => ({ value: `Liste ${l}`, label: `Liste ${l}` }));
+  } else if (metaFor(type).hasOptions) {
     base.options = [
       { value: "opt1", label: "Option 1" },
       { value: "opt2", label: "Option 2" },

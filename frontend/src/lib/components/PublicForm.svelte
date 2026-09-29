@@ -47,11 +47,18 @@
 
   let errorCount = $derived(Object.keys(fieldErrors).length);
 
+  /** Champs « Répartition » : leur valeur est attribuée, pas saisie. */
+  let rotationKeys = $derived(
+    new Set((form?.schema ?? []).filter((f) => f.type === "rotation").map((f) => f.key)),
+  );
+
   /** Vrai dès qu'une valeur a été saisie et que rien n'a encore été envoyé. */
   let hasUnsavedInput = $derived(
     !submitted &&
-      Object.values(values).some(
-        (v) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
+      Object.entries(values).some(
+        ([k, v]) =>
+          !rotationKeys.has(k) &&
+          v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
       ),
   );
 
@@ -172,7 +179,8 @@
           currentDescription = field.description ?? "";
         }
       } else {
-        if (visibleFieldKeys.has(field.key)) {
+        // Un champ « Répartition » n'a rien à montrer : sa valeur est attribuée.
+        if (visibleFieldKeys.has(field.key) && field.type !== "rotation") {
           currentFields.push(field);
         }
       }
@@ -227,6 +235,33 @@
     return () => observer.disconnect();
   });
 
+  /**
+   * Numéro de participant reçu pour ce formulaire (champs « Répartition »).
+   * Le renvoyer au rechargement redonne les mêmes variantes. Le stockage peut
+   * être refusé, notamment dans un iframe tiers : on retombe alors sur un
+   * nouveau numéro à chaque chargement.
+   */
+  let seedStorageKey = $derived(`openforms:rotation:${slug}`);
+
+  function readSeed(): number | undefined {
+    try {
+      const raw = localStorage.getItem(seedStorageKey);
+      const n = raw === null ? NaN : Number(raw);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function writeSeed(seed: number | null) {
+    try {
+      if (seed === null) localStorage.removeItem(seedStorageKey);
+      else localStorage.setItem(seedStorageKey, String(seed));
+    } catch {
+      // stockage indisponible : sans conséquence sur le remplissage
+    }
+  }
+
   async function loadForm() {
     loading = true;
     loadError = null;
@@ -235,8 +270,10 @@
       if (!auth.ready) {
         await auth.refresh();
       }
-      const res = await api.getPublicForm(slug);
+      const res = await api.getPublicForm(slug, readSeed());
       form = res.form;
+      writeSeed(res.rotation?.seed ?? null);
+      if (res.rotation) values = { ...values, ...res.rotation.assignments };
     } catch (e: any) {
       loadError = e instanceof Error ? e.message : "Formulaire introuvable.";
       if (e instanceof ApiError) {
@@ -342,7 +379,7 @@
     if (!translatedForm) return false;
     const errs: Record<string, string> = {};
     for (const f of translatedForm.schema) {
-      if (f.type === "section") continue;
+      if (f.type === "section" || f.type === "rotation") continue;
       if (!visibleFieldKeys.has(f.key)) continue;
       const v = values[f.key];
       const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
@@ -387,6 +424,8 @@
       });
       if (res.success) {
         submitted = true;
+        // Une nouvelle réponse depuis ce navigateur prendra un nouveau numéro.
+        writeSeed(null);
         postToHost({ type: "openforms:submitted", responseId: res.responseId });
         scrollToTop();
       } else submitError = "La soumission a échoué.";

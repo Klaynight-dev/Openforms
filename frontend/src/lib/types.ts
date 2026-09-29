@@ -21,7 +21,9 @@ export type FieldType =
   | "text_block"
   | "signature"
   | "address"
-  | "stripe_payment";
+  | "stripe_payment"
+  /** Champ invisible : attribue au participant l'une de ses options (variante). */
+  | "rotation";
 
 export interface FieldOption {
   value: string;
@@ -186,6 +188,16 @@ export interface ApiKeyInfo {
   /** Formulaire ciblé par une clé EMBED. */
   formId?: string | null;
   form?: { title: string; slug: string } | null;
+}
+
+/**
+ * Variantes attribuées au participant par les champs « Répartition » :
+ * `assignments[clé du champ]` est l'option retenue, soit celle de rang
+ * `seed % nombre d'options`.
+ */
+export interface PublicRotation {
+  seed: number;
+  assignments: Record<string, string>;
 }
 
 /** Réglages d'intégration d'un formulaire publié, servis sans authentification. */

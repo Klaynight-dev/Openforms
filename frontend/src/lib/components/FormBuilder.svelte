@@ -79,7 +79,7 @@
 
   let precedingChoiceFields = $derived(
     selectedIndex !== null
-      ? fields.slice(0, selectedIndex).filter((f) => ["radio", "select", "checkbox"].includes(f.type))
+      ? fields.slice(0, selectedIndex).filter((f) => ["radio", "select", "checkbox", "rotation"].includes(f.type))
       : []
   );
 
@@ -455,7 +455,7 @@
                 {/if}
               </div>
 
-              {#if field.type !== "section" && field.type !== "text_block" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment"}
+              {#if field.type !== "section" && field.type !== "text_block" && field.type !== "grid" && field.type !== "file" && field.type !== "checkbox_grid" && field.type !== "linear_scale" && field.type !== "signature" && field.type !== "stripe_payment" && field.type !== "rotation"}
                 <div>
                   <label class="label text-[10px] text-slate-400 uppercase" for={`fb-ph-${field.key}`}>Placeholder (Indication)</label>
                   {#if editingLocale === "fr"}
@@ -480,7 +480,19 @@
             <!-- Choice Options Editor -->
             {#if metaFor(field.type).hasOptions}
               <div class="pt-4 border-t border-slate-100">
-                <span class="label text-xs">Options de choix</span>
+                {#if field.type === "rotation"}
+                  <span class="label text-xs">Variantes</span>
+                  <p class="text-xs text-[color:var(--muted)] mb-3">
+                    Ce champ n'est pas affiché. Chaque participant reçoit une variante selon son
+                    numéro d'arrivée : le 1er la première, le 2e la deuxième, et ainsi de suite en
+                    boucle, pour des groupes de taille égale. Pour montrer une liste différente à
+                    chaque groupe, placez ce champ en tête puis affichez chaque liste « sous
+                    condition » de la variante correspondante. La variante reçue est enregistrée
+                    avec la réponse.
+                  </p>
+                {:else}
+                  <span class="label text-xs">Options de choix</span>
+                {/if}
                 <div class="space-y-2">
                   {#each field.options ?? [] as opt, oi}
                     <div
@@ -542,6 +554,7 @@
                       </label>
                     {/if}
 
+                    {#if field.type !== "rotation"}
                     <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
                       <input
                         type="checkbox"
@@ -550,6 +563,7 @@
                       />
                       <span>Demander de justifier la réponse (texte libre)</span>
                     </label>
+                    {/if}
                   </div>
                 </div>
               </div>
@@ -759,7 +773,10 @@
                     {/if}
 
                     <!-- Conditional Display Logic -->
-                    {#if i > 0}
+                    <!-- Une répartition conditionnelle n'aurait pas de valeur pour
+                         les participants qui ne la voient pas : les groupes ne
+                         seraient plus comparables. -->
+                    {#if i > 0 && field.type !== "rotation"}
                       <div class="border-t border-slate-200 pt-3">
                         <label class="flex items-center gap-2 font-semibold cursor-pointer select-none">
                           <input
@@ -871,7 +888,7 @@
               </button>
               <span class="w-[1px] h-6 bg-slate-200"></span>
               
-              {#if field.type !== "section" && field.type !== "text_block"}
+              {#if field.type !== "section" && field.type !== "text_block" && field.type !== "rotation"}
                 <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 select-none cursor-pointer">
                   <span>Obligatoire</span>
                   <input 
@@ -957,6 +974,14 @@
                 {:else if field.type === "stripe_payment"}
                   <div class="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-500 font-semibold shadow-sm">
                     <FieldIcon size={14} class="text-blue-500" /> Régler avec Stripe
+                  </div>
+                {:else if field.type === "rotation"}
+                  <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+                    <FieldIcon size={14} class="text-slate-400" />
+                    <span>Invisible · une variante par participant, en alternance :</span>
+                    {#each field.options ?? [] as opt}
+                      <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">{opt.label}</span>
+                    {/each}
                   </div>
                 {:else if field.type === "section"}
                   <div class="w-full bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-indigo-700 font-bold text-xs flex items-center gap-2">

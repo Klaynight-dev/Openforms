@@ -48,7 +48,7 @@
 
   // Groupable fields for Kanban
   let groupableFields = $derived([
-    ...fields.filter((f) => ["radio", "select", "checkbox"].includes(f.type)),
+    ...fields.filter((f) => ["radio", "select", "checkbox", "rotation"].includes(f.type)),
     ...metaColumns.filter((m) => m.kind === "text"),
   ]);
 

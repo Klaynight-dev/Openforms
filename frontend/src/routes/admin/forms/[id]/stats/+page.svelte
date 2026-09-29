@@ -232,7 +232,7 @@
 
   // ─── Computed analytics ─────────────────────────────────────────────
   let choiceFields = $derived(
-    schema.filter((f) => ["radio", "select", "checkbox"].includes(f.type))
+    schema.filter((f) => ["radio", "select", "checkbox", "rotation"].includes(f.type))
   );
   let numericFields = $derived(
     schema.filter((f) => ["number", "linear_scale"].includes(f.type))
@@ -491,7 +491,7 @@
   });
 
   // ─── Tableau croisé dynamique ───────────────────────────────────────
-  const CROSSABLE_TYPES = ["radio", "select", "checkbox", "linear_scale"];
+  const CROSSABLE_TYPES = ["radio", "select", "checkbox", "linear_scale", "rotation"];
   /** Dimension virtuelle : la source (formulaire) d'où provient la réponse. */
   const FORM_DIM_KEY = "__form__";
   /** Sépare les valeurs d'un axe combinant plusieurs champs. */

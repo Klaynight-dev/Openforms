@@ -66,6 +66,7 @@ import {
   Pen,
   MapPin,
   CreditCard,
+  Shuffle,
   PaperPlaneTilt,
   Funnel,
   Palette,
@@ -180,4 +181,5 @@ export const FIELD_ICONS: Record<FieldType, typeof TextT> = {
   signature: Pen,
   address: MapPin,
   stripe_payment: CreditCard,
+  rotation: Shuffle,
 };

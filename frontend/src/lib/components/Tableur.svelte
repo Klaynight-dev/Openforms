@@ -59,12 +59,16 @@
       .filter((f) => f.type !== "file")
       .flatMap((f): Column[] => {
         const choiceType: Column["choiceType"] =
-          f.type === "checkbox" ? "multi" : f.type === "radio" || f.type === "select" ? "single" : undefined;
+          f.type === "checkbox" ? "multi" : f.type === "radio" || f.type === "select" || f.type === "rotation"
+              ? "single"
+              : undefined;
         const col: Column = {
           key: f.key,
           label: f.label,
           source: "field" as const,
-          editable: canEdit && f.type !== "grid",
+          // La variante attribuée est celle que le participant a vue : la
+          // modifier après coup fausserait la comparaison entre groupes.
+          editable: canEdit && f.type !== "grid" && f.type !== "rotation",
           numeric: f.type === "number",
           fieldType: f.type,
           choiceType,

@@ -28,6 +28,7 @@ import type {
   ApiKeyInfo,
   ApiKeyScope,
   EmbedConfig,
+  PublicRotation,
 } from "../types.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
@@ -120,8 +121,12 @@ export const api = {
   listForms: () => request<{ success: boolean; forms: FormSummary[] }>("GET", "/api/v1/forms"),
   getForm: (id: string) =>
     request<{ success: boolean; form: FormDetail; permission: Permission }>("GET", `/api/v1/forms/${id}`),
-  getPublicForm: (slug: string) =>
-    request<{ success: boolean; form: FormDetail }>("GET", `/api/v1/forms/public/${slug}`),
+  /** `seed` : numéro de participant déjà reçu, pour garder les mêmes variantes. */
+  getPublicForm: (slug: string, seed?: number) =>
+    request<{ success: boolean; form: FormDetail; rotation: PublicRotation | null }>(
+      "GET",
+      `/api/v1/forms/public/${slug}${seed === undefined ? "" : `?seed=${seed}`}`,
+    ),
   /** Réglages d'intégration d'un formulaire publié (sans authentification). */
   getEmbedConfig: (slug: string) =>
     request<{ success: boolean; embed: EmbedConfig }>("GET", `/api/v1/forms/public/${slug}/embed`),
