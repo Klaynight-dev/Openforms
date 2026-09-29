@@ -257,15 +257,40 @@
     return opt.color ?? STATS_COLORS[idx % STATS_COLORS.length];
   }
 
-  // Helpers grid
-  function gridText(arr: string[] | undefined): string {
-    return (arr ?? []).join("\n");
+  /**
+   * Change le type d'un champ en lui donnant ce que le nouveau type attend.
+   *
+   * Changer seulement `type` laissait un champ « Grille » sans lignes ni
+   * colonnes (son éditeur ne s'affichait pas), une liste sans options ou une
+   * échelle sans bornes. Ce qui existe déjà est conservé : repasser d'une
+   * liste déroulante à un choix unique garde les options saisies.
+   */
+  function changeType(field: FieldDefinition, type: FieldType) {
+    const defaults = newField(type);
+    field.type = type;
+    if (metaFor(type).hasOptions && !field.options?.length) field.options = defaults.options;
+    if ((type === "grid" || type === "checkbox_grid") && !field.grid) field.grid = defaults.grid;
+    if (type === "linear_scale" && !field.scale) field.scale = defaults.scale;
+    if (defaults.validation && !field.validation) field.validation = defaults.validation;
+    // Ces types n'attendent aucune saisie : les rendre obligatoires bloquerait l'envoi.
+    if (type === "section" || type === "text_block" || type === "rotation") field.required = false;
+    if (type === "rotation") field.condition = undefined;
   }
-  function setGridRows(field: FieldDefinition, text: string) {
-    field.grid = { rows: text.split("\n").filter(Boolean), columns: field.grid?.columns ?? [] };
+
+  // --- Lignes et colonnes des grilles ---
+  // Une zone de texte « une ligne par ligne » retirait les lignes vides à la
+  // frappe : impossible d'appuyer sur Entrée pour en ajouter une, et le
+  // curseur sautait en fin de texte. Chaque ligne a désormais son champ.
+  function addGridItem(field: FieldDefinition, axis: "rows" | "columns") {
+    field.grid ??= { rows: [], columns: [] };
+    const items = field.grid[axis];
+    const name = axis === "rows" ? `Ligne ${items.length + 1}` : `Colonne ${items.length + 1}`;
+    field.grid[axis] = [...items, name];
   }
-  function setGridCols(field: FieldDefinition, text: string) {
-    field.grid = { rows: field.grid?.rows ?? [], columns: text.split("\n").filter(Boolean) };
+
+  function removeGridItem(field: FieldDefinition, axis: "rows" | "columns", index: number) {
+    if (!field.grid) return;
+    field.grid[axis] = field.grid[axis].filter((_, i) => i !== index);
   }
 </script>
 
@@ -406,7 +431,12 @@
               <!-- Type Select dropdown -->
               <div class="w-full sm:w-56 shrink-0">
                 <label class="label text-[10px] text-slate-400 uppercase tracking-wide" for={`fb-2-${field.key}`}>Type de réponse</label>
-                <select id={`fb-2-${field.key}`} class="input text-xs" bind:value={field.type}>
+                <select
+                  id={`fb-2-${field.key}`}
+                  class="input text-xs"
+                  value={field.type}
+                  onchange={(e) => changeType(field, (e.target as HTMLSelectElement).value as FieldType)}
+                >
                   {#each FIELD_TYPE_META as m}
                     <option value={m.type}>{m.label}</option>
                   {/each}
@@ -661,24 +691,39 @@
             <!-- Grid editor options -->
             {#if (field.type === "grid" || field.type === "checkbox_grid") && field.grid}
               <div class="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label class="label text-xs" for={`fb-12-${field.key}`}>Lignes (une par ligne)</label>
-                  <textarea id={`fb-12-${field.key}`}
-                    class="input text-xs font-mono"
-                    rows="3"
-                    value={gridText(field.grid.rows)}
-                    oninput={(e) => setGridRows(field, (e.target as HTMLTextAreaElement).value)}
-                  ></textarea>
-                </div>
-                <div>
-                  <label class="label text-xs" for={`fb-13-${field.key}`}>Colonnes (une par ligne)</label>
-                  <textarea id={`fb-13-${field.key}`}
-                    class="input text-xs font-mono"
-                    rows="3"
-                    value={gridText(field.grid.columns)}
-                    oninput={(e) => setGridCols(field, (e.target as HTMLTextAreaElement).value)}
-                  ></textarea>
-                </div>
+                {#each [["rows", "Lignes"], ["columns", "Colonnes"]] as [axis, title] (axis)}
+                  {@const items = field.grid[axis as "rows" | "columns"]}
+                  <div>
+                    <span class="label text-xs">{title}</span>
+                    <div class="space-y-2">
+                      {#each items as _, ii}
+                        <div class="flex items-center gap-2">
+                          <input
+                            class="input text-xs !py-1 flex-1"
+                            aria-label={`${title} ${ii + 1}`}
+                            bind:value={items[ii]}
+                          />
+                          <button
+                            type="button"
+                            class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 shrink-0"
+                            onclick={() => removeGridItem(field, axis as "rows" | "columns", ii)}
+                            title="Supprimer"
+                            aria-label={`Supprimer ${title.toLowerCase()} ${ii + 1}`}
+                          >
+                            <IconClose size={14} />
+                          </button>
+                        </div>
+                      {/each}
+                      <button
+                        type="button"
+                        class="btn-secondary !py-1 px-3 text-xs"
+                        onclick={() => addGridItem(field, axis as "rows" | "columns")}
+                      >
+                        <IconPlus size={12} /> {axis === "rows" ? "Ajouter une ligne" : "Ajouter une colonne"}
+                      </button>
+                    </div>
+                  </div>
+                {/each}
                 <div class="sm:col-span-2">
                   <label class="flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
                     <input

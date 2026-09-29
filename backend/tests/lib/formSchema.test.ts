@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { Elysia } from "elysia";
 import {
   JUSTIFICATION_SUFFIX,
+  FormSchemaArray,
   assignRotation,
   rotationAssignments,
   safeRegexTest,
@@ -287,5 +289,36 @@ describe("Répartition entre variantes", () => {
   test("refuse une variante qui n'existe pas", () => {
     const { errors } = validateSubmission([listes], { liste: "Liste Z" });
     expect(errors).toHaveLength(1);
+  });
+});
+
+describe("FormSchemaArray- enregistrement depuis l'éditeur", () => {
+  /** Rejoue la validation d'Elysia, qui retire les propriétés non déclarées. */
+  async function roundTrip(schema: unknown[]): Promise<{ status: number; body: any }> {
+    const app = new Elysia().put("/", ({ body }) => body, { body: FormSchemaArray });
+    const res = await app.handle(
+      new Request("http://localhost/", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(schema),
+      }),
+    );
+    return { status: res.status, body: await res.json() };
+  }
+
+  test("conserve le réglage d'une échelle linéaire", async () => {
+    const scale = { min: 0, max: 10, minLabel: "Pas du tout", maxLabel: "Tout à fait" };
+    const { status, body } = await roundTrip([
+      { key: "note", type: "linear_scale", label: "Note", required: false, scale },
+    ]);
+    expect(status).toBe(200);
+    expect(body[0].scale).toEqual(scale);
+  });
+
+  test("accepte une question et une option en cours de saisie (vides)", async () => {
+    const { status } = await roundTrip([
+      { key: "q", type: "radio", label: "", required: false, options: [{ value: "", label: "" }] },
+    ]);
+    expect(status).toBe(200);
   });
 });

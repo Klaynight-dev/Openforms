@@ -28,9 +28,12 @@ export const FIELD_TYPES = [
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 
+// Libellés et valeurs peuvent être vides : l'éditeur enregistre à chaque
+// frappe, et une option en cours de réécriture passe par la chaîne vide. La
+// refuser faisait échouer tout l'enregistrement du formulaire.
 const OptionSchema = t.Object({
-  value: t.String({ minLength: 1, maxLength: 200 }),
-  label: t.String({ minLength: 1, maxLength: 200 }),
+  value: t.String({ maxLength: 200 }),
+  label: t.String({ maxLength: 200 }),
   /** Couleur personnalisée (hex) pour la représentation de ce choix dans les statistiques. */
   color: t.Optional(t.String({ maxLength: 20 })),
 });
@@ -57,7 +60,8 @@ const ConditionSchema = t.Optional(
 export const FieldDefinitionSchema = t.Object({
   key: t.String({ pattern: "^[a-zA-Z0-9_]{1,64}$" }),
   type: t.Union(FIELD_TYPES.map((v) => t.Literal(v))),
-  label: t.String({ minLength: 1, maxLength: 300 }),
+  /** Vide possible : question en cours de saisie, titre facultatif d'un bloc de texte. */
+  label: t.String({ maxLength: 300 }),
   description: t.Optional(t.String({ maxLength: 1000 })),
   placeholder: t.Optional(t.String({ maxLength: 300 })),
   required: t.Boolean({ default: false }),
@@ -76,6 +80,16 @@ export const FieldDefinitionSchema = t.Object({
     t.Object({
       rows: t.Array(t.String({ maxLength: 200 }), { maxItems: 100 }),
       columns: t.Array(t.String({ maxLength: 200 }), { maxItems: 100 }),
+    }),
+  ),
+  /** Champ "linear_scale" : bornes et libellés des extrémités. Sans cette
+   *  entrée, la validation retirait le réglage et l'échelle revenait à 1-5. */
+  scale: t.Optional(
+    t.Object({
+      min: t.Integer({ minimum: 0, maximum: 1 }),
+      max: t.Integer({ minimum: 2, maximum: 10 }),
+      minLabel: t.Optional(t.String({ maxLength: 100 })),
+      maxLabel: t.Optional(t.String({ maxLength: 100 })),
     }),
   ),
 });

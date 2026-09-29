@@ -38,58 +38,32 @@
     };
   }
 
-  // Sync settings when form changes or is loaded
-  $effect(() => {
-    if (editorState.form) {
-      fields = editorState.form.schema ?? [];
-      metaColumns = editorState.form.metaColumns ?? [];
-      settings = settingsOf(editorState.form);
-    }
-  });
-
-  // Save implementation
-  async function save() {
-    if (!editorState.form) return;
-
-    await api.updateForm(id, {
-      title: settings.title,
-      // Un champ vidé part tel quel : `undefined` serait ignoré par le serveur
-      // et l'ancienne valeur resterait en base.
-      description: settings.description,
-      schema: fields,
-      metaColumns,
-      requireConsent: settings.requireConsent,
-      consentText: settings.consentText,
-      isAnonymized: settings.isAnonymized,
-      encryptResponses: settings.encryptResponses,
-      visibility: settings.visibility,
-      allowedEmails: settings.allowedEmails,
-      translations: settings.translations,
-    });
-
-    // Update parent context state to reflect changes instantly in the header
-    editorState.form.title = settings.title;
-    editorState.form.description = settings.description;
-    editorState.form.schema = fields;
-    editorState.form.metaColumns = metaColumns;
-    editorState.form.requireConsent = settings.requireConsent;
-    editorState.form.consentText = settings.consentText;
-    editorState.form.isAnonymized = settings.isAnonymized;
-    editorState.form.encryptResponses = settings.encryptResponses;
-    editorState.form.visibility = settings.visibility;
-    editorState.form.allowedEmails = settings.allowedEmails;
-    editorState.form.translations = settings.translations;
+  /** Copie détachée : l'éditeur ne doit partager aucun objet avec l'état enregistré. */
+  function detach<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 
-  // Register save function with the parent layout
-  $effect(() => {
-    editorState.saveCallback = save;
-    return () => {
-      editorState.saveCallback = null;
-    };
-  });
+  type EditorSnapshot = { fields: FieldDefinition[]; metaColumns: MetaColumn[]; settings: ReturnType<typeof settingsOf> };
 
-  // --- Enregistrement automatique & annulation ---
+  function snapshotOf(form: FormDetail): EditorSnapshot {
+    return detach({
+      fields: form.schema ?? [],
+      metaColumns: form.metaColumns ?? [],
+      settings: settingsOf(form),
+    });
+  }
+
+  /**
+   * Dernier état connu du serveur. L'éditeur s'en écarte à chaque frappe :
+   * c'est cet écart qui déclenche l'enregistrement.
+   *
+   * Il était auparavant lu dans `editorState.form`, dont le schéma était le
+   * même objet que `fields` : l'état « enregistré » suivait chaque frappe, la
+   * différence restait nulle et les modifications de questions ne partaient
+   * jamais d'elles-mêmes.
+   */
+  let base = $state.raw<EditorSnapshot | null>(null);
+  const baseSignature = $derived(base ? JSON.stringify(base) : "");
 
   const history = new EditHistory({
     snapshot: () => $state.snapshot({ fields, metaColumns, settings }),
@@ -100,6 +74,62 @@
     },
   });
 
+  // Chargement (ou rechargement après restauration d'une version) : seule
+  // l'identité de `editorState.form` compte, pas son contenu, que
+  // l'enregistrement met à jour au fil de l'eau.
+  $effect(() => {
+    const form = editorState.form;
+    if (!form) return;
+    untrack(() => {
+      const snapshot = snapshotOf(form);
+      base = snapshot;
+      fields = detach(snapshot.fields);
+      metaColumns = detach(snapshot.metaColumns);
+      settings = detach(snapshot.settings);
+      history.reset();
+    });
+  });
+
+  async function save() {
+    if (!editorState.form) return;
+    const sent = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
+
+    await api.updateForm(id, {
+      // Un titre vidé en cours de saisie ne doit pas bloquer l'enregistrement
+      // des questions : le serveur exige un titre.
+      title: sent.settings.title.trim() || "Sans titre",
+      // Un champ vidé part tel quel : `undefined` serait ignoré par le serveur
+      // et l'ancienne valeur resterait en base.
+      description: sent.settings.description,
+      schema: sent.fields,
+      metaColumns: sent.metaColumns,
+      requireConsent: sent.settings.requireConsent,
+      consentText: sent.settings.consentText,
+      isAnonymized: sent.settings.isAnonymized,
+      encryptResponses: sent.settings.encryptResponses,
+      visibility: sent.settings.visibility,
+      allowedEmails: sent.settings.allowedEmails,
+      translations: sent.settings.translations,
+    });
+
+    base = sent;
+    // L'en-tête et les autres onglets lisent `editorState.form` : on le met à
+    // jour avec des copies, jamais avec les objets de l'éditeur.
+    Object.assign(editorState.form, {
+      ...detach(sent.settings),
+      schema: detach(sent.fields),
+      metaColumns: detach(sent.metaColumns),
+    });
+  }
+
+  // Register save function with the parent layout
+  $effect(() => {
+    editorState.saveCallback = save;
+    return () => {
+      editorState.saveCallback = null;
+    };
+  });
+
   $effect(() => {
     editorState.history = history as EditHistory<unknown>;
     return () => {
@@ -108,31 +138,11 @@
     };
   });
 
-  // Un nouveau formulaire chargé remet l'historique à son état initial.
-  // `untrack` : sans lui, l'instantané pris ici ferait dépendre l'effet de
-  // tout l'éditeur, qui se réinitialiserait à chaque frappe.
-  $effect(() => {
-    if (!editorState.form?.id) return;
-    untrack(() => history.reset());
-  });
-
-  /** État enregistré côté serveur : tant que l'éditeur n'en diverge pas, il
-   *  n'y a rien à enregistrer ni à empiler dans l'historique. */
-  const savedSignature = $derived(
-    editorState.form
-      ? JSON.stringify({
-          fields: editorState.form.schema ?? [],
-          metaColumns: editorState.form.metaColumns ?? [],
-          settings: settingsOf(editorState.form),
-        })
-      : "",
-  );
-
   // Sérialiser lit l'état en profondeur : l'effet se redéclenche donc pour
   // n'importe quelle modification, y compris à l'intérieur d'un champ.
   $effect(() => {
     const current = JSON.stringify({ fields, metaColumns, settings });
-    if (current === savedSignature) return;
+    if (!base || current === baseSignature) return;
     untrack(() => {
       history.record();
       editorState.markDirty();

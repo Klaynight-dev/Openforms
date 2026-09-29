@@ -39,6 +39,8 @@
     history = $state<EditHistory<unknown> | null>(null);
 
     #autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Compte les modifications : une frappe pendant l'envoi reste à enregistrer. */
+    #generation = 0;
 
     async load(formId: string) {
       this.loading = true;
@@ -62,6 +64,7 @@
      */
     markDirty() {
       if (this.permission !== "EDITOR" || !this.saveCallback) return;
+      this.#generation += 1;
       this.dirty = true;
       if (this.#autosaveTimer) clearTimeout(this.#autosaveTimer);
       this.#autosaveTimer = setTimeout(() => {
@@ -85,9 +88,10 @@
       this.#autosaveTimer = null;
       this.saving = true;
       this.error = null;
+      const generation = this.#generation;
       try {
         await this.saveCallback();
-        this.dirty = false;
+        if (this.#generation === generation) this.dirty = false;
         this.saved = true;
         setTimeout(() => { this.saved = false; }, 2500);
       } catch (e: any) {
