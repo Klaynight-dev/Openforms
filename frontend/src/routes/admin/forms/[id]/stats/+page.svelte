@@ -283,34 +283,12 @@
     const el = pieCharts[field.key]?.getDom() as HTMLDivElement | undefined;
     if (el) renderPieChart(el, field);
     try {
-      await persistSchema(schema);
+      // Seule la question touchée part : renvoyer tout le formulaire
+      // écraserait ce que d'autres modifient en même temps dans l'éditeur.
+      await api.applyFormOps(formId, [{ t: "upsert", field: $state.snapshot(field) }]);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : "Impossible d'enregistrer la couleur.");
     }
-  }
-
-  async function persistSchema(updatedSchema: FieldDefinition[]) {
-    if (!formDetail) return;
-    await api.updateForm(formId, {
-      title: formDetail.title,
-      description: formDetail.description ?? undefined,
-      schema: updatedSchema,
-      metaColumns: formDetail.metaColumns,
-      requireConsent: formDetail.requireConsent,
-      consentText: formDetail.consentText ?? undefined,
-      isAnonymized: formDetail.isAnonymized,
-      encryptResponses: formDetail.encryptResponses,
-      visibility: formDetail.visibility,
-      allowedEmails: formDetail.allowedEmails,
-      notifyOwner: formDetail.notifyOwner,
-      sendConfirmationEmail: formDetail.sendConfirmationEmail,
-      confirmationEmailText: formDetail.confirmationEmailText ?? undefined,
-      webhookUrl: formDetail.webhookUrl ?? undefined,
-      startsAt: formDetail.startsAt ?? undefined,
-      endsAt: formDetail.endsAt ?? undefined,
-      maxResponses: formDetail.maxResponses ?? undefined,
-      translations: formDetail.translations,
-    });
   }
 
   /** Quantile par interpolation linéaire sur un tableau trié. */

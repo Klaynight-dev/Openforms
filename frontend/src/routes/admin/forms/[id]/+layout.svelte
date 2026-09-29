@@ -13,8 +13,8 @@
   import type { FormVersion } from "$lib/types.ts";
   import { realtime, presenceTopic, editorTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas, IconUndo, IconRedo, IconHistory, IconUser } from "$lib/icons.ts";
-  import type { FieldDefinition, FormDetail, Permission } from "$lib/types.ts";
-  import type { LiveEdit } from "$lib/formMerge.ts";
+  import type { FormDetail, MetaColumn, Permission } from "$lib/types.ts";
+  import { applyMeta, applyOpsToFields, detach } from "$lib/formOps.ts";
 
   let { children } = $props();
 
@@ -42,9 +42,13 @@
      * Fusion d'un état reçu d'un collaborateur, fournie par l'onglet qui
      * édite (questions). Sans elle, l'état reçu remplace celui affiché.
      */
-    remoteCallback: ((form: Partial<FormDetail>) => void) | null = null;
-    /** Application des modifications en cours de frappe, fournie par l'éditeur. */
-    liveCallback: ((edit: LiveEdit<FieldDefinition>) => void) | null = null;
+    /**
+     * Éditeur des questions, quand il est affiché : il reçoit les opérations
+     * des collaborateurs, ses accusés de réception et les modifications REST.
+     */
+    editorCallback: ((event: RealtimeEvent) => void) | null = null;
+    /** Révision d'édition du formulaire chargé (voir backend formSession.ts). */
+    editRev = 0;
     /** Question sélectionnée par chaque collaborateur (clé d'utilisateur). */
     selections = $state<Record<string, { user: PresenceUser; fieldKey: string }>>({});
     /**
@@ -63,6 +67,7 @@
       this.error = null;
       try {
         const res = await api.getForm(formId);
+        this.editRev = res.editRev ?? 0;
         this.form = res.form;
         this.permission = res.permission;
         this.dirty = false;
@@ -139,31 +144,30 @@
     return realtime.subscribe([presenceTopic(id)], applyPresenceEvent);
   });
 
-  // --- Modifications enregistrées par les collaborateurs ---
+  // --- Modifications des collaborateurs ---
   $effect(() => {
     if (!id) return;
     return realtime.subscribe([editorTopic(id)], (event) => {
-      if (event.type === "form:live") {
-        editorState.liveCallback?.(event.edit);
+      if (!editorState.form) return;
+      if (editorState.editorCallback) {
+        editorState.editorCallback(event);
         return;
       }
-      if (event.type !== "form:updated" || !editorState.form) return;
-      if (editorState.remoteCallback) {
-        editorState.remoteCallback(event.form);
-        return;
-      }
-      // Onglet sans fusion (Paramètres) : tant qu'il n'a rien en attente, il
-      // prend tout l'état reçu. Sinon, il ne prend que ce qu'il ne modifie
-      // pas lui-même. Il renvoie les questions avec ses réglages : garder
-      // les anciennes écraserait celles modifiées entre-temps par d'autres.
-      if (!editorState.dirty) {
-        Object.assign(editorState.form, event.form);
-        return;
-      }
-      const { schema, metaColumns, title, description, translations, isPublished } = event.form;
-      const untouched = { schema, metaColumns, title, description, translations, isPublished };
-      for (const [key, value] of Object.entries(untouched)) {
-        if (value !== undefined) (editorState.form as unknown as Record<string, unknown>)[key] = value;
+      // Autres onglets (Paramètres, Réponses…) : ils tiennent le formulaire à
+      // jour pour l'en-tête, l'aperçu et le retour à l'éditeur.
+      const form = editorState.form;
+      if (event.type === "form:ops") {
+        form.schema = applyOpsToFields(detach(form.schema ?? []), event.ops, (_current, incoming) => detach(incoming));
+        const meta: Record<string, unknown> = {};
+        applyMeta(meta, event.ops);
+        Object.assign(form, meta);
+        for (const op of event.ops) if (op.t === "metaColumns") form.metaColumns = detach(op.metaColumns) as MetaColumn[];
+        editorState.editRev = event.rev;
+      } else if (event.type === "form:updated") {
+        // L'onglet Paramètres ne reprend pas les réglages qu'il est en train
+        // de modifier : son prochain envoi l'emportera.
+        if (event.resync || !editorState.dirty) Object.assign(form, event.form);
+        else form.isPublished = event.form.isPublished ?? form.isPublished;
       }
     });
   });

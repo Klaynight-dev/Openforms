@@ -119,24 +119,9 @@
   async function persistColumns(cols: MetaColumn[]) {
     if (!detail) return;
     try {
-      await api.updateForm(id, {
-        title: detail.title,
-        description: detail.description ?? undefined,
-        schema: fields,
-        metaColumns: cols,
-        requireConsent: detail.requireConsent,
-        consentText: detail.consentText ?? undefined,
-        isAnonymized: detail.isAnonymized,
-        encryptResponses: detail.encryptResponses,
-        notifyOwner: detail.notifyOwner,
-        sendConfirmationEmail: detail.sendConfirmationEmail,
-        confirmationEmailText: detail.confirmationEmailText ?? undefined,
-        webhookUrl: detail.webhookUrl ?? undefined,
-        startsAt: detail.startsAt ?? undefined,
-        endsAt: detail.endsAt ?? undefined,
-        maxResponses: detail.maxResponses ?? undefined,
-        translations: detail.translations,
-      });
+      // Les colonnes seules : renvoyer tout le formulaire écraserait ce que
+      // d'autres modifient en même temps dans l'éditeur.
+      await api.applyFormOps(id, [{ t: "metaColumns", metaColumns: $state.snapshot(cols) }]);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : "Impossible d'enregistrer les colonnes.");
     }

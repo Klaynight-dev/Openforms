@@ -3,6 +3,8 @@ import { prisma } from "../services/prisma.ts";
 import { authPlugin, readableFormsWhere, resolveFormPermission } from "../middleware/auth.ts";
 import { isAllowedOrigin } from "../middleware/security.ts";
 import { broadcast, editorTopic, presenceTopic, type PresenceUser, type RealtimeEvent } from "../lib/realtime.ts";
+import { FormOpSchema } from "../lib/formOps.ts";
+import { applyOps } from "../lib/formSession.ts";
 import type { SessionContext } from "../lib/session.ts";
 
 /**
@@ -14,10 +16,9 @@ import type { SessionContext } from "../lib/session.ts";
  *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment, où se
  *                             trouve son pointeur (message `cursor`) et
  *                             quelle question il a sélectionnée (`select`)
- *   - `form:<id>:editor`    : nouvel état du formulaire après chaque
- *                             enregistrement, et modifications en cours de
- *                             frappe (message `edit`), pour l'éditeur des
- *                             collaborateurs
+ *   - `form:<id>:editor`    : opérations d'édition appliquées par le serveur
+ *                             (message `ops`, voir formSession.ts) et
+ *                             modifications faites par l'API REST
  *
  * Chaque abonnement est vérifié contre les droits réels de l'utilisateur sur le
  * formulaire : la socket est authentifiée par le cookie de session, jamais par
@@ -40,8 +41,8 @@ const selectionByForm = new Map<string, Map<string, { user: PresenceUser; fieldK
 
 /**
  * Droit d'édition de chaque socket sur chaque formulaire, vérifié une fois :
- * les modifications en direct partent à chaque frappe, une requête en base
- * par message serait hors de prix.
+ * les opérations partent à chaque frappe, une requête en base par message
+ * serait hors de prix.
  */
 const editPermissionBySocket = new Map<string, Map<string, Promise<boolean>>>();
 
@@ -171,7 +172,7 @@ export const wsController = new Elysia()
         t.Literal("ping"),
         t.Literal("cursor"),
         t.Literal("select"),
-        t.Literal("edit"),
+        t.Literal("ops"),
       ]),
       topics: t.Optional(t.Array(t.String({ maxLength: 128 }), { maxItems: 200 })),
       // Champs du message `cursor` : onglet affiché, élément survolé et
@@ -184,10 +185,10 @@ export const wsController = new Elysia()
       hidden: t.Optional(t.Boolean()),
       // Message `select` : clé de la question sélectionnée, `null` pour aucune.
       fieldKey: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
-      // Message `edit` : ce qui a changé dans l'éditeur (voir formMerge.ts
-      // côté front). Relayé tel quel, jamais enregistré : c'est l'auteur qui
-      // enregistre, par l'API REST et sa validation.
-      edit: t.Optional(t.Record(t.String(), t.Any())),
+      // Message `ops` : lot d'opérations d'édition et son identifiant, rappelé
+      // dans l'accusé de réception (voir formOps.ts).
+      ops: t.Optional(t.Array(FormOpSchema, { maxItems: 500 })),
+      batchId: t.Optional(t.String({ maxLength: 64 })),
     }),
 
     beforeHandle({ auth, request, set }) {
@@ -248,14 +249,32 @@ export const wsController = new Elysia()
         return;
       }
 
-      if (message.type === "edit") {
+      if (message.type === "ops") {
         const formId = message.formId;
-        if (!formId || !message.edit || !presenceBySocket.get(ws.id)?.has(formId)) return;
-        if (!(await canEdit(ws.id, auth.user, formId))) return;
-        ws.publish(
-          editorTopic(formId),
-          JSON.stringify({ type: "form:live", formId, user: presenceUser, edit: message.edit } satisfies RealtimeEvent),
-        );
+        const batchId = message.batchId ?? "";
+        const ops = message.ops ?? [];
+        if (!formId || !presenceBySocket.get(ws.id)?.has(formId)) return;
+        if (!(await canEdit(ws.id, auth.user, formId))) {
+          ws.send({ type: "form:ack", formId, id: batchId, rev: null, rejected: ops.length } satisfies RealtimeEvent);
+          return;
+        }
+        await applyOps(formId, auth.user.id, ops, (batch) => {
+          // Dans la file du formulaire : accusés et diffusions partent dans
+          // l'ordre des révisions, et chaque éditeur les reçoit dans cet ordre.
+          if (batch.ops.length > 0) {
+            ws.publish(
+              editorTopic(formId),
+              JSON.stringify({ type: "form:ops", formId, rev: batch.rev, ops: batch.ops, user: presenceUser } satisfies RealtimeEvent),
+            );
+          }
+          // L'auteur a pu fermer l'onglet entre-temps : son accusé n'a plus
+          // de destinataire, les autres ont déjà reçu les opérations.
+          try {
+            ws.send({ type: "form:ack", formId, id: batchId, rev: batch.rev, rejected: batch.rejected } satisfies RealtimeEvent);
+          } catch {
+            // socket fermée
+          }
+        });
         return;
       }
 

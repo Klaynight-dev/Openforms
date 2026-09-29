@@ -8,7 +8,9 @@ import { recordFormVersion } from "../lib/formVersion.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
 import { resolveRotation } from "../lib/rotation.ts";
-import { broadcastFormUpdate } from "../lib/realtime.ts";
+import { broadcast, broadcastFormUpdate, editorTopic } from "../lib/realtime.ts";
+import { FormOpSchema } from "../lib/formOps.ts";
+import { applyOps, dropSession, flushSession, readSession } from "../lib/formSession.ts";
 import {
   checkEmbedAccess,
   frameAncestors,
@@ -295,7 +297,15 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         set.status = 403;
         return { success: false, error: "Accès refusé." };
       }
-      return { success: true, form, permission: perm };
+      // Pendant une édition, l'état en mémoire est plus récent que la base de
+      // quelques centaines de millisecondes ; l'éditeur a besoin des deux :
+      // l'état, et la révision à partir de laquelle suivre les opérations.
+      const live = await readSession(form.id);
+      if (live) {
+        const { rev, ...content } = live;
+        return { success: true, form: { ...form, ...content }, permission: perm, editRev: rev };
+      }
+      return { success: true, form, permission: perm, editRev: 0 };
     },
     { params: t.Object({ id: t.String() }), requireRole: true },
   )
@@ -308,16 +318,31 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         set.status = 401;
         return { success: false, error: "Authentification requise." };
       }
-      const form = await prisma.form.findUnique({ where: { id: params.id } });
-      if (!form) {
+      // Le contenu (questions, titre…) est normalement modifié par opérations
+      // (POST /:id/ops, ou la socket). Une requête qui le remplace en entier
+      // clôt la session d'édition : les éditeurs ouverts se resynchronisent.
+      const replacesContent =
+        body.schema !== undefined ||
+        body.title !== undefined ||
+        body.description !== undefined ||
+        body.translations !== undefined ||
+        body.metaColumns !== undefined;
+      const target = await prisma.form.findUnique({ where: { id: params.id }, select: { id: true, ownerId: true } });
+      if (!target) {
         set.status = 404;
         return { success: false, error: "Formulaire introuvable." };
       }
-      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, target.id, target.ownerId);
       if (perm !== "EDITOR") {
         set.status = 403;
         return { success: false, error: "Édition non autorisée." };
       }
+
+      if (replacesContent) await dropSession(target.id);
+      else await flushSession(target.id);
+      // Relu après l'écriture des opérations en attente : c'est cet état qui
+      // rejoint l'historique des versions.
+      const form = (await prisma.form.findUnique({ where: { id: target.id } }))!;
 
       let nextSlug = form.slug;
       if (body.slug !== undefined && body.slug.trim().toLowerCase() !== form.slug) {
@@ -374,10 +399,58 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           embedOrigins: nextEmbedOrigins,
         },
       });
-      broadcastFormUpdate(updated);
+      broadcastFormUpdate(updated, { resync: replacesContent });
       return { success: true, form: updated };
     },
-    { params: t.Object({ id: t.String() }), body: t.Object(FormSettings), requireRole: true },
+    {
+      params: t.Object({ id: t.String() }),
+      // Titre et questions deviennent facultatifs : l'onglet Paramètres ne
+      // les envoie plus, pour ne pas écraser ce que font les éditeurs.
+      body: t.Object({
+        ...FormSettings,
+        title: t.Optional(FormSettings.title),
+        schema: t.Optional(FormSettings.schema),
+      }),
+      requireRole: true,
+    },
+  )
+
+  // --- Opérations d'édition (pages sans socket : réponses, statistiques) ---
+  // Même chemin que les opérations reçues par la socket : appliquées dans la
+  // session du formulaire, dans l'ordre, puis diffusées aux éditeurs.
+  .post(
+    "/:id/ops",
+    async ({ auth, params, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
+      const form = await prisma.form.findUnique({ where: { id: params.id }, select: { id: true, ownerId: true } });
+      if (!form) {
+        set.status = 404;
+        return { success: false, error: "Formulaire introuvable." };
+      }
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
+      if (perm !== "EDITOR") {
+        set.status = 403;
+        return { success: false, error: "Édition non autorisée." };
+      }
+      const user = { id: auth.user.id, name: auth.user.displayName?.trim() || auth.user.email };
+      const batch = await applyOps(form.id, auth.user.id, body.ops, (applied) => {
+        if (applied.ops.length === 0) return;
+        broadcast(editorTopic(form.id), { type: "form:ops", formId: form.id, rev: applied.rev, ops: applied.ops, user });
+      });
+      if (!batch || batch.rejected > 0) {
+        set.status = 422;
+        return { success: false, error: "Modification refusée : contenu invalide.", rev: batch?.rev ?? null };
+      }
+      return { success: true, rev: batch.rev };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({ ops: t.Array(FormOpSchema, { minItems: 1, maxItems: 500 }) }),
+      requireRole: true,
+    },
   )
 
   // --- Identité visuelle des exports statistiques ---

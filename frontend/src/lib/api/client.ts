@@ -30,6 +30,7 @@ import type {
   EmbedConfig,
   PublicRotation,
 } from "../types.ts";
+import type { FormOp } from "../formOps.ts";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3000";
 
@@ -119,8 +120,15 @@ export const api = {
 
   // --- Formulaires ---
   listForms: () => request<{ success: boolean; forms: FormSummary[] }>("GET", "/api/v1/forms"),
+  /** `editRev` : révision d'édition à partir de laquelle suivre les opérations. */
   getForm: (id: string) =>
-    request<{ success: boolean; form: FormDetail; permission: Permission }>("GET", `/api/v1/forms/${id}`),
+    request<{ success: boolean; form: FormDetail; permission: Permission; editRev?: number }>(
+      "GET",
+      `/api/v1/forms/${id}`,
+    ),
+  /** Opérations d'édition hors de l'éditeur (colonnes du tableur, couleurs des stats). */
+  applyFormOps: (id: string, ops: FormOp[]) =>
+    request<{ success: boolean; rev: number }>("POST", `/api/v1/forms/${id}/ops`, { ops }),
   /** `seed` : numéro de participant déjà reçu, pour garder les mêmes variantes. */
   getPublicForm: (slug: string, seed?: number) =>
     request<{ success: boolean; form: FormDetail; rotation: PublicRotation | null }>(
@@ -328,10 +336,12 @@ export const api = {
 };
 
 export interface FormPayload {
-  title: string;
+  /** Requis à la création. En mise à jour, titre et questions passent par
+   *  `applyFormOps` : les envoyer ici fermerait la session d'édition. */
+  title?: string;
   slug?: string;
   description?: string;
-  schema: FieldDefinition[];
+  schema?: FieldDefinition[];
   metaColumns?: MetaColumn[];
   requireConsent?: boolean;
   consentText?: string;

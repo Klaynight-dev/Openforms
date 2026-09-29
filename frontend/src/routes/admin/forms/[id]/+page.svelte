@@ -1,23 +1,36 @@
 <script lang="ts">
-  import { getContext, onDestroy, untrack } from "svelte";
+  import { getContext, onDestroy, onMount, untrack } from "svelte";
   import { page } from "$app/stores";
   import FormBuilder from "$components/FormBuilder.svelte";
   import { api } from "$api/client.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
-  import { realtime, type PresenceUser } from "$lib/stores/realtime.svelte.ts";
+  import { realtime, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import {
-    applyLiveEdit,
-    applyLiveFields,
-    diffEditorContent,
-    mergeValue,
+    applyMeta,
+    applyOpsToContent,
+    applyOpsToFields,
+    detach,
+    diffToOps,
     patchInPlace,
-    planFieldMerge,
-    rebaseEditorContent,
-    sameValue,
+    rebaseContent,
     stableStringify,
-    type LiveEdit,
-  } from "$lib/formMerge.ts";
+    touchedKeys,
+    withoutKeys,
+    type EditorContent,
+    type FormOp,
+  } from "$lib/formOps.ts";
   import type { FieldDefinition, MetaColumn, FormDetail, Permission } from "$lib/types.ts";
+
+  /**
+   * Éditeur des questions, en édition collaborative.
+   *
+   * Chaque modification part aussitôt au serveur sous forme d'opérations
+   * (voir formOps.ts) : question créée, modifiée, supprimée, déplacée, titre
+   * changé. Le serveur les applique dans l'ordre, les numérote (révision) et
+   * les diffuse aux autres éditeurs, qui les appliquent sur place : chacun
+   * voit les autres écrire, et personne ne renvoie jamais le formulaire
+   * entier, donc personne n'écrase les questions d'un autre.
+   */
 
   const editorState = getContext<{
     form: FormDetail | null;
@@ -25,11 +38,9 @@
     saving: boolean;
     saved: boolean;
     error: string | null;
-    saveCallback: (() => Promise<void>) | null;
     history: EditHistory<unknown> | null;
-    markDirty: () => void;
-    remoteCallback: ((form: Partial<FormDetail>) => void) | null;
-    liveCallback: ((edit: LiveEdit<FieldDefinition>) => void) | null;
+    editorCallback: ((event: RealtimeEvent) => void) | null;
+    editRev: number;
     selections: Record<string, { user: PresenceUser; fieldKey: string }>;
     presenceEpoch: number;
   }>("form-editor-context");
@@ -37,6 +48,7 @@
   const id = $page.params.id as string;
 
   let fields = $state<FieldDefinition[]>([]);
+  /** Colonnes du tableur : affichées ici, modifiées depuis l'onglet Réponses. */
   let metaColumns = $state<MetaColumn[]>([]);
   let settings = $state(settingsOf(null));
 
@@ -55,179 +67,233 @@
     };
   }
 
-  /** Copie détachée : l'éditeur ne doit partager aucun objet avec l'état enregistré. */
-  function detach<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value)) as T;
+  function contentOf(form: FormDetail): EditorContent {
+    return detach({ fields: form.schema ?? [], settings: settingsOf(form) });
   }
 
-  type EditorSnapshot = { fields: FieldDefinition[]; metaColumns: MetaColumn[]; settings: ReturnType<typeof settingsOf> };
+  // --- État partagé avec le serveur ---
 
-  function snapshotOf(form: FormDetail): EditorSnapshot {
-    return detach({
-      fields: form.schema ?? [],
-      metaColumns: form.metaColumns ?? [],
-      settings: settingsOf(form),
-    });
+  /**
+   * Ce que le serveur aura une fois nos lots en attente appliqués. Chaque
+   * modification locale part sous forme d'écart avec lui.
+   */
+  let shared: EditorContent | null = null;
+  /** Dernière révision appliquée : un trou dans la suite impose une resynchronisation. */
+  let lastRev = 0;
+
+  interface Batch {
+    id: string;
+    ops: FormOp[];
+    sentAt: number;
   }
-
-  /**
-   * Dernier état connu du serveur. L'éditeur s'en écarte à chaque frappe :
-   * c'est cet écart qui déclenche l'enregistrement.
-   *
-   * Il était auparavant lu dans `editorState.form`, dont le schéma était le
-   * même objet que `fields` : l'état « enregistré » suivait chaque frappe, la
-   * différence restait nulle et les modifications de questions ne partaient
-   * jamais d'elles-mêmes.
-   */
-  let base = $state.raw<EditorSnapshot | null>(null);
-  // Clés triées : une question mise à jour par un collaborateur peut voir ses
-  // propriétés réordonnées sans que rien n'ait changé.
-  const baseSignature = $derived(base ? stableStringify(base) : "");
-
-  /**
-   * Ce que les collaborateurs ont sous les yeux : le dernier état diffusé ou
-   * reçu en direct. Chaque modification locale part sous forme d'écart avec
-   * lui, sans attendre l'enregistrement.
-   */
-  let shared: EditorSnapshot | null = null;
-
-  /** Titre envoyé à la place d'un titre vidé : le serveur en exige un. */
-  const UNTITLED = "Sans titre";
+  /** Lots envoyés dont le serveur n'a pas encore accusé réception. */
+  let pending = $state<Batch[]>([]);
 
   const history = new EditHistory({
-    snapshot: () => $state.snapshot({ fields, metaColumns, settings }),
+    snapshot: () => $state.snapshot({ fields, settings }),
     apply: (value) => {
       fields = value.fields as FieldDefinition[];
-      metaColumns = value.metaColumns as MetaColumn[];
       settings = value.settings as typeof settings;
     },
   });
 
-  // Chargement (ou rechargement après restauration d'une version) : seule
-  // l'identité de `editorState.form` compte, pas son contenu, que
-  // l'enregistrement met à jour au fil de l'eau.
+  /** Aligne l'éditeur sur un contenu, en gardant les cartes existantes. */
+  function showContent(target: EditorContent) {
+    const current = new Map(fields.map((field) => [field.key, field]));
+    fields = target.fields.map((incoming) => {
+      const existing = current.get(incoming.key);
+      if (!existing) return detach(incoming);
+      patchInPlace(existing as unknown as Record<string, unknown>, incoming as unknown as Record<string, unknown>);
+      return existing;
+    });
+    for (const [key, value] of Object.entries(target.settings)) {
+      (settings as Record<string, unknown>)[key] = detach(value);
+    }
+  }
+
+  // Chargement (ou rechargement après restauration d'une version).
   $effect(() => {
     const form = editorState.form;
     if (!form) return;
     untrack(() => {
-      const snapshot = snapshotOf(form);
-      base = snapshot;
-      shared = detach(snapshot);
-      fields = detach(snapshot.fields);
-      metaColumns = detach(snapshot.metaColumns);
-      settings = detach(snapshot.settings);
+      const content = contentOf(form);
+      fields = detach(content.fields);
+      settings = detach(content.settings) as typeof settings;
+      metaColumns = detach(form.metaColumns ?? []);
+      shared = content;
+      lastRev = editorState.editRev;
+      pending = [];
       history.reset();
     });
   });
 
-  async function save() {
-    if (!editorState.form) return;
-    const sent = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
+  // --- Envoi : chaque modification locale part aussitôt ---
 
-    await api.updateForm(id, {
-      // Un titre vidé en cours de saisie ne doit pas bloquer l'enregistrement
-      // des questions : le serveur exige un titre.
-      title: sent.settings.title.trim() || UNTITLED,
-      // Un champ vidé part tel quel : `undefined` serait ignoré par le serveur
-      // et l'ancienne valeur resterait en base.
-      description: sent.settings.description,
-      schema: sent.fields,
-      metaColumns: sent.metaColumns,
-      requireConsent: sent.settings.requireConsent,
-      consentText: sent.settings.consentText,
-      isAnonymized: sent.settings.isAnonymized,
-      encryptResponses: sent.settings.encryptResponses,
-      visibility: sent.settings.visibility,
-      allowedEmails: sent.settings.allowedEmails,
-      translations: sent.settings.translations,
-    });
-
-    base = sent;
-    // L'en-tête et les autres onglets lisent `editorState.form` : on le met à
-    // jour avec des copies, jamais avec les objets de l'éditeur.
-    Object.assign(editorState.form, {
-      ...detach(sent.settings),
-      schema: detach(sent.fields),
-      metaColumns: detach(sent.metaColumns),
-    });
+  function send(batch: Batch) {
+    batch.sentAt = Date.now();
+    realtime.sendOps(id, batch.id, batch.ops);
   }
 
-  /**
-   * État enregistré par un collaborateur : ce que la personne n'a pas touché
-   * depuis le dernier état connu suit le serveur, ce qu'elle modifie reste
-   * le sien (voir formMerge.ts). Les questions sont mises à jour sur place :
-   * la carte ouverte, le focus et la saisie en cours sont préservés.
-   */
-  function applyRemote(form: Partial<FormDetail>) {
-    if (!base || !editorState.form) return;
-    const remote = snapshotOf({ ...editorState.form, ...form } as FormDetail);
-    // Un titre vidé est parti comme « Sans titre » : son écho ne doit pas
-    // réécrire ce mot dans le champ que la personne est en train de remplir.
-    if (remote.settings.title === UNTITLED && !base.settings.title.trim()) {
-      remote.settings.title = base.settings.title;
+  // Sérialiser lit l'état en profondeur : l'effet se redéclenche pour
+  // n'importe quelle modification, y compris à l'intérieur d'une question.
+  $effect(() => {
+    void stableStringify({ fields, settings });
+    untrack(() => {
+      if (!shared || editorState.permission !== "EDITOR") return;
+      const current = detach($state.snapshot({ fields, settings })) as EditorContent;
+      const ops = diffToOps(shared, current);
+      if (ops.length === 0) return;
+      shared = applyOpsToContent(shared, ops);
+      const batch: Batch = { id: crypto.randomUUID(), ops, sentAt: 0 };
+      pending = [...pending, batch];
+      send(batch);
+      history.record();
+    });
+  });
+
+  // --- Réception ---
+
+  /** Opérations reçues pendant une resynchronisation, rejouées ensuite. */
+  let resyncing = false;
+  let resyncAgain = false;
+  let buffered: { rev: number; apply: () => void }[] = [];
+
+  /** Applique un évènement numéroté dans l'ordre des révisions. */
+  function sequenced(rev: number, apply: () => void) {
+    if (resyncing) {
+      buffered.push({ rev, apply });
+      return;
     }
-    // Écho de son propre enregistrement, ou rien de neuf.
-    if (sameValue(remote, base)) return;
+    if (rev <= lastRev) return;
+    if (rev !== lastRev + 1) {
+      void resync();
+      return;
+    }
+    lastRev = rev;
+    apply();
+  }
 
-    const local = $state.snapshot({ fields, metaColumns, settings }) as EditorSnapshot;
-
-    const plan = planFieldMerge(base.fields, local.fields, remote.fields);
-    const localByKey = new Map(fields.map((field) => [field.key, field]));
-    const remoteByKey = new Map(remote.fields.map((field) => [field.key, field]));
-    fields = plan.order.map((key) => {
-      const current = localByKey.get(key);
-      if (!plan.takeRemote.has(key)) return current!;
-      const incoming = remoteByKey.get(key)!;
-      if (!current) return incoming;
+  function applyRemoteOps(received: FormOp[]) {
+    if (!shared) return;
+    // Ce que l'on a soi-même modifié sans accusé de réception : notre lot
+    // passera après celui-ci sur le serveur, c'est notre version qui reste.
+    const mine = touchedKeys(pending.flatMap((batch) => batch.ops));
+    const ops = withoutKeys(received, mine);
+    if (ops.length === 0) return;
+    fields = applyOpsToFields(fields, ops, (current, incoming) => {
       patchInPlace(current as unknown as Record<string, unknown>, incoming as unknown as Record<string, unknown>);
       return current;
     });
-
-    const mergedMeta = mergeValue(base.metaColumns, local.metaColumns, remote.metaColumns);
-    if (!sameValue(mergedMeta, local.metaColumns)) metaColumns = detach(mergedMeta);
-    for (const key of Object.keys(remote.settings) as (keyof EditorSnapshot["settings"])[]) {
-      const merged = mergeValue(base.settings[key], local.settings[key], remote.settings[key]);
-      if (!sameValue(merged, local.settings[key])) (settings as Record<string, unknown>)[key] = detach(merged);
-    }
-
-    base = remote;
-    // Les autres ont reçu le même état : rien à leur rediffuser.
-    shared = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
-    // En-tête (titre, publication) et autres onglets.
-    Object.assign(editorState.form, form);
+    applyMeta(settings as Record<string, unknown>, ops);
+    for (const op of ops) if (op.t === "metaColumns") metaColumns = detach(op.metaColumns);
+    shared = applyOpsToContent(shared, ops);
+    history.rebase((value) => rebaseContent(value as EditorContent, ops) as typeof value);
   }
 
   /**
-   * Modification d'un collaborateur, reçue pendant qu'il tape. Elle est
-   * appliquée sur place, ajoutée à l'état de référence (c'est son auteur qui
-   * l'enregistre : la reprendre ici doublerait les enregistrements) et
-   * reportée dans l'historique d'annulation.
+   * Recharge l'état du serveur et y rejoue nos lots en attente : après une
+   * coupure, une révision manquée, un lot refusé ou une restauration.
    */
-  function applyLive(edit: LiveEdit<FieldDefinition>) {
-    if (!base || !shared) return;
-    const sharedKeys = new Set(shared.fields.map((field) => field.key));
-    fields = applyLiveFields(fields, edit, (key) => !sharedKeys.has(key));
-    if (edit.metaColumns) metaColumns = detach(edit.metaColumns) as MetaColumn[];
-    for (const [key, value] of Object.entries(edit.settings ?? {})) {
-      (settings as Record<string, unknown>)[key] = detach(value);
+  async function resync() {
+    if (resyncing) {
+      resyncAgain = true;
+      return;
     }
-    base = applyLiveEdit(base, edit) as EditorSnapshot;
-    shared = applyLiveEdit(shared, edit) as EditorSnapshot;
-    history.rebase((value) => rebaseEditorContent(value as EditorSnapshot, edit) as EditorSnapshot);
+    resyncing = true;
+    buffered = [];
+    try {
+      const res = await api.getForm(id);
+      let target = contentOf(res.form);
+      for (const batch of pending) target = applyOpsToContent(target, batch.ops);
+      showContent(target);
+      metaColumns = detach(res.form.metaColumns ?? []);
+      shared = target;
+      lastRev = res.editRev ?? 0;
+      if (editorState.form) {
+        const { schema, ...rest } = detach(res.form);
+        Object.assign(editorState.form, rest, { schema });
+      }
+    } catch (e) {
+      editorState.error = e instanceof Error ? e.message : "Synchronisation impossible.";
+    } finally {
+      resyncing = false;
+      const replay = buffered;
+      buffered = [];
+      for (const event of replay) sequenced(event.rev, event.apply);
+      if (resyncAgain) {
+        resyncAgain = false;
+        void resync();
+      }
+    }
+  }
+
+  function onEditorEvent(event: RealtimeEvent) {
+    if (event.type === "form:ops") {
+      sequenced(event.rev, () => applyRemoteOps(event.ops));
+    } else if (event.type === "form:ack") {
+      const batch = pending.find((candidate) => candidate.id === event.id);
+      if (!batch) return;
+      pending = pending.filter((candidate) => candidate !== batch);
+      // Refusé en tout ou partie : on reprend l'état du serveur.
+      if (event.rev === null || event.rejected > 0) {
+        void resync();
+        return;
+      }
+      sequenced(event.rev, () => {});
+    } else if (event.type === "form:updated") {
+      if (event.resync) void resync();
+      else if (editorState.form) editorState.form.isPublished = event.form.isPublished ?? editorState.form.isPublished;
+    }
   }
 
   $effect(() => {
-    editorState.liveCallback = applyLive;
+    editorState.editorCallback = onEditorEvent;
     return () => {
-      editorState.liveCallback = null;
+      editorState.editorCallback = null;
     };
   });
 
+  // Reconnexion (nouvel abonnement confirmé) : les lots envoyés pendant la
+  // coupure n'ont pas pu partir, et des opérations ont pu être manquées.
+  let firstEpoch: number | null = null;
   $effect(() => {
-    editorState.remoteCallback = applyRemote;
-    return () => {
-      editorState.remoteCallback = null;
-    };
+    const epoch = editorState.presenceEpoch;
+    untrack(() => {
+      if (firstEpoch === null) {
+        firstEpoch = epoch;
+        return;
+      }
+      if (epoch === firstEpoch) return;
+      for (const batch of pending) send(batch);
+      void resync();
+    });
+  });
+
+  // Filet de sécurité : un lot sans réponse (message perdu) est renvoyé ; les
+  // opérations sont idempotentes, un double envoi ne double rien.
+  onMount(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      for (const batch of pending) if (now - batch.sentAt > 5_000) send(batch);
+    }, 2_000);
+    return () => clearInterval(timer);
+  });
+
+  // --- Indicateur d'enregistrement de l'en-tête ---
+  let savedTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const busy = pending.length > 0;
+    untrack(() => {
+      if (busy) {
+        editorState.saving = true;
+        editorState.saved = false;
+      } else if (editorState.saving) {
+        editorState.saving = false;
+        editorState.saved = true;
+        if (savedTimer) clearTimeout(savedTimer);
+        savedTimer = setTimeout(() => (editorState.saved = false), 2500);
+      }
+    });
   });
 
   // --- Sélections : la sienne est montrée aux autres, les leurs ici ---
@@ -239,7 +305,10 @@
     realtime.sendSelection(id, selectedKey);
   });
 
-  onDestroy(() => realtime.sendSelection(id, null));
+  onDestroy(() => {
+    realtime.sendSelection(id, null);
+    editorState.saving = false;
+  });
 
   /** Collaborateurs ayant sélectionné chaque question, par clé de question. */
   const remoteSelections = $derived.by(() => {
@@ -250,45 +319,12 @@
     return byField;
   });
 
-  // Register save function with the parent layout
-  $effect(() => {
-    editorState.saveCallback = save;
-    return () => {
-      editorState.saveCallback = null;
-    };
-  });
-
   $effect(() => {
     editorState.history = history as EditHistory<unknown>;
     return () => {
       editorState.history = null;
       history.dispose();
     };
-  });
-
-  // Sérialiser lit l'état en profondeur : l'effet se redéclenche donc pour
-  // n'importe quelle modification, y compris à l'intérieur d'un champ.
-  $effect(() => {
-    const current = stableStringify({ fields, metaColumns, settings });
-    if (!base) return;
-    untrack(() => {
-      // En direct, à chaque frappe : les collaborateurs voient l'écriture se
-      // faire, comme dans Canva. Une modification reçue a déjà mis `shared`
-      // à jour : elle ne repart pas.
-      if (shared && editorState.permission === "EDITOR") {
-        const next = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
-        const edit = diffEditorContent(shared, next);
-        if (edit) {
-          realtime.sendEdit(id, edit);
-          shared = next;
-        }
-      }
-    });
-    if (current === baseSignature) return;
-    untrack(() => {
-      history.record();
-      editorState.markDirty();
-    });
   });
 </script>
 

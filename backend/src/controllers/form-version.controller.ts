@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.ts";
 import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { recordFormVersion, snapshotToUpdateData } from "../lib/formVersion.ts";
 import { broadcastFormUpdate } from "../lib/realtime.ts";
+import { dropSession } from "../lib/formSession.ts";
 
 /**
  * Historique d'un formulaire : consultation des versions et restauration.
@@ -64,15 +65,20 @@ export const formVersionController = new Elysia({ prefix: "/api/v1/forms" })
         return { success: false, error: "Version introuvable." };
       }
 
+      // Les modifications en cours d'édition partent d'abord en base, et la
+      // session se ferme : les éditeurs rechargeront la version restaurée.
+      await dropSession(form.id);
+      const current = (await prisma.form.findUnique({ where: { id: form.id } }))!;
+
       // Une restauration est une modification comme une autre : l'état courant
       // doit rester récupérable si elle s'avère être une fausse manœuvre.
-      await recordFormVersion(form, auth!.user.id);
+      await recordFormVersion(current, auth!.user.id);
 
       const updated = await prisma.form.update({
         where: { id: form.id },
         data: snapshotToUpdateData(version.snapshot),
       });
-      broadcastFormUpdate(updated);
+      broadcastFormUpdate(updated, { resync: true });
       return { success: true, form: updated };
     },
     {

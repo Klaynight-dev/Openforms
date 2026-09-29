@@ -489,12 +489,10 @@
   async function save() {
     if (!editorState.form) return;
     
+    // Ni titre ni questions : l'éditeur les modifie par opérations, et les
+    // renvoyer ici écraserait ce que d'autres y font au même moment.
     const res = await api.updateForm(editorState.form.id, {
-      title: editorState.form.title,
       slug: slugCommitted ? settings.slug : undefined,
-      description: editorState.form.description ?? undefined,
-      schema: editorState.form.schema,
-      metaColumns: editorState.form.metaColumns,
       requireConsent: settings.requireConsent,
       // Les champs vidés partent tels quels : un `undefined` serait ignoré par
       // le serveur, et l'ancienne valeur resterait en base.

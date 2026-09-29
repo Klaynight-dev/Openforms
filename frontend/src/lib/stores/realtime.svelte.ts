@@ -9,8 +9,8 @@
  */
 import { browser } from "$app/environment";
 import { api } from "../api/client.ts";
-import type { FieldDefinition, FormComment, FormDetail, ResponseRow } from "../types.ts";
-import type { LiveEdit } from "../formMerge.ts";
+import type { FormComment, FormDetail, ResponseRow } from "../types.ts";
+import type { FormOp } from "../formOps.ts";
 
 export interface PresenceUser {
   id: string;
@@ -31,8 +31,15 @@ export type RealtimeEvent =
   | { type: "comment:created"; formId: string; comment: FormComment }
   | { type: "comment:updated"; formId: string; comment: FormComment }
   | { type: "comment:deleted"; formId: string; commentId: string }
-  | { type: "form:updated"; formId: string; form: Partial<FormDetail> }
-  | { type: "form:live"; formId: string; user: PresenceUser; edit: LiveEdit<FieldDefinition> }
+  /**
+   * Formulaire modifié par l'API REST (réglages, publication, restauration).
+   * `resync` : son contenu a été remplacé, l'éditeur doit le recharger.
+   */
+  | { type: "form:updated"; formId: string; form: Partial<FormDetail>; resync?: boolean }
+  /** Lot d'opérations d'édition appliqué par le serveur, révision `rev`. */
+  | { type: "form:ops"; formId: string; rev: number; ops: FormOp[]; user: PresenceUser | null }
+  /** Accusé de réception d'un de ses propres lots (`rev` nul : refusé). */
+  | { type: "form:ack"; formId: string; id: string; rev: number | null; rejected: number }
   | { type: "presence:sync"; formId: string; users: PresenceUser[] }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
@@ -94,7 +101,7 @@ type OutgoingMessage =
   | { type: "ping" }
   | ({ type: "cursor"; formId: string } & CursorPosition)
   | { type: "select"; formId: string; fieldKey: string | null }
-  | { type: "edit"; formId: string; edit: LiveEdit<FieldDefinition> };
+  | { type: "ops"; formId: string; batchId: string; ops: FormOp[] };
 
 class RealtimeClient {
   /** Vrai tant que la socket est ouverte : pilote l'indicateur « en direct ». */
@@ -157,11 +164,14 @@ class RealtimeClient {
   }
 
   /**
-   * Diffuse une modification de l'éditeur en cours de frappe. Rien n'est
-   * enregistré par ce biais : l'enregistrement reste celui de l'auteur.
+   * Envoie un lot d'opérations d'édition ; le serveur répond par `form:ack`.
+   * Renvoie faux si la socket n'est pas ouverte : l'éditeur renverra le lot
+   * à la reconnexion.
    */
-  sendEdit(formId: string, edit: LiveEdit<FieldDefinition>): void {
-    this.send({ type: "edit", formId, edit });
+  sendOps(formId: string, batchId: string, ops: FormOp[]): boolean {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
+    this.send({ type: "ops", formId, batchId, ops });
+    return true;
   }
 
   private connect(): void {

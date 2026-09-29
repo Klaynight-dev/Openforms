@@ -24,6 +24,8 @@ export interface RealtimeResponseRow {
   }[];
 }
 
+import type { FormOp } from "./formOps.ts";
+
 export interface PresenceUser {
   id: string;
   name: string;
@@ -43,9 +45,16 @@ export type RealtimeEvent =
   | { type: "comment:created"; formId: string; comment: unknown }
   | { type: "comment:updated"; formId: string; comment: unknown }
   | { type: "comment:deleted"; formId: string; commentId: string }
-  | { type: "form:updated"; formId: string; form: FormEditorState }
-  /** Modification en cours de frappe, pas encore enregistrée (voir ws.controller). */
-  | { type: "form:live"; formId: string; user: PresenceUser; edit: unknown }
+  /**
+   * Formulaire modifié par l'API REST (réglages, publication, restauration).
+   * `resync` : son contenu (questions, titre) a été remplacé, les éditeurs
+   * doivent le recharger.
+   */
+  | { type: "form:updated"; formId: string; form: FormEditorState; resync?: boolean }
+  /** Lot d'opérations d'édition appliqué par le serveur (voir formSession.ts). */
+  | { type: "form:ops"; formId: string; rev: number; ops: FormOp[]; user: PresenceUser | null }
+  /** Accusé de réception d'un lot, envoyé à son seul auteur. */
+  | { type: "form:ack"; formId: string; id: string; rev: number | null; rejected: number }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
   | { type: "selection:change"; formId: string; user: PresenceUser; fieldKey: string | null }
@@ -113,8 +122,16 @@ export function editorStateOf(form: Record<string, unknown>): FormEditorState {
 }
 
 /** Diffuse le nouvel état d'un formulaire à ceux qui l'ont ouvert. */
-export function broadcastFormUpdate(form: Record<string, unknown> & { id: string }): void {
-  broadcast(editorTopic(form.id), { type: "form:updated", formId: form.id, form: editorStateOf(form) });
+export function broadcastFormUpdate(
+  form: Record<string, unknown> & { id: string },
+  options: { resync?: boolean } = {},
+): void {
+  broadcast(editorTopic(form.id), {
+    type: "form:updated",
+    formId: form.id,
+    form: editorStateOf(form),
+    ...(options.resync ? { resync: true } : {}),
+  });
 }
 
 let publisher: RealtimePublisher | null = null;
