@@ -13,13 +13,15 @@ import type { SessionContext } from "../lib/session.ts";
  *   - `form:<id>:comments`  : fil de commentaires du formulaire
  *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment, et où
  *                             se trouve son pointeur (message `cursor`)
+ *   - `form:<id>:editor`    : nouvel état du formulaire après chaque
+ *                             enregistrement, pour l'éditeur des collaborateurs
  *
  * Chaque abonnement est vérifié contre les droits réels de l'utilisateur sur le
  * formulaire : la socket est authentifiée par le cookie de session, jamais par
  * une information fournie par le client.
  */
 
-const TOPIC_PATTERN = /^form:([0-9a-fA-F-]{36}):(responses|comments|presence)$/;
+const TOPIC_PATTERN = /^form:([0-9a-fA-F-]{36}):(responses|comments|presence|editor)$/;
 
 /** Roster de présence en mémoire : formId -> userId -> nombre d'onglets ouverts. */
 const presenceByForm = new Map<string, Map<string, { user: PresenceUser; sockets: number }>>();

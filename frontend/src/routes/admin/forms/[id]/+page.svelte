@@ -4,6 +4,7 @@
   import FormBuilder from "$components/FormBuilder.svelte";
   import { api } from "$api/client.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
+  import { mergeValue, patchInPlace, planFieldMerge, sameValue, stableStringify } from "$lib/formMerge.ts";
   import type { FieldDefinition, MetaColumn, FormDetail, Permission } from "$lib/types.ts";
 
   const editorState = getContext<{
@@ -15,6 +16,7 @@
     saveCallback: (() => Promise<void>) | null;
     history: EditHistory<unknown> | null;
     markDirty: () => void;
+    remoteCallback: ((form: Partial<FormDetail>) => void) | null;
   }>("form-editor-context");
 
   const id = $page.params.id as string;
@@ -63,7 +65,9 @@
    * jamais d'elles-mêmes.
    */
   let base = $state.raw<EditorSnapshot | null>(null);
-  const baseSignature = $derived(base ? JSON.stringify(base) : "");
+  // Clés triées : une question mise à jour par un collaborateur peut voir ses
+  // propriétés réordonnées sans que rien n'ait changé.
+  const baseSignature = $derived(base ? stableStringify(base) : "");
 
   const history = new EditHistory({
     snapshot: () => $state.snapshot({ fields, metaColumns, settings }),
@@ -122,6 +126,51 @@
     });
   }
 
+  /**
+   * État enregistré par un collaborateur : ce que la personne n'a pas touché
+   * depuis le dernier état connu suit le serveur, ce qu'elle modifie reste
+   * le sien (voir formMerge.ts). Les questions sont mises à jour sur place :
+   * la carte ouverte, le focus et la saisie en cours sont préservés.
+   */
+  function applyRemote(form: Partial<FormDetail>) {
+    if (!base || !editorState.form) return;
+    const remote = snapshotOf({ ...editorState.form, ...form } as FormDetail);
+    // Écho de son propre enregistrement, ou rien de neuf.
+    if (sameValue(remote, base)) return;
+
+    const local = $state.snapshot({ fields, metaColumns, settings }) as EditorSnapshot;
+
+    const plan = planFieldMerge(base.fields, local.fields, remote.fields);
+    const localByKey = new Map(fields.map((field) => [field.key, field]));
+    const remoteByKey = new Map(remote.fields.map((field) => [field.key, field]));
+    fields = plan.order.map((key) => {
+      const current = localByKey.get(key);
+      if (!plan.takeRemote.has(key)) return current!;
+      const incoming = remoteByKey.get(key)!;
+      if (!current) return incoming;
+      patchInPlace(current as unknown as Record<string, unknown>, incoming as unknown as Record<string, unknown>);
+      return current;
+    });
+
+    const mergedMeta = mergeValue(base.metaColumns, local.metaColumns, remote.metaColumns);
+    if (!sameValue(mergedMeta, local.metaColumns)) metaColumns = detach(mergedMeta);
+    for (const key of Object.keys(remote.settings) as (keyof EditorSnapshot["settings"])[]) {
+      const merged = mergeValue(base.settings[key], local.settings[key], remote.settings[key]);
+      if (!sameValue(merged, local.settings[key])) (settings as Record<string, unknown>)[key] = detach(merged);
+    }
+
+    base = remote;
+    // En-tête (titre, publication) et autres onglets.
+    Object.assign(editorState.form, form);
+  }
+
+  $effect(() => {
+    editorState.remoteCallback = applyRemote;
+    return () => {
+      editorState.remoteCallback = null;
+    };
+  });
+
   // Register save function with the parent layout
   $effect(() => {
     editorState.saveCallback = save;
@@ -141,7 +190,7 @@
   // Sérialiser lit l'état en profondeur : l'effet se redéclenche donc pour
   // n'importe quelle modification, y compris à l'intérieur d'un champ.
   $effect(() => {
-    const current = JSON.stringify({ fields, metaColumns, settings });
+    const current = stableStringify({ fields, metaColumns, settings });
     if (!base || current === baseSignature) return;
     untrack(() => {
       history.record();

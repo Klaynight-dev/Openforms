@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
 import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
 import { recordFormVersion, snapshotToUpdateData } from "../lib/formVersion.ts";
+import { broadcastFormUpdate } from "../lib/realtime.ts";
 
 /**
  * Historique d'un formulaire : consultation des versions et restauration.
@@ -71,6 +72,7 @@ export const formVersionController = new Elysia({ prefix: "/api/v1/forms" })
         where: { id: form.id },
         data: snapshotToUpdateData(version.snapshot),
       });
+      broadcastFormUpdate(updated);
       return { success: true, form: updated };
     },
     {

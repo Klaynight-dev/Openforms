@@ -11,7 +11,7 @@
   import { presenceColor, initials } from "$lib/presence.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
   import type { FormVersion } from "$lib/types.ts";
-  import { realtime, presenceTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
+  import { realtime, presenceTopic, editorTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas, IconUndo, IconRedo, IconHistory, IconUser } from "$lib/icons.ts";
   import type { FormDetail, Permission } from "$lib/types.ts";
 
@@ -21,7 +21,7 @@
   const id = $derived($page.params.id);
 
   /** Inactivité au bout de laquelle les modifications partent au serveur. */
-  const AUTOSAVE_DELAY_MS = 1200;
+  const AUTOSAVE_DELAY_MS = 700;
 
   // Shared state class for subpages
   class FormEditorState {
@@ -37,6 +37,11 @@
     saveCallback = $state<(() => Promise<void>) | null>(null);
     /** Pile d'annulation de l'onglet actif, alimentée par les sous-pages. */
     history = $state<EditHistory<unknown> | null>(null);
+    /**
+     * Fusion d'un état reçu d'un collaborateur, fournie par l'onglet qui
+     * édite (questions). Sans elle, l'état reçu remplace celui affiché.
+     */
+    remoteCallback: ((form: Partial<FormDetail>) => void) | null = null;
 
     #autosaveTimer: ReturnType<typeof setTimeout> | null = null;
     /** Compte les modifications : une frappe pendant l'envoi reste à enregistrer. */
@@ -120,6 +125,31 @@
     if (!id) return;
     others = [];
     return realtime.subscribe([presenceTopic(id)], applyPresenceEvent);
+  });
+
+  // --- Modifications enregistrées par les collaborateurs ---
+  $effect(() => {
+    if (!id) return;
+    return realtime.subscribe([editorTopic(id)], (event) => {
+      if (event.type !== "form:updated" || !editorState.form) return;
+      if (editorState.remoteCallback) {
+        editorState.remoteCallback(event.form);
+        return;
+      }
+      // Onglet sans fusion (Paramètres) : tant qu'il n'a rien en attente, il
+      // prend tout l'état reçu. Sinon, il ne prend que ce qu'il ne modifie
+      // pas lui-même. Il renvoie les questions avec ses réglages : garder
+      // les anciennes écraserait celles modifiées entre-temps par d'autres.
+      if (!editorState.dirty) {
+        Object.assign(editorState.form, event.form);
+        return;
+      }
+      const { schema, metaColumns, title, description, translations, isPublished } = event.form;
+      const untouched = { schema, metaColumns, title, description, translations, isPublished };
+      for (const [key, value] of Object.entries(untouched)) {
+        if (value !== undefined) (editorState.form as unknown as Record<string, unknown>)[key] = value;
+      }
+    });
   });
 
   function applyPresenceEvent(event: RealtimeEvent) {

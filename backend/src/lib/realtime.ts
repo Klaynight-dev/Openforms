@@ -43,6 +43,7 @@ export type RealtimeEvent =
   | { type: "comment:created"; formId: string; comment: unknown }
   | { type: "comment:updated"; formId: string; comment: unknown }
   | { type: "comment:deleted"; formId: string; commentId: string }
+  | { type: "form:updated"; formId: string; form: FormEditorState }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
   | {
@@ -64,6 +65,54 @@ export interface RealtimePublisher {
 export const responsesTopic = (formId: string) => `form:${formId}:responses`;
 export const commentsTopic = (formId: string) => `form:${formId}:comments`;
 export const presenceTopic = (formId: string) => `form:${formId}:presence`;
+export const editorTopic = (formId: string) => `form:${formId}:editor`;
+
+/** Colonnes du formulaire que l'éditeur et l'onglet Paramètres modifient. */
+const EDITOR_COLUMNS = [
+  "slug",
+  "title",
+  "description",
+  "schema",
+  "metaColumns",
+  "requireConsent",
+  "consentText",
+  "privacyPolicyUrl",
+  "isAnonymized",
+  "encryptResponses",
+  "isPublished",
+  "visibility",
+  "allowedEmails",
+  "notifyOwner",
+  "sendConfirmationEmail",
+  "confirmationEmailText",
+  "webhookUrl",
+  "startsAt",
+  "endsAt",
+  "maxResponses",
+  "translations",
+  "embedEnabled",
+  "embedOrigins",
+  "updatedAt",
+] as const;
+
+export type FormEditorState = Partial<Record<(typeof EDITOR_COLUMNS)[number], unknown>>;
+
+/**
+ * État éditable d'un formulaire, diffusé aux collaborateurs après chaque
+ * enregistrement. Liste blanche : l'identité visuelle des exports (logo en
+ * data URL, plusieurs centaines de Ko) et les compteurs internes n'ont rien à
+ * faire dans chaque message.
+ */
+export function editorStateOf(form: Record<string, unknown>): FormEditorState {
+  const state: FormEditorState = {};
+  for (const column of EDITOR_COLUMNS) if (column in form) state[column] = form[column];
+  return state;
+}
+
+/** Diffuse le nouvel état d'un formulaire à ceux qui l'ont ouvert. */
+export function broadcastFormUpdate(form: Record<string, unknown> & { id: string }): void {
+  broadcast(editorTopic(form.id), { type: "form:updated", formId: form.id, form: editorStateOf(form) });
+}
 
 let publisher: RealtimePublisher | null = null;
 

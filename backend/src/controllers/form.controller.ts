@@ -8,6 +8,7 @@ import { recordFormVersion } from "../lib/formVersion.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
 import { resolveRotation } from "../lib/rotation.ts";
+import { broadcastFormUpdate } from "../lib/realtime.ts";
 import {
   checkEmbedAccess,
   frameAncestors,
@@ -373,6 +374,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           embedOrigins: nextEmbedOrigins,
         },
       });
+      broadcastFormUpdate(updated);
       return { success: true, form: updated };
     },
     { params: t.Object({ id: t.String() }), body: t.Object(FormSettings), requireRole: true },
@@ -439,6 +441,7 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         where: { id: params.id },
         data: { isPublished: body.published },
       });
+      broadcastFormUpdate(updated);
       return { success: true, isPublished: updated.isPublished, slug: updated.slug };
     },
     {

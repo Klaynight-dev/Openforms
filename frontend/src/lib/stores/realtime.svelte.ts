@@ -9,7 +9,7 @@
  */
 import { browser } from "$app/environment";
 import { api } from "../api/client.ts";
-import type { FormComment, ResponseRow } from "../types.ts";
+import type { FormComment, FormDetail, ResponseRow } from "../types.ts";
 
 export interface PresenceUser {
   id: string;
@@ -30,6 +30,7 @@ export type RealtimeEvent =
   | { type: "comment:created"; formId: string; comment: FormComment }
   | { type: "comment:updated"; formId: string; comment: FormComment }
   | { type: "comment:deleted"; formId: string; commentId: string }
+  | { type: "form:updated"; formId: string; form: Partial<FormDetail> }
   | { type: "presence:sync"; formId: string; users: PresenceUser[] }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
@@ -50,12 +51,15 @@ export interface CursorPosition {
 export const responsesTopic = (formId: string) => `form:${formId}:responses`;
 export const commentsTopic = (formId: string) => `form:${formId}:comments`;
 export const presenceTopic = (formId: string) => `form:${formId}:presence`;
+/** Nouvel état du formulaire, diffusé après chaque enregistrement. */
+export const editorTopic = (formId: string) => `form:${formId}:editor`;
 
 /** Le topic n'est pas renvoyé par le serveur : on le reconstruit depuis l'évènement. */
 function topicOf(event: { type?: string; formId?: string }): string | null {
   if (typeof event.type !== "string" || typeof event.formId !== "string") return null;
   if (event.type.startsWith("response:")) return responsesTopic(event.formId);
   if (event.type.startsWith("comment:")) return commentsTopic(event.formId);
+  if (event.type.startsWith("form:")) return editorTopic(event.formId);
   if (event.type.startsWith("presence:") || event.type.startsWith("cursor:")) {
     return presenceTopic(event.formId);
   }
