@@ -13,7 +13,8 @@
   import type { FormVersion } from "$lib/types.ts";
   import { realtime, presenceTopic, editorTopic, type PresenceUser, type RealtimeEvent } from "$lib/stores/realtime.svelte.ts";
   import { IconBack, IconEye, IconTable, IconChartBar, IconSettings, IconExternal, IconCheck, IconClose, IconSave, IconCanvas, IconUndo, IconRedo, IconHistory, IconUser } from "$lib/icons.ts";
-  import type { FormDetail, Permission } from "$lib/types.ts";
+  import type { FieldDefinition, FormDetail, Permission } from "$lib/types.ts";
+  import type { LiveEdit } from "$lib/formMerge.ts";
 
   let { children } = $props();
 
@@ -42,6 +43,8 @@
      * édite (questions). Sans elle, l'état reçu remplace celui affiché.
      */
     remoteCallback: ((form: Partial<FormDetail>) => void) | null = null;
+    /** Application des modifications en cours de frappe, fournie par l'éditeur. */
+    liveCallback: ((edit: LiveEdit<FieldDefinition>) => void) | null = null;
     /** Question sélectionnée par chaque collaborateur (clé d'utilisateur). */
     selections = $state<Record<string, { user: PresenceUser; fieldKey: string }>>({});
     /**
@@ -140,6 +143,10 @@
   $effect(() => {
     if (!id) return;
     return realtime.subscribe([editorTopic(id)], (event) => {
+      if (event.type === "form:live") {
+        editorState.liveCallback?.(event.edit);
+        return;
+      }
       if (event.type !== "form:updated" || !editorState.form) return;
       if (editorState.remoteCallback) {
         editorState.remoteCallback(event.form);

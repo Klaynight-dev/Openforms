@@ -9,7 +9,8 @@
  */
 import { browser } from "$app/environment";
 import { api } from "../api/client.ts";
-import type { FormComment, FormDetail, ResponseRow } from "../types.ts";
+import type { FieldDefinition, FormComment, FormDetail, ResponseRow } from "../types.ts";
+import type { LiveEdit } from "../formMerge.ts";
 
 export interface PresenceUser {
   id: string;
@@ -31,6 +32,7 @@ export type RealtimeEvent =
   | { type: "comment:updated"; formId: string; comment: FormComment }
   | { type: "comment:deleted"; formId: string; commentId: string }
   | { type: "form:updated"; formId: string; form: Partial<FormDetail> }
+  | { type: "form:live"; formId: string; user: PresenceUser; edit: LiveEdit<FieldDefinition> }
   | { type: "presence:sync"; formId: string; users: PresenceUser[] }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
@@ -91,7 +93,8 @@ type OutgoingMessage =
   | { type: "subscribe" | "unsubscribe"; topics: string[] }
   | { type: "ping" }
   | ({ type: "cursor"; formId: string } & CursorPosition)
-  | { type: "select"; formId: string; fieldKey: string | null };
+  | { type: "select"; formId: string; fieldKey: string | null }
+  | { type: "edit"; formId: string; edit: LiveEdit<FieldDefinition> };
 
 class RealtimeClient {
   /** Vrai tant que la socket est ouverte : pilote l'indicateur « en direct ». */
@@ -151,6 +154,14 @@ class RealtimeClient {
   /** Montre aux autres personnes la question sélectionnée (`null` : aucune). */
   sendSelection(formId: string, fieldKey: string | null): void {
     this.send({ type: "select", formId, fieldKey });
+  }
+
+  /**
+   * Diffuse une modification de l'éditeur en cours de frappe. Rien n'est
+   * enregistré par ce biais : l'enregistrement reste celui de l'auteur.
+   */
+  sendEdit(formId: string, edit: LiveEdit<FieldDefinition>): void {
+    this.send({ type: "edit", formId, edit });
   }
 
   private connect(): void {

@@ -5,7 +5,18 @@
   import { api } from "$api/client.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
   import { realtime, type PresenceUser } from "$lib/stores/realtime.svelte.ts";
-  import { mergeValue, patchInPlace, planFieldMerge, sameValue, stableStringify } from "$lib/formMerge.ts";
+  import {
+    applyLiveEdit,
+    applyLiveFields,
+    diffEditorContent,
+    mergeValue,
+    patchInPlace,
+    planFieldMerge,
+    rebaseEditorContent,
+    sameValue,
+    stableStringify,
+    type LiveEdit,
+  } from "$lib/formMerge.ts";
   import type { FieldDefinition, MetaColumn, FormDetail, Permission } from "$lib/types.ts";
 
   const editorState = getContext<{
@@ -18,6 +29,7 @@
     history: EditHistory<unknown> | null;
     markDirty: () => void;
     remoteCallback: ((form: Partial<FormDetail>) => void) | null;
+    liveCallback: ((edit: LiveEdit<FieldDefinition>) => void) | null;
     selections: Record<string, { user: PresenceUser; fieldKey: string }>;
     presenceEpoch: number;
   }>("form-editor-context");
@@ -72,6 +84,16 @@
   // propriétés réordonnées sans que rien n'ait changé.
   const baseSignature = $derived(base ? stableStringify(base) : "");
 
+  /**
+   * Ce que les collaborateurs ont sous les yeux : le dernier état diffusé ou
+   * reçu en direct. Chaque modification locale part sous forme d'écart avec
+   * lui, sans attendre l'enregistrement.
+   */
+  let shared: EditorSnapshot | null = null;
+
+  /** Titre envoyé à la place d'un titre vidé : le serveur en exige un. */
+  const UNTITLED = "Sans titre";
+
   const history = new EditHistory({
     snapshot: () => $state.snapshot({ fields, metaColumns, settings }),
     apply: (value) => {
@@ -90,6 +112,7 @@
     untrack(() => {
       const snapshot = snapshotOf(form);
       base = snapshot;
+      shared = detach(snapshot);
       fields = detach(snapshot.fields);
       metaColumns = detach(snapshot.metaColumns);
       settings = detach(snapshot.settings);
@@ -104,7 +127,7 @@
     await api.updateForm(id, {
       // Un titre vidé en cours de saisie ne doit pas bloquer l'enregistrement
       // des questions : le serveur exige un titre.
-      title: sent.settings.title.trim() || "Sans titre",
+      title: sent.settings.title.trim() || UNTITLED,
       // Un champ vidé part tel quel : `undefined` serait ignoré par le serveur
       // et l'ancienne valeur resterait en base.
       description: sent.settings.description,
@@ -138,6 +161,11 @@
   function applyRemote(form: Partial<FormDetail>) {
     if (!base || !editorState.form) return;
     const remote = snapshotOf({ ...editorState.form, ...form } as FormDetail);
+    // Un titre vidé est parti comme « Sans titre » : son écho ne doit pas
+    // réécrire ce mot dans le champ que la personne est en train de remplir.
+    if (remote.settings.title === UNTITLED && !base.settings.title.trim()) {
+      remote.settings.title = base.settings.title;
+    }
     // Écho de son propre enregistrement, ou rien de neuf.
     if (sameValue(remote, base)) return;
 
@@ -163,9 +191,37 @@
     }
 
     base = remote;
+    // Les autres ont reçu le même état : rien à leur rediffuser.
+    shared = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
     // En-tête (titre, publication) et autres onglets.
     Object.assign(editorState.form, form);
   }
+
+  /**
+   * Modification d'un collaborateur, reçue pendant qu'il tape. Elle est
+   * appliquée sur place, ajoutée à l'état de référence (c'est son auteur qui
+   * l'enregistre : la reprendre ici doublerait les enregistrements) et
+   * reportée dans l'historique d'annulation.
+   */
+  function applyLive(edit: LiveEdit<FieldDefinition>) {
+    if (!base || !shared) return;
+    const sharedKeys = new Set(shared.fields.map((field) => field.key));
+    fields = applyLiveFields(fields, edit, (key) => !sharedKeys.has(key));
+    if (edit.metaColumns) metaColumns = detach(edit.metaColumns) as MetaColumn[];
+    for (const [key, value] of Object.entries(edit.settings ?? {})) {
+      (settings as Record<string, unknown>)[key] = detach(value);
+    }
+    base = applyLiveEdit(base, edit) as EditorSnapshot;
+    shared = applyLiveEdit(shared, edit) as EditorSnapshot;
+    history.rebase((value) => rebaseEditorContent(value as EditorSnapshot, edit) as EditorSnapshot);
+  }
+
+  $effect(() => {
+    editorState.liveCallback = applyLive;
+    return () => {
+      editorState.liveCallback = null;
+    };
+  });
 
   $effect(() => {
     editorState.remoteCallback = applyRemote;
@@ -214,7 +270,21 @@
   // n'importe quelle modification, y compris à l'intérieur d'un champ.
   $effect(() => {
     const current = stableStringify({ fields, metaColumns, settings });
-    if (!base || current === baseSignature) return;
+    if (!base) return;
+    untrack(() => {
+      // En direct, à chaque frappe : les collaborateurs voient l'écriture se
+      // faire, comme dans Canva. Une modification reçue a déjà mis `shared`
+      // à jour : elle ne repart pas.
+      if (shared && editorState.permission === "EDITOR") {
+        const next = detach($state.snapshot({ fields, metaColumns, settings })) as EditorSnapshot;
+        const edit = diffEditorContent(shared, next);
+        if (edit) {
+          realtime.sendEdit(id, edit);
+          shared = next;
+        }
+      }
+    });
+    if (current === baseSignature) return;
     untrack(() => {
       history.record();
       editorState.markDirty();

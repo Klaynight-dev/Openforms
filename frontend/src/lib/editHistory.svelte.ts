@@ -66,6 +66,18 @@ export class EditHistory<T> {
     return true;
   }
 
+  /**
+   * Réécrit tous les états conservés, y compris l'état courant, sans créer
+   * d'entrée. Sert à y reporter une modification d'un collaborateur : sans
+   * ça, annuler reviendrait à un état antérieur à sa modification et
+   * l'effacerait.
+   */
+  rebase(transform: (value: T) => T): void {
+    this.#past = this.#past.map(transform);
+    this.#future = this.#future.map(transform);
+    if (this.#current !== null) this.#current = transform(this.#current);
+  }
+
   /** Libère le minuteur en attente (démontage de l'éditeur). */
   dispose(): void {
     this.#cancel();

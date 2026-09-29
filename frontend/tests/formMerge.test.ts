@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { mergeValue, patchInPlace, planFieldMerge, sameValue } from "../src/lib/formMerge.ts";
+import {
+  applyLiveEdit,
+  applyLiveFields,
+  diffEditorContent,
+  mergeValue,
+  patchInPlace,
+  planFieldMerge,
+  rebaseEditorContent,
+  sameValue,
+} from "../src/lib/formMerge.ts";
 
 type F = { key: string; label: string };
 const f = (key: string, label = key): F => ({ key, label });
@@ -90,5 +99,68 @@ describe("patchInPlace", () => {
     patchInPlace(target, { key: "q1", label: "Après", options: [{ value: "a", label: "A" }] });
     expect(target).toBe(before);
     expect(target).toEqual({ key: "q1", label: "Après", options: [{ value: "a", label: "A" }] });
+  });
+});
+
+describe("modifications en direct", () => {
+  const state = (fields: F[], settings: Record<string, unknown> = { title: "T" }) => ({
+    fields,
+    metaColumns: [] as unknown[],
+    settings,
+  });
+
+  test("n'envoie que la question modifiée", () => {
+    const edit = diffEditorContent(state([f("q1"), f("q2")]), state([f("q1"), f("q2", "Bonjour")]));
+    expect(edit).toEqual({ fields: [f("q2", "Bonjour")] });
+  });
+
+  test("n'envoie rien quand rien n'a changé", () => {
+    expect(diffEditorContent(state([f("q1")]), state([f("q1")]))).toBeNull();
+  });
+
+  test("envoie l'ordre et la nouvelle question à l'ajout", () => {
+    const edit = diffEditorContent(state([f("q1")]), state([f("q1"), f("q2")]));
+    expect(edit).toEqual({ fields: [f("q2")], order: ["q1", "q2"] });
+  });
+
+  test("n'envoie que les réglages touchés", () => {
+    const edit = diffEditorContent(state([], { title: "A", description: "d" }), state([], { title: "B", description: "d" }));
+    expect(edit).toEqual({ settings: { title: "B" } });
+  });
+
+  test("met à jour la question reçue sans remplacer l'objet", () => {
+    const q2 = f("q2");
+    const fields = [f("q1"), q2];
+    const out = applyLiveFields(fields, { fields: [f("q2", "Bonjour")] });
+    expect(out).toBe(fields);
+    expect(out[1]).toBe(q2);
+    expect(q2.label).toBe("Bonjour");
+  });
+
+  test("insère une question ajoutée et applique une suppression", () => {
+    const out = applyLiveFields([f("q1"), f("q2")], { order: ["q1", "q3"], fields: [f("q3")] });
+    expect(out.map((x) => x.key)).toEqual(["q1", "q3"]);
+  });
+
+  test("garde une question ajoutée localement que l'autre ne connaît pas encore", () => {
+    const out = applyLiveFields(
+      [f("q1"), f("mienne")],
+      { order: ["q0", "q1"], fields: [f("q0")] },
+      (key) => key === "mienne",
+    );
+    expect(out.map((x) => x.key)).toEqual(["q0", "q1", "mienne"]);
+  });
+
+  test("appliquer la différence redonne exactement l'état de l'auteur", () => {
+    const before = state([f("q1"), f("q2"), f("q3")]);
+    const after = state([f("q3", "Déplacée"), f("q1"), f("q4")], { title: "Nouveau" });
+    const edit = diffEditorContent(before, after)!;
+    expect(applyLiveEdit(before, edit)).toEqual(after);
+  });
+
+  test("reporte le contenu reçu dans un état passé, sans y ajouter de question", () => {
+    const past = state([f("q1", "ancien"), f("q2")]);
+    const rebased = rebaseEditorContent(past, { fields: [f("q1", "Eux"), f("q9")], order: ["q1", "q2", "q9"] });
+    expect(rebased.fields).toEqual([f("q1", "Eux"), f("q2")]);
   });
 });

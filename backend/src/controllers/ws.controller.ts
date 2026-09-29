@@ -1,8 +1,8 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
-import { authPlugin, readableFormsWhere } from "../middleware/auth.ts";
+import { authPlugin, readableFormsWhere, resolveFormPermission } from "../middleware/auth.ts";
 import { isAllowedOrigin } from "../middleware/security.ts";
-import { broadcast, presenceTopic, type PresenceUser, type RealtimeEvent } from "../lib/realtime.ts";
+import { broadcast, editorTopic, presenceTopic, type PresenceUser, type RealtimeEvent } from "../lib/realtime.ts";
 import type { SessionContext } from "../lib/session.ts";
 
 /**
@@ -15,7 +15,9 @@ import type { SessionContext } from "../lib/session.ts";
  *                             trouve son pointeur (message `cursor`) et
  *                             quelle question il a sélectionnée (`select`)
  *   - `form:<id>:editor`    : nouvel état du formulaire après chaque
- *                             enregistrement, pour l'éditeur des collaborateurs
+ *                             enregistrement, et modifications en cours de
+ *                             frappe (message `edit`), pour l'éditeur des
+ *                             collaborateurs
  *
  * Chaque abonnement est vérifié contre les droits réels de l'utilisateur sur le
  * formulaire : la socket est authentifiée par le cookie de session, jamais par
@@ -35,6 +37,29 @@ const presenceBySocket = new Map<string, Set<string>>();
  * Gardée en mémoire pour la montrer à qui ouvre le formulaire ensuite.
  */
 const selectionByForm = new Map<string, Map<string, { user: PresenceUser; fieldKey: string }>>();
+
+/**
+ * Droit d'édition de chaque socket sur chaque formulaire, vérifié une fois :
+ * les modifications en direct partent à chaque frappe, une requête en base
+ * par message serait hors de prix.
+ */
+const editPermissionBySocket = new Map<string, Map<string, Promise<boolean>>>();
+
+function canEdit(socketId: string, user: SessionContext["user"], formId: string): Promise<boolean> {
+  const forSocket = editPermissionBySocket.get(socketId) ?? new Map<string, Promise<boolean>>();
+  editPermissionBySocket.set(socketId, forSocket);
+  let permission = forSocket.get(formId);
+  if (!permission) {
+    permission = prisma.form
+      .findUnique({ where: { id: formId }, select: { ownerId: true } })
+      .then(async (form) =>
+        form ? (await resolveFormPermission(prisma.formAccess, user, formId, form.ownerId)) === "EDITOR" : false,
+      )
+      .catch(() => false);
+    forSocket.set(formId, permission);
+  }
+  return permission;
+}
 
 function selectionsOf(formId: string): { user: PresenceUser; fieldKey: string }[] {
   return [...(selectionByForm.get(formId)?.values() ?? [])];
@@ -146,6 +171,7 @@ export const wsController = new Elysia()
         t.Literal("ping"),
         t.Literal("cursor"),
         t.Literal("select"),
+        t.Literal("edit"),
       ]),
       topics: t.Optional(t.Array(t.String({ maxLength: 128 }), { maxItems: 200 })),
       // Champs du message `cursor` : onglet affiché, élément survolé et
@@ -158,6 +184,10 @@ export const wsController = new Elysia()
       hidden: t.Optional(t.Boolean()),
       // Message `select` : clé de la question sélectionnée, `null` pour aucune.
       fieldKey: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
+      // Message `edit` : ce qui a changé dans l'éditeur (voir formMerge.ts
+      // côté front). Relayé tel quel, jamais enregistré : c'est l'auteur qui
+      // enregistre, par l'API REST et sa validation.
+      edit: t.Optional(t.Record(t.String(), t.Any())),
     }),
 
     beforeHandle({ auth, request, set }) {
@@ -218,6 +248,17 @@ export const wsController = new Elysia()
         return;
       }
 
+      if (message.type === "edit") {
+        const formId = message.formId;
+        if (!formId || !message.edit || !presenceBySocket.get(ws.id)?.has(formId)) return;
+        if (!(await canEdit(ws.id, auth.user, formId))) return;
+        ws.publish(
+          editorTopic(formId),
+          JSON.stringify({ type: "form:live", formId, user: presenceUser, edit: message.edit } satisfies RealtimeEvent),
+        );
+        return;
+      }
+
       if (message.type === "subscribe") {
         const topics = await authorizeTopics(auth.user, message.topics ?? []);
         for (const topic of topics) {
@@ -262,5 +303,6 @@ export const wsController = new Elysia()
         }
       }
       presenceBySocket.delete(ws.id);
+      editPermissionBySocket.delete(ws.id);
     },
   });

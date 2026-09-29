@@ -44,6 +44,8 @@ export type RealtimeEvent =
   | { type: "comment:updated"; formId: string; comment: unknown }
   | { type: "comment:deleted"; formId: string; commentId: string }
   | { type: "form:updated"; formId: string; form: FormEditorState }
+  /** Modification en cours de frappe, pas encore enregistrée (voir ws.controller). */
+  | { type: "form:live"; formId: string; user: PresenceUser; edit: unknown }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
   | { type: "selection:change"; formId: string; user: PresenceUser; fieldKey: string | null }

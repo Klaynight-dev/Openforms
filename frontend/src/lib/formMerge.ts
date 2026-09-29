@@ -99,7 +99,7 @@ export function planFieldMerge<F extends { key: string }>(
  * Ordre `primary`, complété des clés retenues qui n'y figurent pas : chacune
  * est placée juste après sa voisine précédente dans `secondary`.
  */
-function weave(primary: string[], secondary: string[], include: Set<string>): string[] {
+export function weave(primary: string[], secondary: string[], include: Set<string>): string[] {
   const out = primary.filter((key) => include.has(key));
   secondary.forEach((key, index) => {
     if (!include.has(key) || out.includes(key)) return;
@@ -128,4 +128,112 @@ export function patchInPlace(target: Record<string, unknown>, source: Record<str
   for (const [key, value] of Object.entries(source)) {
     if (!sameValue(target[key], value)) target[key] = structuredClone(value);
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Modifications en direct
+// ---------------------------------------------------------------------------
+//  Chaque frappe part aux collaborateurs sans attendre l'enregistrement, comme
+//  dans Canva. Seul ce qui a changé voyage : les questions modifiées en entier,
+//  l'ordre des clés quand la structure bouge, les réglages touchés. Celui qui
+//  reçoit applique sans renvoyer ni enregistrer : l'auteur enregistre seul.
+
+export interface EditorContent<F extends { key: string } = { key: string }> {
+  fields: F[];
+  metaColumns: unknown[];
+  settings: Record<string, unknown>;
+}
+
+export interface LiveEdit<F extends { key: string } = { key: string }> {
+  /** Ordre complet des clés, présent seulement si des questions ont été ajoutées, retirées ou déplacées. */
+  order?: string[];
+  /** Questions nouvelles ou modifiées, en entier. */
+  fields?: F[];
+  metaColumns?: unknown[];
+  /** Réglages modifiés (titre, description, traductions…). */
+  settings?: Record<string, unknown>;
+}
+
+/** Ce qui sépare deux états de l'éditeur, ou `null` s'ils sont identiques. */
+export function diffEditorContent<F extends { key: string }>(
+  previous: EditorContent<F>,
+  next: EditorContent<F>,
+): LiveEdit<F> | null {
+  const edit: LiveEdit<F> = {};
+
+  const previousByKey = new Map(previous.fields.map((f) => [f.key, f]));
+  const changed = next.fields.filter((f) => !sameValue(f, previousByKey.get(f.key)));
+  if (changed.length > 0) edit.fields = changed;
+
+  const order = next.fields.map((f) => f.key);
+  if (!sameValue(order, previous.fields.map((f) => f.key))) edit.order = order;
+
+  if (!sameValue(previous.metaColumns, next.metaColumns)) edit.metaColumns = next.metaColumns;
+
+  const settings: Record<string, unknown> = {};
+  for (const key of Object.keys(next.settings)) {
+    if (!sameValue(previous.settings[key], next.settings[key])) settings[key] = next.settings[key];
+  }
+  if (Object.keys(settings).length > 0) edit.settings = settings;
+
+  return Object.keys(edit).length > 0 ? edit : null;
+}
+
+/**
+ * Applique une modification reçue à une liste de questions. Les questions
+ * existantes sont mises à jour sur place (voir `patchInPlace`) ; la liste
+ * renvoyée est nouvelle si l'ordre a changé, sinon c'est la même.
+ *
+ * `keepLocal` désigne les questions à garder même si l'ordre reçu ne les
+ * contient pas : celles que l'on vient d'ajouter et que l'autre ne connaît
+ * pas encore.
+ */
+export function applyLiveFields<F extends { key: string }>(
+  fields: F[],
+  edit: LiveEdit<F>,
+  keepLocal: (key: string) => boolean = () => false,
+): F[] {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  for (const incoming of edit.fields ?? []) {
+    const current = byKey.get(incoming.key);
+    if (current) patchInPlace(current as Record<string, unknown>, incoming as Record<string, unknown>);
+    else byKey.set(incoming.key, structuredClone(incoming));
+  }
+  if (!edit.order) return fields;
+
+  const include = new Set([...edit.order, ...fields.map((f) => f.key).filter(keepLocal)]);
+  return weave(edit.order, fields.map((f) => f.key), include)
+    .map((key) => byKey.get(key))
+    .filter((f): f is F => f !== undefined);
+}
+
+/** Applique une modification reçue à un état détaché (copie renvoyée). */
+export function applyLiveEdit<F extends { key: string }>(
+  content: EditorContent<F>,
+  edit: LiveEdit<F>,
+): EditorContent<F> {
+  const copy = structuredClone(content);
+  return {
+    fields: applyLiveFields(copy.fields, edit),
+    metaColumns: edit.metaColumns ? structuredClone(edit.metaColumns) : copy.metaColumns,
+    settings: edit.settings ? { ...copy.settings, ...structuredClone(edit.settings) } : copy.settings,
+  };
+}
+
+/**
+ * Reporte une modification reçue dans un état passé de l'historique
+ * d'annulation : Ctrl+Z défait ses propres modifications, pas celles des
+ * autres. Seul le contenu est reporté (questions présentes dans cet état,
+ * réglages) ; les ajouts et suppressions de questions ne le sont pas.
+ */
+export function rebaseEditorContent<F extends { key: string }>(
+  content: EditorContent<F>,
+  edit: LiveEdit<F>,
+): EditorContent<F> {
+  const incoming = new Map((edit.fields ?? []).map((f) => [f.key, f]));
+  return {
+    fields: content.fields.map((f) => (incoming.has(f.key) ? structuredClone(incoming.get(f.key)!) : f)),
+    metaColumns: edit.metaColumns ? structuredClone(edit.metaColumns) : content.metaColumns,
+    settings: edit.settings ? { ...content.settings, ...structuredClone(edit.settings) } : content.settings,
+  };
 }
