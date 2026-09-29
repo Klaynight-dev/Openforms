@@ -16,6 +16,8 @@
     IconCheck,
     IconInfo
   } from "../icons.ts";
+  import { presenceColor, shortName } from "../presence.ts";
+  import type { PresenceUser } from "../stores/realtime.svelte.ts";
 
   interface Settings {
     title: string;
@@ -43,12 +45,15 @@
       allowedEmails: [] as string[],
     } as Settings),
     onselectionchange,
+    remoteSelections = {},
   }: {
     fields?: FieldDefinition[];
     metaColumns?: MetaColumn[];
     settings?: Settings;
     /** Appelé avec la clé de la question sélectionnée, ou `null`. */
     onselectionchange?: (key: string | null) => void;
+    /** Collaborateurs ayant sélectionné chaque question, par clé de question. */
+    remoteSelections?: Record<string, PresenceUser[]>;
   } = $props();
 
   /**
@@ -391,6 +396,7 @@
     {#each fields as field, i (field)}
       {@const FieldIcon = FIELD_ICONS[field.type]}
       {@const isActive = selectedIndex === i}
+      {@const viewers = remoteSelections[field.key] ?? []}
 
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
@@ -398,6 +404,9 @@
         class:border-l-[6px]={isActive}
         class:border-l-[color:var(--brand)]={isActive}
         class:card-active={isActive}
+        class:ring-2={isActive && viewers.length === 0}
+        class:ring-[color:var(--brand)]={isActive && viewers.length === 0}
+        style={viewers.length > 0 ? `box-shadow: 0 0 0 2px ${presenceColor(viewers[0].id)}` : undefined}
         data-cursor-anchor={`field:${field.key}`}
         data-builder-card
         draggable="true"
@@ -411,6 +420,22 @@
         role="button"
         tabindex="0"
       >
+        <!-- Collaborateurs sur cette question : leur couleur et leur nom,
+             comme dans Canva, pour éviter de modifier la même à deux. -->
+        {#if viewers.length > 0}
+          <div class="absolute top-0 right-4 z-10 flex gap-1 pointer-events-none">
+            {#each viewers as viewer (viewer.id)}
+              <span
+                class="rounded-b-md px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                style="background:{presenceColor(viewer.id)}"
+                title={`${viewer.name} modifie cette question`}
+              >
+                {shortName(viewer.name)}
+              </span>
+            {/each}
+          </div>
+        {/if}
+
         <!-- Drag indicator line -->
         {#if dragIndex !== null && dragOverIndex === i && isValidDrop}
           <div 

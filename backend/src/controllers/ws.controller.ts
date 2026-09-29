@@ -11,8 +11,9 @@ import type { SessionContext } from "../lib/session.ts";
  * Le client ouvre une seule socket puis s'abonne aux topics dont il a besoin :
  *   - `form:<id>:responses` : lignes du tableur (création / édition / suppression)
  *   - `form:<id>:comments`  : fil de commentaires du formulaire
- *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment, et où
- *                             se trouve son pointeur (message `cursor`)
+ *   - `form:<id>:presence`  : qui a le formulaire ouvert en ce moment, où se
+ *                             trouve son pointeur (message `cursor`) et
+ *                             quelle question il a sélectionnée (`select`)
  *   - `form:<id>:editor`    : nouvel état du formulaire après chaque
  *                             enregistrement, pour l'éditeur des collaborateurs
  *
@@ -28,6 +29,28 @@ const presenceByForm = new Map<string, Map<string, { user: PresenceUser; sockets
 
 /** Formulaires dont chaque socket annonce la présence, pour nettoyer à la fermeture. */
 const presenceBySocket = new Map<string, Set<string>>();
+
+/**
+ * Question sélectionnée dans l'éditeur : formId -> socketId -> sélection.
+ * Gardée en mémoire pour la montrer à qui ouvre le formulaire ensuite.
+ */
+const selectionByForm = new Map<string, Map<string, { user: PresenceUser; fieldKey: string }>>();
+
+function selectionsOf(formId: string): { user: PresenceUser; fieldKey: string }[] {
+  return [...(selectionByForm.get(formId)?.values() ?? [])];
+}
+
+/** Enregistre ou efface la sélection d'une socket ; renvoie vrai si elle a changé. */
+function setSelection(socketId: string, formId: string, user: PresenceUser, fieldKey: string | null): boolean {
+  const forForm = selectionByForm.get(formId) ?? new Map();
+  const previous = forForm.get(socketId)?.fieldKey ?? null;
+  if (previous === fieldKey) return false;
+  if (fieldKey === null) forForm.delete(socketId);
+  else forForm.set(socketId, { user, fieldKey });
+  if (forForm.size === 0) selectionByForm.delete(formId);
+  else selectionByForm.set(formId, forForm);
+  return true;
+}
 
 function parseTopic(topic: string): { formId: string; channel: string } | null {
   const match = TOPIC_PATTERN.exec(topic);
@@ -106,6 +129,13 @@ function publishPresence(formId: string, event: RealtimeEvent): void {
   broadcast(presenceTopic(formId), event);
 }
 
+/** Onglet fermé ou formulaire quitté : sa sélection disparaît chez les autres. */
+function clearSelection(socketId: string, formId: string, user: PresenceUser): void {
+  if (setSelection(socketId, formId, user, null)) {
+    publishPresence(formId, { type: "selection:change", formId, user, fieldKey: null });
+  }
+}
+
 export const wsController = new Elysia()
   .use(authPlugin)
   .ws("/api/v1/ws", {
@@ -115,6 +145,7 @@ export const wsController = new Elysia()
         t.Literal("unsubscribe"),
         t.Literal("ping"),
         t.Literal("cursor"),
+        t.Literal("select"),
       ]),
       topics: t.Optional(t.Array(t.String({ maxLength: 128 }), { maxItems: 200 })),
       // Champs du message `cursor` : onglet affiché, élément survolé et
@@ -125,6 +156,8 @@ export const wsController = new Elysia()
       x: t.Optional(t.Number()),
       y: t.Optional(t.Number()),
       hidden: t.Optional(t.Boolean()),
+      // Message `select` : clé de la question sélectionnée, `null` pour aucune.
+      fieldKey: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
     }),
 
     beforeHandle({ auth, request, set }) {
@@ -173,6 +206,18 @@ export const wsController = new Elysia()
         return;
       }
 
+      if (message.type === "select") {
+        const formId = message.formId;
+        if (!formId || !presenceBySocket.get(ws.id)?.has(formId)) return;
+        const fieldKey = message.fieldKey ?? null;
+        if (!setSelection(ws.id, formId, presenceUser, fieldKey)) return;
+        ws.publish(
+          presenceTopic(formId),
+          JSON.stringify({ type: "selection:change", formId, user: presenceUser, fieldKey } satisfies RealtimeEvent),
+        );
+        return;
+      }
+
       if (message.type === "subscribe") {
         const topics = await authorizeTopics(auth.user, message.topics ?? []);
         for (const topic of topics) {
@@ -187,6 +232,7 @@ export const wsController = new Elysia()
             });
           }
           ws.send({ type: "presence:sync", formId: parsed.formId, users: roster(parsed.formId) });
+          ws.send({ type: "selection:sync", formId: parsed.formId, selections: selectionsOf(parsed.formId) });
         }
         ws.send({ type: "subscribed", topics });
         return;
@@ -196,6 +242,7 @@ export const wsController = new Elysia()
         ws.unsubscribe(topic);
         const parsed = parseTopic(topic);
         if (parsed?.channel !== "presence") continue;
+        clearSelection(ws.id, parsed.formId, presenceUser);
         if (leavePresence(ws.id, parsed.formId, auth.user.id)) {
           publishPresence(parsed.formId, {
             type: "presence:leave",
@@ -209,6 +256,7 @@ export const wsController = new Elysia()
     close(ws) {
       const auth = ws.data.auth as SessionContext | null;
       for (const formId of [...(presenceBySocket.get(ws.id) ?? [])]) {
+        if (auth) clearSelection(ws.id, formId, { id: auth.user.id, name: auth.user.displayName?.trim() || auth.user.email });
         if (auth && leavePresence(ws.id, formId, auth.user.id)) {
           publishPresence(formId, { type: "presence:leave", formId, userId: auth.user.id });
         }

@@ -46,6 +46,7 @@ export type RealtimeEvent =
   | { type: "form:updated"; formId: string; form: FormEditorState }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
+  | { type: "selection:change"; formId: string; user: PresenceUser; fieldKey: string | null }
   | {
       type: "cursor:move";
       formId: string;

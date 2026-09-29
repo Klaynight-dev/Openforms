@@ -42,6 +42,14 @@
      * édite (questions). Sans elle, l'état reçu remplace celui affiché.
      */
     remoteCallback: ((form: Partial<FormDetail>) => void) | null = null;
+    /** Question sélectionnée par chaque collaborateur (clé d'utilisateur). */
+    selections = $state<Record<string, { user: PresenceUser; fieldKey: string }>>({});
+    /**
+     * Incrémenté à chaque abonnement confirmé à la présence (connexion,
+     * reconnexion) : le serveur a alors oublié la sélection de la socket
+     * précédente, l'éditeur la renvoie.
+     */
+    presenceEpoch = $state(0);
 
     #autosaveTimer: ReturnType<typeof setTimeout> | null = null;
     /** Compte les modifications : une frappe pendant l'envoi reste à enregistrer. */
@@ -124,6 +132,7 @@
   $effect(() => {
     if (!id) return;
     others = [];
+    editorState.selections = {};
     return realtime.subscribe([presenceTopic(id)], applyPresenceEvent);
   });
 
@@ -155,6 +164,7 @@
   function applyPresenceEvent(event: RealtimeEvent) {
     if (event.type === "presence:sync") {
       others = event.users.filter((user) => user.id !== auth.user?.id);
+      editorState.presenceEpoch += 1;
     } else if (event.type === "presence:join") {
       // On reçoit aussi sa propre arrivée, et une par onglet ouvert.
       if (event.user.id === auth.user?.id) return;
@@ -162,6 +172,17 @@
       others = [...others, event.user];
     } else if (event.type === "presence:leave") {
       others = others.filter((user) => user.id !== event.userId);
+      delete editorState.selections[event.userId];
+    } else if (event.type === "selection:sync") {
+      editorState.selections = Object.fromEntries(
+        event.selections
+          .filter((selection) => selection.user.id !== auth.user?.id)
+          .map((selection) => [selection.user.id, selection]),
+      );
+    } else if (event.type === "selection:change") {
+      if (event.user.id === auth.user?.id) return;
+      if (event.fieldKey === null) delete editorState.selections[event.user.id];
+      else editorState.selections[event.user.id] = { user: event.user, fieldKey: event.fieldKey };
     }
   }
 

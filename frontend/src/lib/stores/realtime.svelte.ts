@@ -34,6 +34,8 @@ export type RealtimeEvent =
   | { type: "presence:sync"; formId: string; users: PresenceUser[] }
   | { type: "presence:join"; formId: string; user: PresenceUser }
   | { type: "presence:leave"; formId: string; userId: string }
+  | { type: "selection:sync"; formId: string; selections: { user: PresenceUser; fieldKey: string }[] }
+  | { type: "selection:change"; formId: string; user: PresenceUser; fieldKey: string | null }
   | ({ type: "cursor:move"; formId: string; user: PresenceUser } & Required<CursorPosition>);
 
 /** Position du pointeur partagée avec les autres personnes sur le formulaire. */
@@ -60,7 +62,11 @@ function topicOf(event: { type?: string; formId?: string }): string | null {
   if (event.type.startsWith("response:")) return responsesTopic(event.formId);
   if (event.type.startsWith("comment:")) return commentsTopic(event.formId);
   if (event.type.startsWith("form:")) return editorTopic(event.formId);
-  if (event.type.startsWith("presence:") || event.type.startsWith("cursor:")) {
+  if (
+    event.type.startsWith("presence:") ||
+    event.type.startsWith("cursor:") ||
+    event.type.startsWith("selection:")
+  ) {
     return presenceTopic(event.formId);
   }
   return null;
@@ -84,7 +90,8 @@ interface Subscription {
 type OutgoingMessage =
   | { type: "subscribe" | "unsubscribe"; topics: string[] }
   | { type: "ping" }
-  | ({ type: "cursor"; formId: string } & CursorPosition);
+  | ({ type: "cursor"; formId: string } & CursorPosition)
+  | { type: "select"; formId: string; fieldKey: string | null };
 
 class RealtimeClient {
   /** Vrai tant que la socket est ouverte : pilote l'indicateur « en direct ». */
@@ -139,6 +146,11 @@ class RealtimeClient {
   /** Diffuse la position du pointeur aux autres personnes sur ce formulaire. */
   sendCursor(formId: string, cursor: CursorPosition): void {
     this.send({ type: "cursor", formId, ...cursor });
+  }
+
+  /** Montre aux autres personnes la question sélectionnée (`null` : aucune). */
+  sendSelection(formId: string, fieldKey: string | null): void {
+    this.send({ type: "select", formId, fieldKey });
   }
 
   private connect(): void {

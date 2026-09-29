@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { getContext, untrack } from "svelte";
+  import { getContext, onDestroy, untrack } from "svelte";
   import { page } from "$app/stores";
   import FormBuilder from "$components/FormBuilder.svelte";
   import { api } from "$api/client.ts";
   import { EditHistory } from "$lib/editHistory.svelte.ts";
+  import { realtime, type PresenceUser } from "$lib/stores/realtime.svelte.ts";
   import { mergeValue, patchInPlace, planFieldMerge, sameValue, stableStringify } from "$lib/formMerge.ts";
   import type { FieldDefinition, MetaColumn, FormDetail, Permission } from "$lib/types.ts";
 
@@ -17,6 +18,8 @@
     history: EditHistory<unknown> | null;
     markDirty: () => void;
     remoteCallback: ((form: Partial<FormDetail>) => void) | null;
+    selections: Record<string, { user: PresenceUser; fieldKey: string }>;
+    presenceEpoch: number;
   }>("form-editor-context");
 
   const id = $page.params.id as string;
@@ -171,6 +174,26 @@
     };
   });
 
+  // --- Sélections : la sienne est montrée aux autres, les leurs ici ---
+
+  let selectedKey = $state<string | null>(null);
+
+  $effect(() => {
+    void editorState.presenceEpoch;
+    realtime.sendSelection(id, selectedKey);
+  });
+
+  onDestroy(() => realtime.sendSelection(id, null));
+
+  /** Collaborateurs ayant sélectionné chaque question, par clé de question. */
+  const remoteSelections = $derived.by(() => {
+    const byField: Record<string, PresenceUser[]> = {};
+    for (const { user, fieldKey } of Object.values(editorState.selections)) {
+      (byField[fieldKey] ??= []).push(user);
+    }
+    return byField;
+  });
+
   // Register save function with the parent layout
   $effect(() => {
     editorState.saveCallback = save;
@@ -200,5 +223,11 @@
 </script>
 
 {#if editorState.form}
-  <FormBuilder bind:fields bind:metaColumns bind:settings />
+  <FormBuilder
+    bind:fields
+    bind:metaColumns
+    bind:settings
+    {remoteSelections}
+    onselectionchange={(key) => (selectedKey = key)}
+  />
 {/if}
