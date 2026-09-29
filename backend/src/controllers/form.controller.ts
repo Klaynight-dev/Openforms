@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { prisma } from "../services/prisma.ts";
-import { authPlugin, resolveFormPermission } from "../middleware/auth.ts";
+import { authPlugin, readableFormsWhere, resolveFormPermission } from "../middleware/auth.ts";
 import { ExportThemeSchema, FormSchemaArray, MetaColumnSchema } from "../lib/formSchema.ts";
 import { randomToken } from "../services/crypto.ts";
 import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
@@ -194,17 +194,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         set.status = 401;
         return { success: false, error: "Authentification requise." };
       }
-      // Cercle 1 uniquement : un formulaire est visible s'il est possédé ou
-      // explicitement partagé (FormAccess). L'appartenance à l'organisation
-      // (cercle 2) ne donne aucune visibilité par défaut sur les formulaires.
-      let where = {};
-      if (auth.user.role !== "SUPER_ADMIN") {
-        where = {
-          OR: [{ ownerId: auth.user.id }, { access: { some: { userId: auth.user.id } } }],
-        };
-      }
       const forms = await prisma.form.findMany({
-        where,
+        where: readableFormsWhere(auth.user),
         orderBy: { updatedAt: "desc" },
         include: { _count: { select: { responses: true } } },
       });
@@ -279,7 +270,11 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
       }
       const form = await prisma.form.findUnique({
         where: { id: params.id },
-        include: { access: { include: { user: { select: { id: true, email: true, displayName: true } } } } },
+        include: {
+          access: { include: { user: { select: { id: true, email: true, displayName: true } } } },
+          owner: { select: { id: true, email: true, displayName: true } },
+          organization: { select: { id: true, name: true } },
+        },
       });
       if (!form) {
         set.status = 404;
@@ -529,10 +524,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         return { success: false, error: "Formulaire introuvable." };
       }
 
-      // Cercle 2 (OWNER/ADMIN d'organisation) ne donne plus de droit
-      // automatique sur les formulaires individuels : seuls le propriétaire,
-      // un SUPER_ADMIN, ou un collaborateur explicitement EDITOR peuvent
-      // supprimer- cohérent avec le reste du modèle d'accès (cercle 1).
+      // Supprimer demande l'édition : propriétaire, SUPER_ADMIN, membre de
+      // l'organisation du formulaire ou collaborateur partagé en éditeur.
       const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
       if (perm !== "EDITOR") {
         set.status = 403;
@@ -568,18 +561,14 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
 
       const email = body.email.trim().toLowerCase();
       let targetUser = await prisma.user.findUnique({ where: { email } });
-      if (!targetUser) {
-        targetUser = await prisma.user.create({
-          data: { email, passwordHash: null, role: "EDITOR", displayName: email.split("@")[0] },
-        });
-        const { token } = await createPasswordSetupToken(targetUser.id);
-        const inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
-        await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
-      }
-
-      if (targetUser.id === form.ownerId) {
+      if (targetUser?.id === form.ownerId) {
         set.status = 400;
         return { success: false, error: "Cette personne est déjà propriétaire du formulaire." };
+      }
+      if (!targetUser) {
+        targetUser = await prisma.user.create({
+          data: { email, passwordHash: null, role: "EDITOR", displayName: null },
+        });
       }
 
       const access = await prisma.formAccess.upsert({
@@ -588,7 +577,16 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         update: { role: body.role },
         include: { user: { select: { id: true, email: true, displayName: true } } },
       });
-      return { success: true, access };
+
+      // Sans mot de passe, le compte ne peut pas se connecter : le lien part
+      // par email et revient aussi à l'appelant, au cas où l'email échoue.
+      let inviteLink: string | null = null;
+      if (targetUser.passwordHash === null) {
+        const { token } = await createPasswordSetupToken(targetUser.id);
+        inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
+        await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
+      }
+      return { success: true, access, inviteLink };
     },
     {
       params: t.Object({ id: t.String() }),
@@ -596,6 +594,59 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
         email: t.String({ format: "email", maxLength: 320 }),
         role: t.Union([t.Literal("VIEWER"), t.Literal("COMMENTER"), t.Literal("EDITOR")]),
       }),
+      requireRole: true,
+    },
+  )
+
+  // --- Rattacher le formulaire à une organisation, ou le rendre à son propriétaire ---
+  // Rattaché, il devient accessible en édition à tous les membres de
+  // l'organisation (voir resolveFormPermission).
+  .put(
+    "/:id/organization",
+    async ({ auth, params, body, set }) => {
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: "Authentification requise." };
+      }
+      const form = await prisma.form.findUnique({ where: { id: params.id } });
+      if (!form) {
+        set.status = 404;
+        return { success: false, error: "Formulaire introuvable." };
+      }
+      const perm = await resolveFormPermission(prisma.formAccess, auth.user, form.id, form.ownerId);
+      if (perm !== "EDITOR") {
+        set.status = 403;
+        return { success: false, error: "Seul un éditeur peut déplacer ce formulaire." };
+      }
+
+      const organizationId = body.organizationId;
+      if (organizationId) {
+        const member = await prisma.organizationMember.findUnique({
+          where: { organizationId_userId: { organizationId, userId: auth.user.id } },
+        });
+        const exists = member || (auth.user.role === "SUPER_ADMIN" &&
+          (await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true } })));
+        if (!exists) {
+          set.status = 403;
+          return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
+        }
+      } else if (auth.user.id !== form.ownerId && auth.user.role !== "SUPER_ADMIN") {
+        // Sortir un formulaire d'une organisation en retire l'accès à toute
+        // l'équipe : seul son propriétaire en décide.
+        set.status = 403;
+        return { success: false, error: "Seul le propriétaire peut retirer ce formulaire de l'organisation." };
+      }
+
+      const updated = await prisma.form.update({
+        where: { id: form.id },
+        data: { organizationId: organizationId ?? null },
+        select: { id: true, organizationId: true, organization: { select: { id: true, name: true } } },
+      });
+      return { success: true, form: updated };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({ organizationId: t.Nullable(t.String()) }),
       requireRole: true,
     },
   )

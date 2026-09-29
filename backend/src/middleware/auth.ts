@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { resolveSession, type SessionContext } from "../lib/session.ts";
 import { resolveApiKey, type ApiKeyContext } from "../lib/apiKey.ts";
+import { prisma } from "../services/prisma.ts";
 
 export type Role = "SUPER_ADMIN" | "EDITOR";
 
@@ -108,13 +109,16 @@ function enforceRole(
 
 export type FormPermission = "NONE" | "VIEWER" | "COMMENTER" | "EDITOR";
 
+const PERMISSION_RANK: Record<FormPermission, number> = { NONE: 0, VIEWER: 1, COMMENTER: 2, EDITOR: 3 };
+
 /**
- * Détermine le rôle effectif d'un utilisateur sur un formulaire (cercle 1).
- * SUPER_ADMIN (cercle 3) et le propriétaire ont toujours EDITOR ; pour
- * quiconque d'autre, seul un accès explicite (FormAccess) compte- être
- * membre de l'organisation propriétaire (cercle 2) ne donne AUCUN droit par
- * défaut sur un formulaire précis. Le partage est toujours explicite, comme
- * dans un Drive partagé : voir PUT/DELETE /forms/:id/access.
+ * Détermine le rôle effectif d'un utilisateur sur un formulaire.
+ *  - SUPER_ADMIN et propriétaire : EDITOR.
+ *  - Membre de l'organisation du formulaire (quel que soit son rôle dans
+ *    l'organisation) : EDITOR. Ajouter quelqu'un à l'organisation suffit donc
+ *    à lui ouvrir tous ses formulaires.
+ *  - Sinon, l'accès explicite (FormAccess, partage formulaire par formulaire).
+ * Quand plusieurs règles s'appliquent, la plus large l'emporte.
  */
 export async function resolveFormPermission(
   prismaAccess: any,
@@ -124,9 +128,30 @@ export async function resolveFormPermission(
 ): Promise<FormPermission> {
   if (user.role === "SUPER_ADMIN" || user.id === ownerId) return "EDITOR";
 
-  const access = await prismaAccess.findUnique({
-    where: { userId_formId: { userId: user.id, formId } },
-  });
-  if (!access) return "NONE";
-  return access.role as "VIEWER" | "COMMENTER" | "EDITOR";
+  const [access, membership] = await Promise.all([
+    prismaAccess.findUnique({ where: { userId_formId: { userId: user.id, formId } } }),
+    prisma.organizationMember.findFirst({
+      where: { userId: user.id, organization: { forms: { some: { id: formId } } } },
+      select: { id: true },
+    }),
+  ]);
+
+  const explicit: FormPermission = access ? (access.role as FormPermission) : "NONE";
+  const viaOrganization: FormPermission = membership ? "EDITOR" : "NONE";
+  return PERMISSION_RANK[viaOrganization] > PERMISSION_RANK[explicit] ? viaOrganization : explicit;
+}
+
+/**
+ * Filtre Prisma des formulaires qu'un utilisateur peut au moins lire : les
+ * siens, ceux qu'on lui a partagés et ceux de ses organisations.
+ */
+export function readableFormsWhere(user: SessionContext["user"]) {
+  if (user.role === "SUPER_ADMIN") return {};
+  return {
+    OR: [
+      { ownerId: user.id },
+      { access: { some: { userId: user.id } } },
+      { organization: { members: { some: { userId: user.id } } } },
+    ],
+  };
 }

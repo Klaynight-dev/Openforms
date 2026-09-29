@@ -44,7 +44,7 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
           email,
           passwordHash: null,
           role: body.role,
-          displayName: body.displayName,
+          displayName: body.displayName?.trim() || null,
         },
         select: { id: true, email: true, role: true, displayName: true, isActive: true },
       });
@@ -90,12 +90,23 @@ export const usersController = new Elysia({ prefix: "/api/v1" })
   // --- Mise à jour d'un compte ---
   .patch(
     "/users/:id",
-    async ({ params, body }) => {
+    async ({ params, body, auth, set }) => {
+      // Se rétrograder ou se désactiver soi-même ferait perdre l'accès à cet
+      // écran, parfois au dernier administrateur de l'instance.
+      if (params.id === auth!.user.id && (body.role === "EDITOR" || body.isActive === false)) {
+        set.status = 400;
+        return { success: false, error: "Vous ne pouvez pas retirer vos propres droits d'administration." };
+      }
+      const exists = await prisma.user.findUnique({ where: { id: params.id }, select: { id: true } });
+      if (!exists) {
+        set.status = 404;
+        return { success: false, error: "Utilisateur introuvable." };
+      }
       const user = await prisma.user.update({
         where: { id: params.id },
         data: {
           role: body.role,
-          displayName: body.displayName,
+          displayName: body.displayName === undefined ? undefined : body.displayName.trim() || null,
           isActive: body.isActive,
           ...(body.password ? { passwordHash: await hashPassword(body.password) } : {}),
         },

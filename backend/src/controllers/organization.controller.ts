@@ -4,6 +4,21 @@ import { authPlugin } from "../middleware/auth.ts";
 import { createPasswordSetupToken } from "../lib/passwordSetup.ts";
 import { sendInviteEmail } from "../services/mailer.ts";
 import { env } from "../config/env.ts";
+import type { SessionContext } from "../lib/session.ts";
+
+/**
+ * Organisations (cercle 2).
+ *
+ * Être membre d'une organisation donne l'accès en édition à tous ses
+ * formulaires (voir resolveFormPermission). Les rôles ne départagent que
+ * l'administration de l'organisation elle-même :
+ *   - OWNER  : tout, y compris supprimer l'organisation et nommer d'autres propriétaires ;
+ *   - ADMIN  : renommer, inviter, changer les rôles et retirer des membres (hors propriétaires) ;
+ *   - MEMBER : travaille sur les formulaires, sans gérer l'équipe.
+ */
+
+type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
+type CallerRole = OrgRole | "SUPER_ADMIN" | null;
 
 function slugify(name: string): string {
   const base = name
@@ -16,52 +31,77 @@ function slugify(name: string): string {
   return `${base || "org"}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/** Rôle de l'appelant dans l'organisation ; un SUPER_ADMIN a toujours la main. */
+async function callerRole(organizationId: string, user: SessionContext["user"]): Promise<CallerRole> {
+  const member = await prisma.organizationMember.findUnique({
+    where: { organizationId_userId: { organizationId, userId: user.id } },
+    select: { role: true },
+  });
+  if (member) return member.role as OrgRole;
+  return user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : null;
+}
+
+const canManage = (role: CallerRole) => role === "OWNER" || role === "ADMIN" || role === "SUPER_ADMIN";
+const isOwnerLike = (role: CallerRole) => role === "OWNER" || role === "SUPER_ADMIN";
+
+const memberInclude = {
+  user: { select: { id: true, email: true, displayName: true, passwordHash: true } },
+} as const;
+
+/** Masque le hash, n'expose que le fait qu'un mot de passe existe. */
+function publicMember<M extends { user: { passwordHash: string | null } }>(member: M) {
+  const { passwordHash, ...user } = member.user;
+  return { ...member, user: { ...user, hasPassword: passwordHash !== null } };
+}
+
 export const organizationController = new Elysia({ prefix: "/api/v1/organizations" })
   .use(authPlugin)
 
-  // --- Lister les organisations de l'utilisateur connecté ---
+  // --- Organisations visibles : les siennes, toutes pour un SUPER_ADMIN ---
   .get(
     "/",
     async ({ auth }) => {
+      const user = auth!.user;
       const memberships = await prisma.organizationMember.findMany({
-        where: { userId: auth!.user.id },
-        include: {
-          organization: true,
-        },
-        orderBy: { createdAt: "desc" },
+        where: { userId: user.id },
+        select: { organizationId: true, role: true },
       });
-      const organizations = memberships.map((m) => m.organization);
-      return { success: true, organizations };
+      const roleByOrg = new Map(memberships.map((m) => [m.organizationId, m.role as OrgRole]));
+
+      const organizations = await prisma.organization.findMany({
+        where: user.role === "SUPER_ADMIN" ? {} : { id: { in: [...roleByOrg.keys()] } },
+        include: { _count: { select: { members: true, forms: true } } },
+        orderBy: { name: "asc" },
+      });
+
+      return {
+        success: true,
+        organizations: organizations.map(({ _count, ...org }) => ({
+          ...org,
+          role: roleByOrg.get(org.id) ?? "SUPER_ADMIN",
+          memberCount: _count.members,
+          formCount: _count.forms,
+        })),
+      };
     },
     { requireRole: true },
   )
 
-  // --- Obtenir les détails d'une organisation ---
+  // --- Détail d'une organisation ---
   .get(
     "/:id",
     async ({ auth, params, set }) => {
-      const member = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: params.id, userId: auth!.user.id } },
-        include: { organization: true },
-      });
-
-      // Si l'utilisateur est SUPER_ADMIN, il a tous les droits d'accès même s'il n'est pas membre
-      if (!member && auth!.user.role !== "SUPER_ADMIN") {
+      const role = await callerRole(params.id, auth!.user);
+      if (!role) {
         set.status = 403;
-        return { success: false, error: "Accès refusé : vous n'êtes pas membre de cette organisation." };
+        return { success: false, error: "Vous n'êtes pas membre de cette organisation." };
       }
-
-      const org = member?.organization || await prisma.organization.findUnique({ where: { id: params.id } });
-      if (!org) {
+      const organization = await prisma.organization.findUnique({ where: { id: params.id } });
+      if (!organization) {
         set.status = 404;
         return { success: false, error: "Organisation introuvable." };
       }
-
-      return {
-        success: true,
-        organization: org,
-        role: member?.role || "SUPER_ADMIN",
-      };
+      return { success: true, organization, role };
     },
     { params: t.Object({ id: t.String() }), requireRole: true },
   )
@@ -71,89 +111,87 @@ export const organizationController = new Elysia({ prefix: "/api/v1/organization
     "/",
     async ({ auth, body }) => {
       const name = body.name.trim();
-      const slug = slugify(name);
-
       const organization = await prisma.organization.create({
         data: {
           name,
-          slug,
-          members: {
-            create: {
-              userId: auth!.user.id,
-              role: "OWNER",
-            },
-          },
+          slug: slugify(name),
+          members: { create: { userId: auth!.user.id, role: "OWNER" } },
         },
       });
-
-      return { success: true, organization };
+      return { success: true, organization: { ...organization, role: "OWNER", memberCount: 1, formCount: 0 } };
     },
     {
-      body: t.Object({
-        name: t.String({ minLength: 2, maxLength: 100 }),
-      }),
+      body: t.Object({ name: t.String({ minLength: 2, maxLength: 100 }) }),
       requireRole: true,
     },
   )
 
-  // --- Lister les membres d'une organisation ---
+  // --- Renommer ---
+  .patch(
+    "/:id",
+    async ({ auth, params, body, set }) => {
+      const role = await callerRole(params.id, auth!.user);
+      if (!canManage(role)) {
+        set.status = 403;
+        return { success: false, error: "Seuls les propriétaires et administrateurs peuvent renommer l'organisation." };
+      }
+      const organization = await prisma.organization.update({
+        where: { id: params.id },
+        data: { name: body.name.trim() },
+      });
+      return { success: true, organization };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({ name: t.String({ minLength: 2, maxLength: 100 }) }),
+      requireRole: true,
+    },
+  )
+
+  // --- Membres ---
   .get(
     "/:id/members",
     async ({ auth, params, set }) => {
-      const member = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: params.id, userId: auth!.user.id } },
-      });
-
-      if (!member && auth!.user.role !== "SUPER_ADMIN") {
+      const role = await callerRole(params.id, auth!.user);
+      if (!role) {
         set.status = 403;
         return { success: false, error: "Accès refusé." };
       }
-
       const members = await prisma.organizationMember.findMany({
         where: { organizationId: params.id },
-        include: {
-          user: {
-            select: { id: true, email: true, displayName: true },
-          },
-        },
+        include: memberInclude,
         orderBy: { createdAt: "asc" },
       });
-
-      return { success: true, members };
+      return { success: true, members: members.map(publicMember) };
     },
     { params: t.Object({ id: t.String() }), requireRole: true },
   )
 
-  // --- Ajouter un membre dans l'organisation ---
+  // --- Ajouter un membre (compte créé et invité s'il n'existe pas) ---
   .post(
     "/:id/members",
     async ({ auth, params, body, set }) => {
-      const caller = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: params.id, userId: auth!.user.id } },
-      });
-
-      const isAuthorized = auth!.user.role === "SUPER_ADMIN" || (caller && (caller.role === "OWNER" || caller.role === "ADMIN"));
-      if (!isAuthorized) {
+      const role = await callerRole(params.id, auth!.user);
+      if (!canManage(role)) {
         set.status = 403;
-        return { success: false, error: "Privilèges insuffisants pour inviter un membre." };
+        return { success: false, error: "Seuls les propriétaires et administrateurs peuvent ajouter des membres." };
+      }
+      if (body.role === "OWNER" && !isOwnerLike(role)) {
+        set.status = 403;
+        return { success: false, error: "Seul un propriétaire peut nommer un autre propriétaire." };
+      }
+      const organization = await prisma.organization.findUnique({ where: { id: params.id }, select: { id: true } });
+      if (!organization) {
+        set.status = 404;
+        return { success: false, error: "Organisation introuvable." };
       }
 
       const email = body.email.trim().toLowerCase();
       let targetUser = await prisma.user.findUnique({ where: { email } });
-
       if (!targetUser) {
         targetUser = await prisma.user.create({
-          data: {
-            email,
-            passwordHash: null,
-            role: "EDITOR",
-            displayName: email.split("@")[0],
-          },
+          data: { email, passwordHash: null, role: "EDITOR", displayName: null },
         });
-
-        const { token } = await createPasswordSetupToken(targetUser.id);
-        const inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
-        await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
       }
 
       const alreadyMember = await prisma.organizationMember.findUnique({
@@ -161,106 +199,159 @@ export const organizationController = new Elysia({ prefix: "/api/v1/organization
       });
       if (alreadyMember) {
         set.status = 409;
-        return { success: false, error: "Cet utilisateur est déjà membre de l'organisation." };
+        return { success: false, error: "Cette personne fait déjà partie de l'organisation." };
       }
 
       const member = await prisma.organizationMember.create({
-        data: {
-          organizationId: params.id,
-          userId: targetUser.id,
-          role: body.role,
-        },
-        include: {
-          user: {
-            select: { id: true, email: true, displayName: true },
-          },
-        },
+        data: { organizationId: params.id, userId: targetUser.id, role: body.role },
+        include: memberInclude,
       });
 
-      return { success: true, member };
+      // Un compte sans mot de passe n'a aucun moyen de se connecter : on lui
+      // (ré)envoie un lien, et on le renvoie aussi à l'appelant, qui peut le
+      // transmettre lui-même si l'email n'est pas configuré.
+      let inviteLink: string | null = null;
+      if (targetUser.passwordHash === null) {
+        const { token } = await createPasswordSetupToken(targetUser.id);
+        inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
+        await sendInviteEmail(email, inviteLink).catch((err) => console.error("Invite email failed:", err));
+      }
+
+      return { success: true, member: publicMember(member), inviteLink };
     },
     {
       params: t.Object({ id: t.String() }),
       body: t.Object({
-        email: t.String({ format: "email" }),
-        role: t.Union([t.Literal("ADMIN"), t.Literal("MEMBER")]),
+        email: t.String({ format: "email", maxLength: 320 }),
+        role: t.Union([t.Literal("OWNER"), t.Literal("ADMIN"), t.Literal("MEMBER")]),
       }),
       requireRole: true,
     },
   )
 
-  // --- Supprimer un membre de l'organisation ---
+  // --- Changer le rôle d'un membre ---
+  .patch(
+    "/:id/members/:memberId",
+    async ({ auth, params, body, set }) => {
+      const role = await callerRole(params.id, auth!.user);
+      if (!canManage(role)) {
+        set.status = 403;
+        return { success: false, error: "Seuls les propriétaires et administrateurs peuvent changer les rôles." };
+      }
+      const target = await prisma.organizationMember.findUnique({ where: { id: params.memberId } });
+      if (!target || target.organizationId !== params.id) {
+        set.status = 404;
+        return { success: false, error: "Membre introuvable." };
+      }
+      if ((target.role === "OWNER" || body.role === "OWNER") && !isOwnerLike(role)) {
+        set.status = 403;
+        return { success: false, error: "Seul un propriétaire peut modifier le rôle de propriétaire." };
+      }
+      if (target.role === "OWNER" && body.role !== "OWNER") {
+        const owners = await prisma.organizationMember.count({
+          where: { organizationId: params.id, role: "OWNER" },
+        });
+        if (owners <= 1) {
+          set.status = 400;
+          return { success: false, error: "L'organisation doit garder au moins un propriétaire." };
+        }
+      }
+      const member = await prisma.organizationMember.update({
+        where: { id: target.id },
+        data: { role: body.role },
+        include: memberInclude,
+      });
+      return { success: true, member: publicMember(member) };
+    },
+    {
+      params: t.Object({ id: t.String(), memberId: t.String() }),
+      body: t.Object({ role: t.Union([t.Literal("OWNER"), t.Literal("ADMIN"), t.Literal("MEMBER")]) }),
+      requireRole: true,
+    },
+  )
+
+  // --- Renvoyer le lien d'invitation d'un membre qui n'a pas encore de mot de passe ---
+  .post(
+    "/:id/members/:memberId/invite",
+    async ({ auth, params, set }) => {
+      const role = await callerRole(params.id, auth!.user);
+      if (!canManage(role)) {
+        set.status = 403;
+        return { success: false, error: "Action réservée aux propriétaires et administrateurs." };
+      }
+      const target = await prisma.organizationMember.findUnique({
+        where: { id: params.memberId },
+        include: { user: true },
+      });
+      if (!target || target.organizationId !== params.id) {
+        set.status = 404;
+        return { success: false, error: "Membre introuvable." };
+      }
+      if (target.user.passwordHash !== null) {
+        set.status = 400;
+        return { success: false, error: "Ce compte est déjà activé." };
+      }
+      const { token } = await createPasswordSetupToken(target.userId);
+      const inviteLink = `${env.appUrl}/admin/set-password?token=${token}`;
+      await sendInviteEmail(target.user.email, inviteLink).catch((err) => console.error("Invite email failed:", err));
+      return { success: true, inviteLink };
+    },
+    { params: t.Object({ id: t.String(), memberId: t.String() }), requireRole: true },
+  )
+
+  // --- Retirer un membre (ou quitter l'organisation) ---
   .delete(
     "/:id/members/:memberId",
     async ({ auth, params, set }) => {
-      const caller = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: params.id, userId: auth!.user.id } },
-      });
-
-      const targetMember = await prisma.organizationMember.findUnique({
-        where: { id: params.memberId },
-      });
-      if (!targetMember) {
+      const role = await callerRole(params.id, auth!.user);
+      const target = await prisma.organizationMember.findUnique({ where: { id: params.memberId } });
+      if (!target || target.organizationId !== params.id) {
         set.status = 404;
         return { success: false, error: "Membre introuvable." };
       }
 
-      // Règles :
-      // 1. Un SUPER_ADMIN peut tout faire.
-      // 2. Un membre peut se retirer lui-même.
-      // 3. Un OWNER ou ADMIN peut retirer d'autres membres (mais un ADMIN ne peut pas retirer un OWNER).
-      const isSelf = targetMember.userId === auth!.user.id;
-      let canRemove = auth!.user.role === "SUPER_ADMIN" || isSelf;
-
-      if (!canRemove && caller) {
-        if (caller.role === "OWNER") {
-          canRemove = true;
-        } else if (caller.role === "ADMIN" && targetMember.role !== "OWNER") {
-          canRemove = true;
-        }
-      }
-
-      if (!canRemove) {
+      const isSelf = target.userId === auth!.user.id;
+      const allowed =
+        isSelf ||
+        isOwnerLike(role) ||
+        (role === "ADMIN" && target.role !== "OWNER");
+      if (!allowed) {
         set.status = 403;
         return { success: false, error: "Action non autorisée." };
       }
 
-      // Si c'est le seul OWNER, l'empêcher de partir sans transférer
-      if (targetMember.role === "OWNER") {
-        const ownerCount = await prisma.organizationMember.count({
+      if (target.role === "OWNER") {
+        const owners = await prisma.organizationMember.count({
           where: { organizationId: params.id, role: "OWNER" },
         });
-        if (ownerCount <= 1) {
+        if (owners <= 1) {
           set.status = 400;
-          return { success: false, error: "Vous devez désigner un autre propriétaire avant de quitter l'organisation." };
+          return { success: false, error: "Nommez un autre propriétaire avant de retirer le dernier." };
         }
       }
 
-      await prisma.organizationMember.delete({ where: { id: params.memberId } });
+      await prisma.organizationMember.delete({ where: { id: target.id } });
       return { success: true };
     },
-    {
-      params: t.Object({ id: t.String(), memberId: t.String() }),
-      requireRole: true,
-    },
+    { params: t.Object({ id: t.String(), memberId: t.String() }), requireRole: true },
   )
 
   // --- Supprimer l'organisation ---
   .delete(
     "/:id",
     async ({ auth, params, set }) => {
-      const caller = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: params.id, userId: auth!.user.id } },
-      });
-
-      const isAuthorized = auth!.user.role === "SUPER_ADMIN" || (caller && caller.role === "OWNER");
-      if (!isAuthorized) {
+      const role = await callerRole(params.id, auth!.user);
+      if (!isOwnerLike(role)) {
         set.status = 403;
-        return { success: false, error: "Action non autorisée : seul le propriétaire peut supprimer l'organisation." };
+        return { success: false, error: "Seul un propriétaire peut supprimer l'organisation." };
       }
-
-      await prisma.organization.delete({ where: { id: params.id } });
-      return { success: true };
+      // La relation Form -> Organization supprime en cascade : on rend d'abord
+      // chaque formulaire à son propriétaire pour ne perdre aucune réponse.
+      const [detached] = await prisma.$transaction([
+        prisma.form.updateMany({ where: { organizationId: params.id }, data: { organizationId: null } }),
+        prisma.organization.delete({ where: { id: params.id } }),
+      ]);
+      return { success: true, detachedForms: detached.count };
     },
     { params: t.Object({ id: t.String() }), requireRole: true },
   );
