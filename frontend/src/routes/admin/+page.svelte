@@ -30,10 +30,12 @@
     IconPlus,
     IconUser,
     IconDuplicate,
+    IconSettings,
   } from "$lib/icons.ts";
+  import Modal from "$lib/components/Modal.svelte";
   // echarts chargé dynamiquement (grosse dépendance) : hors du bundle initial.
   import type { ECharts } from "echarts";
-  import type { Organization, OrganizationMember } from "$lib/types.ts";
+  import type { Organization } from "$lib/types.ts";
 
   let echarts: typeof import("echarts") | null = null;
 
@@ -51,111 +53,62 @@
   // Organisations
   let organizations = $state<Organization[]>([]);
   let activeOrgId = $state<string | null>(null);
-  let activeOrgRole = $state<string | null>(null);
-  let orgMembers = $state<OrganizationMember[]>([]);
-  
+  const activeOrg = $derived(organizations.find((o) => o.id === activeOrgId) ?? null);
+
   let showOrgModal = $state(false);
   let newOrgName = $state("");
-  
-  let showMembersModal = $state(false);
-  let inviteEmail = $state("");
-  let inviteRole = $state("MEMBER");
-  let inviting = $state(false);
+  let creatingOrg = $state(false);
 
+  /** Organisations dont on est membre : leurs formulaires ont leur propre espace. */
+  const myOrgIds = $derived(new Set(organizations.map((o) => o.id)));
+
+  // L'espace personnel regroupe ses formulaires hors organisation et ceux
+  // qu'on nous a partagés un par un, y compris depuis une organisation dont
+  // on n'est pas membre : sans ça, ils n'apparaîtraient nulle part.
   let filteredForms = $derived(
-    forms.filter((f) => {
-      if (activeOrgId === null) {
-        return !f.organizationId;
-      } else {
-        return f.organizationId === activeOrgId;
-      }
-    })
+    forms.filter((f) =>
+      activeOrgId === null
+        ? !f.organizationId || !myOrgIds.has(f.organizationId)
+        : f.organizationId === activeOrgId,
+    ),
   );
 
   let canCreateForm = $derived(auth.isSuperAdmin || activeOrgId !== null);
 
-  async function selectOrg(id: string) {
+  function selectOrg(id: string | null) {
     activeOrgId = id;
-    try {
-      const res = await api.getOrganization(id);
-      activeOrgRole = res.role;
-    } catch {
-      activeOrgRole = "MEMBER";
-    }
+    selected = new Set();
   }
 
-  async function createOrg() {
-    if (!newOrgName.trim()) return;
+  async function createOrg(event?: Event) {
+    event?.preventDefault();
+    const name = newOrgName.trim();
+    if (name.length < 2) return;
+    creatingOrg = true;
     try {
-      const res = await api.createOrganization(newOrgName);
-      organizations = [res.organization, ...organizations];
-      activeOrgId = res.organization.id;
-      activeOrgRole = "OWNER";
+      const res = await api.createOrganization(name);
+      organizations = [...organizations, res.organization];
+      void cacheSet("organizations", $state.snapshot(organizations));
       showOrgModal = false;
       newOrgName = "";
-      await load();
+      // L'étape suivante est presque toujours d'inviter l'équipe.
+      goto(`/admin/organizations/${res.organization.id}`);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : "Impossible de créer l'organisation.");
-    }
-  }
-
-  async function loadOrgMembers() {
-    if (!activeOrgId) return;
-    try {
-      const res = await api.listOrgMembers(activeOrgId);
-      orgMembers = res.members;
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function inviteMember() {
-    if (!inviteEmail.trim() || !activeOrgId) return;
-    inviting = true;
-    try {
-      const res = await api.addOrgMember(activeOrgId, inviteEmail, inviteRole);
-      orgMembers = [...orgMembers, res.member];
-      inviteEmail = "";
-    } catch (e) {
-      toasts.error(e instanceof Error ? e.message : "Impossible d'inviter ce membre.");
     } finally {
-      inviting = false;
+      creatingOrg = false;
     }
   }
 
-  async function removeMember(memberId: string) {
-    if (!activeOrgId) return;
-    const ok = await askConfirm({
-      title: "Retirer ce membre ?",
-      message: "Il perdra l'accès aux formulaires de l'organisation.",
-      confirmLabel: "Retirer",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await api.removeOrgMember(activeOrgId, memberId);
-      orgMembers = orgMembers.filter((m) => m.id !== memberId);
-    } catch (e) {
-      toasts.error(e instanceof Error ? e.message : "Action impossible.");
-    }
-  }
-
-  function canManageForm(f: FormSummary) {
-    if (auth.isSuperAdmin || f.ownerId === auth.user?.id) return true;
-    if (f.organizationId) {
-      if (activeOrgId === f.organizationId && (activeOrgRole === "OWNER" || activeOrgRole === "ADMIN")) {
-        return true;
-      }
-    }
-    return false;
-  }
-
+  /**
+   * Même règle que le serveur (resolveFormPermission) : propriétaire, Super
+   * Admin ou membre de l'organisation du formulaire. Un formulaire partagé un
+   * par un peut aussi l'être en édition, ce que la liste ne dit pas : le
+   * serveur tranche alors à l'ouverture.
+   */
   function canEditForm(f: FormSummary) {
     if (auth.isSuperAdmin || f.ownerId === auth.user?.id) return true;
-    if (f.organizationId) {
-      return true;
-    }
-    return false;
+    return !!f.organizationId && myOrgIds.has(f.organizationId);
   }
 
   // Multi-sélection
@@ -393,24 +346,29 @@
   }
 
   // --- Actions groupées ---
+  /** Sélection réduite aux formulaires que l'on peut modifier. */
+  const editableSelection = $derived(forms.filter((f) => selected.has(f.id) && canEditForm(f)));
+
+  function reportBulkFailures(results: PromiseSettledResult<unknown>[], action: string) {
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) toasts.error(`${failed} formulaire${failed > 1 ? "s n'ont" : " n'a"} pas pu être ${action}.`);
+  }
+
   async function bulkPublish(publish: boolean) {
-    const ids = [...selected];
-    await Promise.all(
-      ids.map(async (id) => {
-        const f = forms.find((x) => x.id === id);
-        if (f && f.isPublished !== publish) {
-          const res = await api.publishForm(id, publish);
-          f.isPublished = res.isPublished;
-        }
-      })
+    const targets = editableSelection.filter((f) => f.isPublished !== publish);
+    const results = await Promise.allSettled(
+      targets.map(async (f) => {
+        const res = await api.publishForm(f.id, publish);
+        forms = forms.map((x) => (x.id === f.id ? { ...x, isPublished: res.isPublished } : x));
+      }),
     );
-    forms = [...forms];
+    reportBulkFailures(results, publish ? "publié" : "dépublié");
     clearSelection();
   }
 
   async function bulkDelete() {
-    const ids = [...selected];
-    const count = ids.length;
+    const targets = editableSelection;
+    const count = targets.length;
     const ok = await askConfirm({
       title: `Supprimer ${count} formulaire${count > 1 ? "s" : ""} ?`,
       message: "Toutes leurs réponses seront définitivement supprimées.",
@@ -418,8 +376,10 @@
       danger: true,
     });
     if (!ok) return;
-    await Promise.all(ids.map((id) => api.deleteForm(id)));
-    forms = forms.filter((f) => !ids.includes(f.id));
+    const results = await Promise.allSettled(targets.map((f) => api.deleteForm(f.id)));
+    const deleted = new Set(targets.filter((_, i) => results[i].status === "fulfilled").map((f) => f.id));
+    forms = forms.filter((f) => !deleted.has(f.id));
+    reportBulkFailures(results, "supprimé");
     clearSelection();
   }
 </script>
@@ -572,7 +532,8 @@
         <!-- Espace Personnel -->
         <button
           class="flex items-center gap-2.5 w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all {activeOrgId === null ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10' : 'text-[color:var(--ink)] hover:bg-slate-50 border border-transparent'}"
-          onclick={() => { activeOrgId = null; activeOrgRole = null; }}
+          onclick={() => selectOrg(null)}
+          aria-current={activeOrgId === null ? "true" : undefined}
         >
           <span class="flex h-5 w-5 items-center justify-center rounded-lg {activeOrgId === null ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}">
             <IconUser size={13} />
@@ -580,10 +541,11 @@
           Espace personnel
         </button>
 
-        {#each organizations as org}
+        {#each organizations as org (org.id)}
           <button
             class="flex items-center gap-2.5 w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all {activeOrgId === org.id ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10' : 'text-[color:var(--ink)] hover:bg-slate-50 border border-transparent'}"
             onclick={() => selectOrg(org.id)}
+            aria-current={activeOrgId === org.id ? "true" : undefined}
           >
             <span class="flex h-5 w-5 items-center justify-center rounded-lg {activeOrgId === org.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}">
               <IconUsers size={13} />
@@ -609,19 +571,23 @@
       <div class="min-w-0">
         <div class="flex items-center gap-3">
           <h1 class="text-2xl font-bold truncate">
-            {activeOrgId ? organizations.find((o) => o.id === activeOrgId)?.name : "Espace personnel"}
+            {activeOrg ? activeOrg.name : "Espace personnel"}
           </h1>
-          {#if activeOrgId}
-            <button
+          {#if activeOrg}
+            <a
+              href={`/admin/organizations/${activeOrg.id}`}
               class="btn-secondary !px-2.5 !py-1 text-xs flex items-center gap-1.5 font-bold shrink-0"
-              onclick={() => { showMembersModal = true; loadOrgMembers(); }}
             >
-              <IconUsers size={14} /> Membres
-            </button>
+              <IconSettings size={14} /> Membres et paramètres
+            </a>
           {/if}
         </div>
         <p class="text-xs text-[color:var(--muted)] mt-1">
-          {activeOrgId ? "Formulaires partagés de cette organisation" : "Vos formulaires personnels"}
+          {#if activeOrg}
+            {activeOrg.memberCount ?? 1} membre{(activeOrg.memberCount ?? 1) > 1 ? "s" : ""}, tous avec accès à ces formulaires
+          {:else}
+            Vos formulaires et ceux qu'on vous a partagés
+          {/if}
         </p>
       </div>
       <div class="flex items-center gap-3 shrink-0">
@@ -684,7 +650,7 @@
             : "Les formulaires créés dans cet espace apparaîtront ici."}
         >
           {#if canCreateForm}
-            <a class="btn-primary !px-4 !py-2 !text-sm" href="/admin/forms/new">
+            <a class="btn-primary !px-4 !py-2 !text-sm" href={`/admin/forms/new${activeOrgId ? `?orgId=${activeOrgId}` : ""}`}>
               <IconPlus size={15} weight="bold" /> Nouveau formulaire
             </a>
           {/if}
@@ -740,11 +706,9 @@
               <button class="btn-secondary flex-1 !px-3 !py-2 text-xs font-bold" onclick={() => goto(`/admin/forms/${f.id}/responses`)}>
                 <IconTable size={15} /> Réponses
               </button>
-              {#if canEditForm(f)}
-                <button class="btn-secondary flex-1 !px-3 !py-2 text-xs font-bold" onclick={() => goto(`/admin/forms/${f.id}`)}>
-                  <IconEdit size={15} /> Éditer
-                </button>
-              {/if}
+              <button class="btn-secondary flex-1 !px-3 !py-2 text-xs font-bold" onclick={() => goto(`/admin/forms/${f.id}`)}>
+                {#if canEditForm(f)}<IconEdit size={15} /> Éditer{:else}<IconEye size={15} /> Ouvrir{/if}
+              </button>
 
               <!-- Menu dropdown -->
               <div class="relative">
@@ -791,7 +755,7 @@
                         <IconLink size={14} /> Copier le lien
                       </button>
                     {/if}
-                    {#if canManageForm(f)}
+                    {#if canEditForm(f)}
                       <hr class="my-1 border-slate-100" />
                       <button
                         class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--danger)] hover:bg-red-50 transition"
@@ -811,113 +775,42 @@
   </div>
 </div>
 
-<!-- Modale de création d'organisation -->
-{#if showOrgModal}
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onclick={() => showOrgModal = false} role="none">
-    <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 relative border border-slate-100 flex flex-col gap-4" onclick={(e) => e.stopPropagation()} role="none">
-      <button class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition" onclick={() => showOrgModal = false}>
-        <IconClose size={20} />
-      </button>
-      <h3 class="text-lg font-bold text-[color:var(--ink)]">Créer une organisation</h3>
-      <p class="text-xs text-[color:var(--muted)]">Créez votre propre espace de travail pour collaborer à plusieurs sur des formulaires et analyser les réponses.</p>
-      
-      <div class="flex flex-col gap-1.5">
-        <label for="orgName" class="text-xs font-semibold text-slate-500">Nom de l'organisation</label>
-        <input
-          id="orgName"
-          type="text"
-          bind:value={newOrgName}
-          placeholder="Ex: Asso Humanitour"
-          class="input w-full"
-          onkeydown={(e) => e.key === "Enter" && createOrg()}
-        />
-      </div>
-
-      <div class="flex gap-2 justify-end mt-2">
-        <button class="btn-secondary" onclick={() => showOrgModal = false}>Annuler</button>
-        <button class="btn-primary" onclick={createOrg} disabled={!newOrgName.trim()}>Créer</button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Modale de gestion des membres -->
-{#if showMembersModal}
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onclick={() => showMembersModal = false} role="none">
-    <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 relative border border-slate-100 flex flex-col gap-5" onclick={(e) => e.stopPropagation()} role="none">
-      <button class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition" onclick={() => showMembersModal = false}>
-        <IconClose size={20} />
-      </button>
-      <h3 class="text-lg font-bold text-[color:var(--ink)]">Membres de l'organisation</h3>
-
-      <!-- Formulaire d'invitation -->
-      {#if activeOrgRole === "OWNER" || activeOrgRole === "ADMIN" || auth.isSuperAdmin}
-        <div class="p-4 bg-slate-50 rounded-xl flex flex-col gap-3">
-          <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Inviter un collaborateur</h4>
-          <div class="flex flex-col sm:flex-row gap-2">
-            <input
-              type="email"
-              bind:value={inviteEmail}
-              placeholder="adresse@email.com"
-              class="input flex-1"
-            />
-            <select bind:value={inviteRole} class="input sm:w-32">
-              <option value="MEMBER">Membre</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-            <button class="btn-primary shrink-0 font-bold" onclick={inviteMember} disabled={inviting || !inviteEmail.trim()}>
-              {inviting ? "Invitation…" : "Inviter"}
-            </button>
-          </div>
-          <p class="text-[10px] text-[color:var(--muted)]">Si cette adresse ne possède pas encore de compte, un lien d'invitation lui sera envoyé par email pour qu'elle définisse son mot de passe.</p>
-        </div>
-      {/if}
-
-      <!-- Liste des membres -->
-      <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
-        {#each orgMembers as member (member.id)}
-          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-100">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-brand-600 font-bold shrink-0 text-xs">
-                {(member.user.displayName || member.user.email)[0].toUpperCase()}
-              </div>
-              <div class="min-w-0">
-                <p class="text-xs font-semibold text-[color:var(--ink)] truncate">
-                  {member.user.displayName || "Sans nom"}
-                </p>
-                <p class="text-[10px] text-[color:var(--muted)] truncate">{member.user.email}</p>
-              </div>
-            </div>
-            
-            <div class="flex items-center gap-2 shrink-0">
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider {member.role === 'OWNER' ? 'bg-orange-50 text-orange-600 border border-orange-100' : member.role === 'ADMIN' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-slate-50 text-slate-600 border border-slate-100'}">
-                {member.role === 'OWNER' ? 'Propriétaire' : member.role === 'ADMIN' ? 'Admin' : 'Membre'}
-              </span>
-
-              <!-- Bouton supprimer membre -->
-              {#if member.role !== 'OWNER' && (activeOrgRole === "OWNER" || activeOrgRole === "ADMIN" || auth.isSuperAdmin || member.userId === auth.user?.id)}
-                <button
-                  class="text-slate-400 hover:text-red-500 transition p-1"
-                  onclick={() => removeMember(member.id)}
-                  title="Retirer le membre"
-                >
-                  <IconTrash size={14} />
-                </button>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  </div>
-{/if}
+<!-- Création d'organisation -->
+<Modal
+  open={showOrgModal}
+  title="Créer une organisation"
+  description="Un espace partagé : chaque membre accède à tous ses formulaires et à leurs réponses."
+  size="sm"
+  onclose={() => (showOrgModal = false)}
+>
+  <form id="create-org-form" class="flex flex-col gap-1.5" onsubmit={createOrg}>
+    <label for="orgName" class="label">Nom de l'organisation</label>
+    <input
+      id="orgName"
+      type="text"
+      bind:value={newOrgName}
+      placeholder="Ex : Club de natation"
+      class="input w-full"
+      minlength="2"
+      maxlength="100"
+      required
+    />
+    <p class="text-xs text-[color:var(--muted)]">Vous pourrez ensuite ajouter les membres depuis ses paramètres.</p>
+  </form>
+  {#snippet footer()}
+    <button class="btn-secondary" type="button" onclick={() => (showOrgModal = false)}>Annuler</button>
+    <button class="btn-primary" type="submit" form="create-org-form" disabled={creatingOrg || newOrgName.trim().length < 2}>
+      {creatingOrg ? "Création…" : "Créer"}
+    </button>
+  {/snippet}
+</Modal>
 
 <!-- Barre d'actions groupées (flottante en bas) -->
 {#if someSelected}
   <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 shadow-2xl shadow-slate-900/15 animate-in">
     <span class="text-sm font-bold text-[color:var(--ink)] mr-1 shrink-0">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</span>
     <div class="w-px h-5 bg-slate-200 mx-1"></div>
-    {#if auth.isSuperAdmin}
+    {#if editableSelection.length > 0}
       <button
         class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-[color:var(--ink)] hover:bg-slate-100 transition"
         onclick={() => bulkPublish(true)}

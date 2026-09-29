@@ -21,6 +21,8 @@ import type {
   FormActivitySummary,
   Organization,
   OrganizationMember,
+  OrgRole,
+  OrgViewerRole,
   StatsPreset,
   StatsPresetConfig,
   ApiKeyInfo,
@@ -193,7 +195,7 @@ export const api = {
 
   // --- Partage d'un formulaire (cercle 1, en libre-service pour son éditeur) ---
   shareForm: (formId: string, email: string, role: FormRole) =>
-    request<{ success: boolean; access: FormAccessEntry }>("PUT", `/api/v1/forms/${formId}/access`, {
+    request<{ success: boolean; access: FormAccessEntry; inviteLink: string | null }>("PUT", `/api/v1/forms/${formId}/access`, {
       email,
       role,
     }),
@@ -263,13 +265,38 @@ export const api = {
   createOrganization: (name: string) =>
     request<{ success: boolean; organization: Organization }>("POST", "/api/v1/organizations", { name }),
   getOrganization: (id: string) =>
-    request<{ success: boolean; organization: Organization; role: string }>("GET", `/api/v1/organizations/${id}`),
+    request<{ success: boolean; organization: Organization; role: OrgViewerRole }>("GET", `/api/v1/organizations/${id}`),
+  renameOrganization: (id: string, name: string) =>
+    request<{ success: boolean; organization: Organization }>("PATCH", `/api/v1/organizations/${id}`, { name }),
+  deleteOrganization: (id: string) =>
+    request<{ success: boolean; detachedForms: number }>("DELETE", `/api/v1/organizations/${id}`),
   listOrgMembers: (id: string) =>
     request<{ success: boolean; members: OrganizationMember[] }>("GET", `/api/v1/organizations/${id}/members`),
-  addOrgMember: (orgId: string, email: string, role: string) =>
-    request<{ success: boolean; member: OrganizationMember }>("POST", `/api/v1/organizations/${orgId}/members`, { email, role }),
+  addOrgMember: (orgId: string, email: string, role: OrgRole) =>
+    request<{ success: boolean; member: OrganizationMember; inviteLink: string | null }>(
+      "POST",
+      `/api/v1/organizations/${orgId}/members`,
+      { email, role },
+    ),
+  updateOrgMember: (orgId: string, memberId: string, role: OrgRole) =>
+    request<{ success: boolean; member: OrganizationMember }>(
+      "PATCH",
+      `/api/v1/organizations/${orgId}/members/${memberId}`,
+      { role },
+    ),
+  resendOrgInvite: (orgId: string, memberId: string) =>
+    request<{ success: boolean; inviteLink: string }>(
+      "POST",
+      `/api/v1/organizations/${orgId}/members/${memberId}/invite`,
+    ),
   removeOrgMember: (orgId: string, memberId: string) =>
     request<{ success: boolean }>("DELETE", `/api/v1/organizations/${orgId}/members/${memberId}`),
+  moveFormToOrganization: (formId: string, organizationId: string | null) =>
+    request<{ success: boolean; form: { id: string; organizationId: string | null; organization: { id: string; name: string } | null } }>(
+      "PUT",
+      `/api/v1/forms/${formId}/organization`,
+      { organizationId },
+    ),
 
   // --- Upload de fichier (multipart) ---
   async uploadFile(

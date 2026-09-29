@@ -109,6 +109,9 @@ export interface FormDetail extends FormSummary {
   schema: FieldDefinition[];
   metaColumns: MetaColumn[];
   access?: FormAccessEntry[];
+  owner?: { id: string; email: string; displayName: string | null };
+  /** Organisation dont tous les membres ont accès au formulaire. */
+  organization?: { id: string; name: string } | null;
   /** Habillage des exports statistiques ; voir $lib/exportTheme.ts. */
   exportTheme?: unknown;
 }
@@ -269,15 +272,22 @@ export interface FormActivitySummary {
   activity: { date: string; count: number }[];
 }
 
+export type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
+
+/** Rôle de la personne connectée vis-à-vis d'une organisation. */
+export type OrgViewerRole = OrgRole | "SUPER_ADMIN";
+
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   createdAt: string;
   updatedAt: string;
+  /** Présents dans la liste des organisations. */
+  role?: OrgViewerRole;
+  memberCount?: number;
+  formCount?: number;
 }
-
-export type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
 
 export interface OrganizationMember {
   id: string;
@@ -289,6 +299,8 @@ export interface OrganizationMember {
     id: string;
     email: string;
     displayName: string | null;
+    /** Faux tant que la personne n'a pas activé son compte via l'invitation. */
+    hasPassword?: boolean;
   };
 }
 

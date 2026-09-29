@@ -8,7 +8,8 @@
   import { IconCheck, IconWarning, IconShield, IconLock, IconLink, IconSettings, IconUsers, IconClose, IconTrash, IconCode } from "$lib/icons.ts";
   import Segmented from "$components/Segmented.svelte";
   import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders, ChatCircle as IconComment } from "phosphor-svelte";
-  import type { FormDetail, Permission, FormRole, FormComment, ApiKeyInfo } from "$lib/types.ts";
+  import type { FormDetail, Permission, FormRole, FormComment, ApiKeyInfo, Organization } from "$lib/types.ts";
+  import { askConfirm } from "$lib/stores/dialog.svelte.ts";
 
   const editorState = getContext<{
     form: FormDetail | null;
@@ -41,9 +42,10 @@
       if (idx >= 0) access[idx] = res.access;
       else access.push(res.access);
       editorState.form.access = [...access];
+      shareInviteLink = res.inviteLink ? { email: res.access.user.email, url: res.inviteLink } : null;
       shareEmail = "";
       shareRole = "VIEWER";
-      toasts.success("Accès accordé.");
+      toasts.success(res.inviteLink ? "Accès accordé, invitation envoyée par email." : "Accès accordé.");
     } catch (err) {
       toasts.error(err instanceof Error ? err.message : "Impossible de partager ce formulaire.");
     } finally {
@@ -59,6 +61,69 @@
       toasts.success("Accès révoqué.");
     } catch (err) {
       toasts.error(err instanceof Error ? err.message : "Révocation impossible.");
+    }
+  }
+
+  let shareInviteLink = $state<{ email: string; url: string } | null>(null);
+
+  // --- Organisation du formulaire ---
+  let organizations = $state<Organization[]>([]);
+  let movingOrg = $state(false);
+
+  onMount(async () => {
+    try {
+      organizations = (await api.listOrganizations()).organizations;
+    } catch {
+      /* sans la liste, le rattachement reste simplement indisponible */
+    }
+  });
+
+  /** Organisations proposées : celles dont on est membre, plus l'actuelle. */
+  const organizationChoices = $derived.by(() => {
+    const current = editorState.form?.organization;
+    const list = organizations.filter((o) => o.role !== "SUPER_ADMIN" || auth.isSuperAdmin);
+    if (current && !list.some((o) => o.id === current.id)) return [...list, current as Organization];
+    return list;
+  });
+
+  /** Seul le propriétaire (ou un Super Admin) peut sortir le formulaire de l'équipe. */
+  const canLeaveOrganization = $derived(
+    auth.isSuperAdmin || editorState.form?.ownerId === auth.user?.id || !editorState.form?.organizationId,
+  );
+
+  async function moveToOrganization(organizationId: string | null) {
+    const form = editorState.form;
+    if (!form || organizationId === (form.organizationId ?? null)) return;
+    const target = organizations.find((o) => o.id === organizationId);
+    const ok = await askConfirm(
+      organizationId
+        ? {
+            title: `Rattacher à « ${target?.name ?? "l'organisation"} » ?`,
+            message: "Tous ses membres pourront ouvrir et modifier ce formulaire et ses réponses.",
+            confirmLabel: "Rattacher",
+          }
+        : {
+            title: "Sortir le formulaire de l'organisation ?",
+            message: "Il revient dans l'espace personnel de son propriétaire. Les membres n'y auront plus accès, sauf invitation individuelle.",
+            confirmLabel: "Sortir",
+          },
+    );
+    if (!ok) {
+      // Le <select> a déjà changé visuellement : on le ramène à l'état réel.
+      editorState.form = { ...form };
+      return;
+    }
+    movingOrg = true;
+    try {
+      const res = await api.moveFormToOrganization(form.id, organizationId);
+      form.organizationId = res.form.organizationId;
+      form.organization = res.form.organization;
+      toasts.success(organizationId ? "Formulaire rattaché à l'organisation." : "Formulaire retiré de l'organisation.");
+    } catch (err) {
+      editorState.form = { ...form };
+      toasts.error(err instanceof Error ? err.message : "Déplacement impossible.");
+    } finally {
+      movingOrg = false;
     }
   }
 
@@ -929,12 +994,54 @@
       <div class="p-2 rounded-lg bg-violet-50 text-[color:var(--brand)]"><IconUsers size={20} /></div>
       <div>
         <h3 class="font-bold text-sm text-[color:var(--ink)]">Partage</h3>
-        <p class="text-[11px] text-[color:var(--muted)]">Qui peut consulter, commenter ou modifier ce formulaire- l'appartenance à une organisation ne donne aucun accès automatique.</p>
+        <p class="text-[11px] text-[color:var(--muted)]">Qui peut consulter, commenter ou modifier ce formulaire.</p>
       </div>
     </div>
     <div class="p-6 space-y-3">
+      <!-- Organisation : tous ses membres ont accès en édition -->
+      <div class="rounded-xl border border-[color:var(--line)] px-3 py-3">
+        <p class="text-xs font-semibold text-[color:var(--ink)]">Organisation</p>
+        {#if canManageAccess && organizationChoices.length > 0}
+          <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              class="input text-xs flex-1"
+              aria-label="Organisation du formulaire"
+              value={editorState.form?.organizationId ?? ""}
+              disabled={movingOrg}
+              onchange={(e) => moveToOrganization((e.target as HTMLSelectElement).value || null)}
+            >
+              <option value="" disabled={!canLeaveOrganization}>Aucune (espace personnel)</option>
+              {#each organizationChoices as org (org.id)}
+                <option value={org.id}>{org.name}</option>
+              {/each}
+            </select>
+          </div>
+        {:else if editorState.form?.organization}
+          <p class="mt-1 text-sm">{editorState.form.organization.name}</p>
+        {:else}
+          <p class="mt-1 text-xs text-[color:var(--muted)]">Aucune : le formulaire est dans l'espace personnel de son propriétaire.</p>
+        {/if}
+        <p class="mt-1.5 text-[11px] text-[color:var(--muted)]">
+          {#if editorState.form?.organization}
+            Tous les membres de « {editorState.form.organization.name} » peuvent modifier ce formulaire.
+            <a class="font-semibold text-brand-700 hover:underline" href={`/admin/organizations/${editorState.form.organization.id}`}>Gérer les membres</a>
+          {:else}
+            Rattaché à une organisation, le formulaire devient accessible à tous ses membres.
+          {/if}
+        </p>
+      </div>
+
+      {#if shareInviteLink}
+        <div class="rounded-xl border border-brand-100 bg-brand-50/60 p-3">
+          <p class="text-xs font-semibold text-brand-700">Lien d'activation pour {shareInviteLink.email}</p>
+          <p class="mb-2 text-[11px] text-[color:var(--muted)]">Envoyé par email. S'il n'arrive pas, transmettez ce lien (valable 48 h).</p>
+          <input class="input w-full text-xs" readonly value={shareInviteLink.url} onfocus={(e) => (e.target as HTMLInputElement).select()} />
+        </div>
+      {/if}
+
+      <p class="text-xs font-semibold text-[color:var(--ink)] pt-1">Personnes invitées</p>
       {#if (editorState.form?.access ?? []).length === 0}
-        <p class="text-xs text-[color:var(--muted)]">Personne d'autre que le propriétaire n'a accès à ce formulaire.</p>
+        <p class="text-xs text-[color:var(--muted)]">Personne n'a été invité individuellement.</p>
       {:else}
         {#each editorState.form?.access ?? [] as a (a.id)}
           <div class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm">
