@@ -310,6 +310,8 @@ curl -X POST https://forms.exemple.com/api/v1/responses/submit \
 
 Le champ `consent` est obligatoire dès que le formulaire exige un consentement : c'est la même règle RGPD que sur le formulaire hébergé, elle ne se contourne pas par l'API.
 
+Si le formulaire liste des acceptations séparées (`consentItems` dans la définition : collecte, traitement, stockage…), envoyez l'état de chaque case dans `consents`, par identifiant : `"consents":{"collecte":true,"traitement":true,"stockage":false}`. Chaque case obligatoire doit valoir `true` ; la réponse garde la trace de ce qui a été accepté ou refusé. `consent: true` seul vaut acceptation de toutes les cases.
+
 ### Formulaires non publics : les clés d'intégration
 
 Un formulaire `PRIVATE` ou `RESTRICTED` demande une connexion, impossible dans un cadre tiers : le cookie de session y serait bloqué comme cookie tiers. Créez alors une **clé d'intégration** depuis les réglages du formulaire.

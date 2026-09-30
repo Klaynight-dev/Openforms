@@ -34,6 +34,14 @@
  */
 
 import { interpretHostMessage } from "./hostMessages.ts";
+import {
+  consentOnPage,
+  consentPayload,
+  DEFAULT_CONSENT_INTRO,
+  DEFAULT_CONSENT_TEXT,
+  missingConsent,
+} from "../src/lib/consent.ts";
+import type { ConsentItem, ConsentPosition } from "../src/lib/types.ts";
 
 const JUSTIFICATION_SUFFIX = "__justification";
 const OTHER_KEY = "__other__";
@@ -70,6 +78,8 @@ interface PublicForm {
   schema: FieldDefinition[];
   requireConsent: boolean;
   consentText?: string | null;
+  consentItems?: ConsentItem[];
+  consentPosition?: ConsentPosition;
   isAnonymized: boolean;
   visibility: string;
 }
@@ -165,6 +175,12 @@ const WIDGET_CSS = `
 .of-footer-note { font-size: .75rem; color: #5f6368; }
 .of-consent { display: flex; align-items: flex-start; gap: .75rem; font-size: .875rem; padding: 1.25rem; border: 1px solid #dadce0; border-radius: .75rem; background: #fff; margin-bottom: 1.25rem; cursor: pointer; }
 .of-consent input { margin-top: .2rem; }
+.of-consent-group { padding: 1.25rem; border: 1px solid #dadce0; border-radius: .75rem; background: #fff; margin-bottom: 1.25rem; }
+.of-consent-group.of-invalid, .of-consent.of-invalid { border-color: #d93025; }
+.of-consent-intro { font-size: .875rem; font-weight: 600; margin: 0 0 .75rem; white-space: pre-line; }
+.of-consent-item { display: flex; align-items: flex-start; gap: .75rem; font-size: .875rem; padding: .75rem; border: 1px solid #dadce0; border-radius: .5rem; margin-top: .5rem; cursor: pointer; }
+.of-consent-item input { margin-top: .2rem; flex-shrink: 0; }
+.of-consent-optional { color: #5f6368; font-size: .75rem; }
 .of-skeleton { animation: of-pulse 1.5s ease-in-out infinite; }
 @keyframes of-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 .of-skel-block { background: #e8eaed; border-radius: .5rem; }
@@ -225,6 +241,9 @@ class OpenFormsWidget {
   private files: Record<string, { file: unknown; signature: string }[]> = {};
   private fieldErrors: Record<string, string> = {};
   private consent = false;
+  /** Cases de consentement par identifiant, toutes décochées à l'ouverture. */
+  private consents: Record<string, boolean> = {};
+  private consentError: string | null = null;
   private currentPageIndex = 0;
   private loading = true;
   private loadError: string | null = null;
@@ -360,11 +379,8 @@ class OpenFormsWidget {
   private async submit() {
     this.submitError = null;
     if (!this.form) return;
-    if (this.form.requireConsent && !this.consent) {
-      this.submitError = "Vous devez accepter le consentement pour soumettre.";
-      this.render();
-      return;
-    }
+    const pageNow = this.computePages()[this.currentPageIndex];
+    if (pageNow && !this.checkConsent(pageNow)) return;
     if (!this.validateAll()) {
       const pages = this.computePages();
       for (let i = 0; i < pages.length; i++) {
@@ -394,7 +410,7 @@ class OpenFormsWidget {
         body: JSON.stringify({
           formId: this.form.id,
           data: cleanValues,
-          consent: this.consent,
+          ...consentPayload(this.form, this.consent, this.consents),
           files: Object.keys(cleanFiles).length ? cleanFiles : undefined,
         }),
       });
@@ -522,24 +538,13 @@ class OpenFormsWidget {
       );
     }
 
+    if (consentOnPage(this.form, page) && this.form.consentPosition === "START") form.append(this.renderConsent());
+
     for (const field of page.fields) {
       form.append(this.renderField(field));
     }
 
-    if (page.isLast && this.form.requireConsent) {
-      const checkbox = el("input", { type: "checkbox" }) as HTMLInputElement;
-      checkbox.checked = this.consent;
-      checkbox.addEventListener("change", () => {
-        this.consent = checkbox.checked;
-      });
-      const label = el(
-        "label",
-        { class: "of-consent" },
-        checkbox,
-        el("span", {}, this.form.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."),
-      );
-      form.append(label);
-    }
+    if (consentOnPage(this.form, page) && this.form.consentPosition !== "START") form.append(this.renderConsent());
 
     if (this.submitError) form.append(el("p", { class: "of-error" }, this.submitError));
 
@@ -555,6 +560,7 @@ class OpenFormsWidget {
     if (!page.isLast) {
       const next = el("button", { class: "of-btn of-btn-primary", type: "button" }, "Suivant");
       next.addEventListener("click", () => {
+        if (!this.checkConsent(page)) return;
         if (this.validatePage(page)) {
           this.currentPageIndex += 1;
           this.render();
@@ -584,6 +590,59 @@ class OpenFormsWidget {
     );
 
     this.root.append(form);
+  }
+
+  /** Bloque tant qu'une case de consentement obligatoire de la page manque. */
+  private checkConsent(page: Page): boolean {
+    if (!this.form || !consentOnPage(this.form, page)) return true;
+    this.consentError = missingConsent(this.form, this.consent, this.consents);
+    if (!this.consentError) return true;
+    this.render();
+    this.root.querySelector(".of-consent, .of-consent-group")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+  }
+
+  /** Recalcule l'erreur après un clic, sans reconstruire le formulaire. */
+  private refreshConsentError(block: HTMLElement, error: HTMLElement) {
+    if (!this.form || this.consentError === null) return;
+    this.consentError = missingConsent(this.form, this.consent, this.consents);
+    block.classList.toggle("of-invalid", !!this.consentError);
+    error.textContent = this.consentError ?? "";
+    error.hidden = !this.consentError;
+  }
+
+  private renderConsent(): HTMLElement {
+    const form = this.form!;
+    const items = form.consentItems ?? [];
+    const error = el("p", { class: "of-error", role: "alert" }, this.consentError ?? "");
+    error.hidden = !this.consentError;
+
+    let block: HTMLElement;
+    if (items.length === 0) {
+      const checkbox = el("input", { type: "checkbox" }) as HTMLInputElement;
+      checkbox.checked = this.consent;
+      block = el("label", { class: "of-consent" }, checkbox, el("span", {}, form.consentText || DEFAULT_CONSENT_TEXT));
+      checkbox.addEventListener("change", () => {
+        this.consent = checkbox.checked;
+        this.refreshConsentError(block, error);
+      });
+    } else {
+      block = el("fieldset", { class: "of-consent-group" }, el("p", { class: "of-consent-intro" }, form.consentText?.trim() || DEFAULT_CONSENT_INTRO));
+      for (const item of items) {
+        const checkbox = el("input", { type: "checkbox" }) as HTMLInputElement;
+        checkbox.checked = this.consents[item.id] === true;
+        checkbox.addEventListener("change", () => {
+          this.consents[item.id] = checkbox.checked;
+          this.refreshConsentError(block, error);
+        });
+        const mark = item.required
+          ? el("span", { class: "of-error", style: "margin:0" }, " *")
+          : el("span", { class: "of-consent-optional" }, " (facultatif)");
+        block.append(el("label", { class: "of-consent-item" }, checkbox, el("span", {}, item.label, mark)));
+      }
+    }
+    block.classList.toggle("of-invalid", !!this.consentError);
+    return el("div", {}, block, error);
   }
 
   private renderSkeleton(): HTMLElement {
