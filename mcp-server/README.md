@@ -38,6 +38,19 @@ n'est possible depuis le MCP.
 
 Pour Claude Code : `claude mcp add openforms --env OPENFORMS_API_KEY=ofk_... -- bun run /chemin/vers/mcp-server/src/index.ts`
 
+## Endpoint HTTP (sans rien installer)
+
+Le backend expose les mêmes outils en HTTP sur `/api/mcp` (Streamable HTTP, sans
+état), donc sur `https://forms.klaynight.fr/api/mcp`. La clé d'API se passe :
+
+- en URL, pour les connecteurs personnalisés de claude.ai :
+  `https://forms.klaynight.fr/api/mcp?key=ofk_...` (l'URL est alors un secret) ;
+- ou en en-tête `Authorization: Bearer ofk_...` pour Claude Code :
+  `claude mcp add --transport http openforms https://forms.klaynight.fr/api/mcp --header "Authorization: Bearer ofk_..."`
+
+Les outils sont définis dans `backend/src/mcp/server.ts` (copie de ceux de ce
+dossier : le Dockerfile du backend n'embarque pas `mcp-server/`).
+
 ## Variables d'environnement
 
 | Variable             | Défaut                  | Rôle                          |

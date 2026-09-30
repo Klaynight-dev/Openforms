@@ -15,6 +15,7 @@ import { apiKeyController } from "./controllers/api-key.controller.ts";
 import { organizationController } from "./controllers/organization.controller.ts";
 import { commentController } from "./controllers/comment.controller.ts";
 import { wsController } from "./controllers/ws.controller.ts";
+import { mcpController } from "./controllers/mcp.controller.ts";
 import { purgeExpiredSessions } from "./lib/session.ts";
 import { bindRealtime } from "./lib/realtime.ts";
 
@@ -61,6 +62,7 @@ export const app = new Elysia()
   .use(apiKeyController)
   .use(organizationController)
   .use(commentController)
+  .use(mcpController)
   .use(wsController);
 
 // Purge périodique des sessions expirées (toutes les heures).
