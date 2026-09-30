@@ -21,8 +21,10 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      # Racine du dépôt : l'image s'installe depuis le bun.lock commun aux
+      # workspaces (voir backend/Dockerfile).
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: humanitour-backend
     restart: always
     depends_on:
@@ -50,8 +52,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         # Vide = appels API en relatif (/api/...) sur le domaine chargé.
         # Le reverse-proxy (Caddy) route /api/* vers le backend sur CHAQUE domaine,

@@ -1,31 +1,39 @@
 # syntax=docker/dockerfile:1
-# Build stage
-FROM oven/bun:1.1 AS builder
+#
+# Contexte de build : la RACINE du dépôt (voir docker-compose.yml). Le
+# bun.lock y est, commun aux trois workspaces : l'installation le suit à la
+# lettre (--frozen-lockfile) au lieu de résoudre les versions à chaque build.
+#
+# Les couches sont rangées de la moins à la plus changeante : tant que les
+# package.json et bun.lock ne bougent pas, l'installation vient du cache, et
+# tant que le schéma Prisma ne bouge pas, le client généré aussi. Un commit
+# qui ne touche que src/ ne refait que la dernière copie.
 
+# --- Dépendances de production du backend seul ---
+FROM oven/bun:1.4 AS deps
 WORKDIR /app
 
-# Copy package configuration
-COPY package.json ./
+# Tous les package.json des workspaces : sans eux, bun considère que le
+# lockfile ne correspond plus et refuse l'installation figée.
+COPY package.json bun.lock ./
+COPY backend/package.json backend/
+COPY frontend/package.json frontend/
+COPY mcp-server/package.json mcp-server/
 
-# Install dependencies (cache BuildKit du store bun).
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --production --filter @humanitour/backend
 
-# Copy source code and prisma schema
-COPY . .
+# --- Client Prisma (ne se régénère que si le schéma change) ---
+FROM deps AS runner
+WORKDIR /app/backend
 
-# Generate Prisma Client (cache des moteurs Prisma téléchargés).
+COPY backend/prisma.config.ts ./
+COPY backend/prisma ./prisma
 RUN --mount=type=cache,target=/root/.cache bunx prisma generate
 
-# Production runner stage
-FROM oven/bun:1.1 AS runner
-
-WORKDIR /app
-
-# Copy necessary production files from builder
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/prisma ./prisma
+# --- Code : la seule couche refaite à chaque commit ---
+COPY backend/tsconfig.json ./
+COPY backend/src ./src
 
 ENV NODE_ENV=production
 ENV PORT=3535

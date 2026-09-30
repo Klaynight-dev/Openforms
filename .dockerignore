@@ -1,0 +1,27 @@
+# Contexte de build des images backend et frontend : la racine du dépôt (voir
+# docker-compose.yml). Chaque Dockerfile ne copie que ce dont il a besoin ;
+# ce fichier évite d'envoyer le reste au démon Docker.
+
+**/node_modules
+**/.svelte-kit
+**/dist
+frontend/build
+frontend/static/embed.js
+frontend/static/embed.js.map
+
+.git
+**/.env
+**/.env.*
+**/*.log
+**/corp-ca.pem
+
+backend/uploads
+uploads
+
+# Hors images
+e2e
+docs
+contents
+playwright-report
+test-results
+**/tests

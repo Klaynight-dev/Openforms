@@ -1,18 +1,25 @@
 # syntax=docker/dockerfile:1
-# Build stage
-FROM oven/bun:1.1 AS builder
+#
+# Contexte de build : la RACINE du dépôt (voir docker-compose.yml), pour
+# installer depuis le bun.lock commun aux workspaces (--frozen-lockfile).
 
+# --- Build SvelteKit ---
+FROM oven/bun:1.4 AS build
 WORKDIR /app
 
-# Copy package configuration
-COPY package.json ./
+# Tous les package.json des workspaces : sans eux, bun considère que le
+# lockfile ne correspond plus et refuse l'installation figée.
+COPY package.json bun.lock ./
+COPY backend/package.json backend/
+COPY frontend/package.json frontend/
+COPY mcp-server/package.json mcp-server/
 
-# Install dependencies (cache BuildKit du store bun : pas de re-téléchargement
-# ni de ré-extraction des paquets d'un build à l'autre).
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install
+# Cache BuildKit du store bun : pas de re-téléchargement d'un build à l'autre.
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --filter @humanitour/frontend
 
-# Copy source code
-COPY . .
+COPY frontend ./frontend
+WORKDIR /app/frontend
 
 # Variable de build Vite. VIDE = appels API en relatif (/api/...) sur le domaine
 # chargé -> cookie de session "same-site" (first-party) sur forms.humanitour.fr
@@ -21,27 +28,19 @@ COPY . .
 ARG VITE_API_BASE=
 ENV VITE_API_BASE=$VITE_API_BASE
 
-# Build SvelteKit (cache Vite conservé entre builds).
-RUN --mount=type=cache,target=/app/node_modules/.vite bun run build
+RUN bun run build
 
-# Production runner stage
-FROM oven/bun:1.1-slim AS runner
-
+# --- Exécution ---
+# Toutes les dépendances du frontend sont des devDependencies : adapter-node
+# les embarque dans build/, qui démarre sans node_modules. Rien à installer ici.
+FROM oven/bun:1.4-slim AS runner
 WORKDIR /app
 
-# Copy package configuration
-COPY package.json ./
+COPY frontend/package.json ./
+COPY --from=build /app/frontend/build ./build
 
-# Install only production dependencies (même cache que le builder).
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install --production
-
-# Copy build artifacts from builder
-COPY --from=builder /app/build ./build
-
-# Port and run config
 ENV PORT=5173
 ENV NODE_ENV=production
 EXPOSE 5173
 
-# SvelteKit adapter-node generates a standard entrypoint that Bun runs natively
-CMD ["bun", "run", "build/index.js"]
+CMD ["bun", "build/index.js"]

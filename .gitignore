@@ -146,8 +146,9 @@ backend/src/generated/
 # Uploaded files (secure storage)
 backend/uploads/
 uploads/
-# Bun lockfile is committed by default; keep binary lock out of diffs if desired
-# bun.lockb
+# Seul lockfile du dépôt : bun.lock (racine), utilisé tel quel par les images
+# Docker. Un package-lock.json créé par `npm install` le contredirait.
+package-lock.json
 # Env
 backend/.env
 frontend/.env
