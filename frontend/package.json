@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "npm run build:embed && vite build",
-    "build:embed": "node embed/build.mjs",
+    "build": "bun run build:embed && vite build",
+    "build:embed": "bun embed/build.mjs",
     "preview": "vite preview",
     "test": "bun test tests/",
     "test:watch": "bun test tests/ --watch",
@@ -14,11 +14,15 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "devDependencies": {
+    "@lucide/svelte": "^1.23.0",
     "@sveltejs/adapter-node": "^5.2.9",
     "@sveltejs/kit": "^2.8.1",
     "@sveltejs/vite-plugin-svelte": "^4.0.1",
     "autoprefixer": "^10.4.20",
+    "echarts": "^6.1.0",
     "esbuild": "^0.21.5",
+    "exceljs": "^4.4.0",
+    "phosphor-svelte": "^3.1.0",
     "postcss": "^8.4.49",
     "sass": "^1.81.0",
     "svelte": "^5.2.7",
@@ -26,11 +30,5 @@
     "tailwindcss": "^3.4.15",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
-  },
-  "dependencies": {
-    "@lucide/svelte": "^1.23.0",
-    "echarts": "^6.1.0",
-    "exceljs": "^4.4.0",
-    "phosphor-svelte": "^3.1.0"
   }
 }

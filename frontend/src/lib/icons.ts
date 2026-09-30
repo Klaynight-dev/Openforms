@@ -85,8 +85,9 @@ import {
   Tray,
 } from "phosphor-svelte";
 
-// Fallback Lucide (icône absente/peu claire côté Phosphor).
-import { Sigma } from "@lucide/svelte";
+// Fallback Lucide (icône absente/peu claire côté Phosphor). Import direct :
+// passer par l'index ferait compiler les 1 600 icônes du paquet à chaque build.
+import Sigma from "@lucide/svelte/icons/sigma";
 
 import type { FieldType } from "./types.ts";
 
