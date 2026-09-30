@@ -18,6 +18,12 @@ model Form {
   /// Consentement explicite obligatoire avant soumission.
   requireConsent Boolean @default(true)
   consentText    String?
+  /// Acceptations séparées par finalité (collecte, traitement, stockage…),
+  /// chacune avec sa case décochée à l'ouverture : [{ id, label, required }].
+  /// Liste vide = une seule case portant `consentText`. Voir src/lib/consent.ts.
+  consentItems   Json    @default("[]")
+  /// Page où s'affichent les cases : "START" (première) ou "END" (dernière).
+  consentPosition String @default("END")
   /// Lien vers la politique de confidentialité affiché sous la case de
   /// consentement. `null` = page générique /legal/confidentialite de
   /// l'instance ; permet à chaque organisation (ou compte personnel) de

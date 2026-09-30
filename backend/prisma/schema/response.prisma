@@ -11,6 +11,11 @@ model Response {
   /// Valeurs des colonnes de métadonnées éditées dans le tableur admin.
   metadata  Json     @default("{}")
 
+  /// Preuve du consentement : [{ id, label, accepted }] tel que proposé au
+  /// répondant au moment de l'envoi (le libellé peut changer ensuite).
+  /// NULL si le formulaire n'exigeait pas de consentement.
+  consents  Json?
+
   /// Adresse IP : NULL si le formulaire est anonymisé, sinon hash tronqué.
   ipHash    String?
   userAgent String?

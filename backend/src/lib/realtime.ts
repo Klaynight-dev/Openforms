@@ -88,6 +88,8 @@ const EDITOR_COLUMNS = [
   "metaColumns",
   "requireConsent",
   "consentText",
+  "consentItems",
+  "consentPosition",
   "privacyPolicyUrl",
   "isAnonymized",
   "encryptResponses",

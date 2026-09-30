@@ -199,7 +199,22 @@ function buildQuestions(questions: NewQuestion[], existing: Iterable<string>) {
 
 const settingsProps = {
   requireConsent: z.boolean().optional().describe("Consentement RGPD explicite avant soumission"),
-  consentText: z.string().max(2000).optional(),
+  consentText: z.string().max(2000).optional().describe("Case unique, ou texte d'introduction si consentItems est rempli"),
+  consentItems: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64).describe("Identifiant stable, ex. collecte"),
+        label: z.string().min(1).max(1000),
+        required: z.boolean().optional().describe("Obligatoire pour soumettre (défaut : true)"),
+      }),
+    )
+    .max(20)
+    .optional()
+    .describe("Acceptations séparées (collecte, traitement, stockage…), chacune décochée par défaut ; [] = case unique"),
+  consentPosition: z
+    .enum(["START", "END"])
+    .optional()
+    .describe("Cases de consentement sur la première page (START) ou la dernière (END)"),
   privacyPolicyUrl: z.string().max(2000).optional(),
   isAnonymized: z.boolean().optional().describe("Aucune métadonnée d'identification (IP, navigateur) stockée"),
   encryptResponses: z.boolean().optional().describe("Chiffrement au repos des réponses"),
@@ -726,7 +741,11 @@ export function createMcpServer(callApi: CallApi, { appUrl }: McpOptions): McpSe
       inputSchema: {
         formId: z.string(),
         data: z.record(z.string(), z.any()).describe("Valeurs par clé de question"),
-        consent: z.boolean().optional().describe("Consentement RGPD, requis si le formulaire l'exige"),
+        consent: z.boolean().optional().describe("Consentement RGPD, requis si le formulaire l'exige ; vaut acceptation de toutes les cases"),
+        consents: z
+          .record(z.string(), z.boolean())
+          .optional()
+          .describe("État de chaque case de consentement par identifiant, si le formulaire en liste plusieurs"),
       },
       annotations: WRITE,
     },

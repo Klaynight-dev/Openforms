@@ -10,6 +10,7 @@ import { env } from "../config/env.ts";
 import { resolveRotation } from "../lib/rotation.ts";
 import { broadcast, broadcastFormUpdate, editorTopic } from "../lib/realtime.ts";
 import { FormOpSchema } from "../lib/formOps.ts";
+import { ConsentItemSchema, ConsentPositionSchema, parseConsentItems } from "../lib/consent.ts";
 import { applyOps, dropSession, flushSession, readSession } from "../lib/formSession.ts";
 import {
   checkEmbedAccess,
@@ -65,6 +66,8 @@ const FormSettings = {
   metaColumns: t.Optional(t.Array(MetaColumnSchema, { maxItems: 100 })),
   requireConsent: t.Optional(t.Boolean()),
   consentText: t.Optional(t.String({ maxLength: 2000 })),
+  consentItems: t.Optional(t.Array(ConsentItemSchema, { maxItems: 20 })),
+  consentPosition: t.Optional(ConsentPositionSchema),
   privacyPolicyUrl: t.Optional(t.String({ maxLength: 2000 })),
   isAnonymized: t.Optional(t.Boolean()),
   encryptResponses: t.Optional(t.Boolean()),
@@ -154,6 +157,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           schema: form.schema,
           requireConsent: form.requireConsent,
           consentText: form.consentText,
+          consentItems: parseConsentItems(form.consentItems),
+          consentPosition: form.consentPosition,
           privacyPolicyUrl: form.privacyPolicyUrl,
           isAnonymized: form.isAnonymized,
           visibility: form.visibility,
@@ -248,6 +253,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           metaColumns: body.metaColumns ?? [],
           requireConsent: body.requireConsent ?? true,
           consentText: body.consentText,
+          consentItems: parseConsentItems(body.consentItems),
+          consentPosition: body.consentPosition ?? "END",
           privacyPolicyUrl: body.privacyPolicyUrl,
           isAnonymized: body.isAnonymized ?? false,
           encryptResponses: body.encryptResponses ?? false,
@@ -382,6 +389,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           metaColumns: body.metaColumns ?? undefined,
           requireConsent: body.requireConsent,
           consentText: body.consentText,
+          consentItems: body.consentItems ? parseConsentItems(body.consentItems) : undefined,
+          consentPosition: body.consentPosition,
           privacyPolicyUrl: body.privacyPolicyUrl,
           isAnonymized: body.isAnonymized,
           encryptResponses: body.encryptResponses,
@@ -570,6 +579,8 @@ export const formController = new Elysia({ prefix: "/api/v1/forms" })
           metaColumns: form.metaColumns ?? [],
           requireConsent: form.requireConsent,
           consentText: form.consentText,
+          consentItems: form.consentItems ?? [],
+          consentPosition: form.consentPosition,
           privacyPolicyUrl: form.privacyPolicyUrl,
           isAnonymized: form.isAnonymized,
           encryptResponses: form.encryptResponses,

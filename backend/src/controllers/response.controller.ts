@@ -7,6 +7,7 @@ import { drawRotationSeed } from "../lib/rotation.ts";
 import { sealContent, openContent, hashIp, verifyDescriptor } from "../services/crypto.ts";
 import { sendEmail } from "../services/mailer.ts";
 import { checkEmbedAccess } from "../lib/embed.ts";
+import { checkConsent } from "../lib/consent.ts";
 import { env } from "../config/env.ts";
 import { broadcast, responsesTopic, type RealtimeResponseRow } from "../lib/realtime.ts";
 
@@ -141,10 +142,11 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         }
       }
 
-      // 1. Consentement explicite obligatoire (RGPD).
-      if (form.requireConsent && body.consent !== true) {
+      // 1. Consentement explicite obligatoire (RGPD), case par case.
+      const consentCheck = checkConsent(form, body);
+      if (!consentCheck.ok) {
         set.status = 400;
-        return { success: false, error: "Le consentement est requis pour soumettre." };
+        return { success: false, error: consentCheck.error };
       }
 
       // 2. Validation dynamique des réponses contre la définition du formulaire.
@@ -217,6 +219,7 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         data: {
           formId: form.id,
           content: content as object,
+          consents: consentCheck.record ?? undefined,
           ipHash,
           userAgent: form.isAnonymized ? null : (request.headers.get("user-agent")?.slice(0, 300) ?? null),
           files: filesToCreate.length ? { create: filesToCreate } : undefined,
@@ -282,6 +285,8 @@ export const responseController = new Elysia({ prefix: "/api/v1/responses" })
         formId: t.String({ format: "uuid" }),
         data: t.Record(t.String(), t.Any()),
         consent: t.Optional(t.Boolean()),
+        /** État de chaque case de consentement, par identifiant. */
+        consents: t.Optional(t.Record(t.String(), t.Boolean())),
         files: t.Optional(t.Record(t.String(), t.Array(FileRef, { maxItems: 20 }))),
       }),
     },
