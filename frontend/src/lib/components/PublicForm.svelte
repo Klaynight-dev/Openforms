@@ -6,6 +6,8 @@
   import { IconCheckCircle, IconLock, IconShield, IconWarning, IconLink } from "$lib/icons.ts";
   import { auth } from "$lib/stores/auth.svelte.ts";
   import LegalFooter from "$lib/components/LegalFooter.svelte";
+  import ConsentBlock from "$lib/components/ConsentBlock.svelte";
+  import { consentOnPage, consentPayload, missingConsent } from "$lib/consent.ts";
 
   let {
     slug,
@@ -40,6 +42,11 @@
   let values = $state<Record<string, unknown>>({});
   let files = $state<Record<string, { file: SignedFileDescriptor; signature: string }[]>>({});
   let consent = $state(false);
+  /** Cases de consentement par identifiant : toutes décochées à l'ouverture. */
+  let consents = $state<Record<string, boolean>>({});
+  /** Vrai après un essai de passer outre : l'erreur suit ensuite chaque clic. */
+  let consentTried = $state(false);
+  let consentError = $derived(consentTried && form ? missingConsent(form, consent, consents) : null);
   let fieldErrors = $state<Record<string, string>>({});
   let submitting = $state(false);
   let submitted = $state(false);
@@ -338,8 +345,23 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  /**
+   * Bloque sur les cases de consentement de la page, et amène le visiteur
+   * jusqu'à elles. En tête de formulaire, on ne va pas plus loin sans elles.
+   */
+  function checkConsent(page: Page): boolean {
+    if (!form || !consentOnPage(form, page)) return true;
+    consentTried = true;
+    if (!missingConsent(form, consent, consents)) return true;
+    tick().then(() =>
+      document.querySelector("[data-consent]")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+    return false;
+  }
+
   function nextPage() {
     if (!currentPage) return;
+    if (!checkConsent(currentPage)) return;
     if (validatePage(currentPage)) {
       currentPageIndex += 1;
       scrollToTop();
@@ -392,10 +414,7 @@
   async function submit(e: Event) {
     e.preventDefault();
     submitError = null;
-    if (form?.requireConsent && !consent) {
-      submitError = "Vous devez accepter le consentement pour soumettre.";
-      return;
-    }
+    if (currentPage && !checkConsent(currentPage)) return;
     if (!validateAll()) {
       goToFirstError();
       return;
@@ -419,7 +438,7 @@
       const res = await api.submit({
         formId: form!.id,
         data: cleanValues,
-        consent,
+        ...consentPayload(form!, consent, consents),
         files: Object.keys(cleanFiles).length ? cleanFiles : undefined,
       });
       if (res.success) {
@@ -442,6 +461,17 @@
     }
   }
 </script>
+
+{#snippet consentBlock()}
+  <ConsentBlock
+    consentText={translatedForm?.consentText}
+    items={translatedForm?.consentItems}
+    privacyPolicyUrl={translatedForm?.privacyPolicyUrl}
+    bind:consent
+    bind:consents
+    error={consentError}
+  />
+{/snippet}
 
 <svelte:head><title>{translatedForm?.title ?? "Formulaire"}</title></svelte:head>
 
@@ -592,6 +622,10 @@
           </div>
         {/if}
 
+        {#if translatedForm.consentPosition === "START" && consentOnPage(translatedForm, currentPage)}
+          {@render consentBlock()}
+        {/if}
+
         {#each currentPage.fields as field (field.key)}
           <div
             data-field={field.key}
@@ -613,16 +647,8 @@
           </div>
         {/each}
 
-        {#if currentPage.isLast && translatedForm.requireConsent}
-          <label class="mb-5 flex items-start gap-3 rounded-xl border border-[color:var(--line)] bg-white p-6 text-sm shadow-sm hover:shadow-md cursor-pointer transition-shadow duration-200">
-            <input type="checkbox" bind:checked={consent} class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
-            <span class="text-[color:var(--ink)] font-medium leading-tight">{translatedForm.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
-          </label>
-          <!-- Information de la personne concernée au moment de la collecte (art. 13 RGPD). -->
-          <p class="-mt-3 mb-5 px-1 text-xs text-[color:var(--muted)]">
-            Voir la <a class="underline underline-offset-2 hover:text-[color:var(--brand)]" href={translatedForm.privacyPolicyUrl?.trim() || "/legal/confidentialite"} target="_blank" rel="noopener">politique de confidentialité</a>
-            pour connaître vos droits sur ces données.
-          </p>
+        {#if translatedForm.consentPosition !== "START" && consentOnPage(translatedForm, currentPage)}
+          {@render consentBlock()}
         {/if}
 
         {#if submitError || errorCount > 0}

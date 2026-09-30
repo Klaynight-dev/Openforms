@@ -29,6 +29,8 @@ import type {
   ApiKeyScope,
   EmbedConfig,
   PublicRotation,
+  ConsentItem,
+  ConsentPosition,
 } from "../types.ts";
 import type { FormOp } from "../formOps.ts";
 
@@ -345,6 +347,8 @@ export interface FormPayload {
   metaColumns?: MetaColumn[];
   requireConsent?: boolean;
   consentText?: string;
+  consentItems?: ConsentItem[];
+  consentPosition?: ConsentPosition;
   privacyPolicyUrl?: string;
   isAnonymized?: boolean;
   encryptResponses?: boolean;
@@ -379,6 +383,8 @@ export interface SubmitPayload {
   formId: string;
   data: Record<string, unknown>;
   consent?: boolean;
+  /** État de chaque case, quand le formulaire liste plusieurs acceptations. */
+  consents?: Record<string, boolean>;
   files?: Record<string, { file: SignedFileDescriptor; signature: string }[]>;
 }
 

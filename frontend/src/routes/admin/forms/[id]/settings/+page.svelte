@@ -10,6 +10,8 @@
   import { EnvelopeSimple as IconEmail, CalendarBlank as IconCalendar, SlidersHorizontal as IconSliders, ChatCircle as IconComment } from "phosphor-svelte";
   import type { FormDetail, Permission, FormRole, FormComment, ApiKeyInfo, Organization } from "$lib/types.ts";
   import { askConfirm } from "$lib/stores/dialog.svelte.ts";
+  import { CONSENT_PRESETS, DEFAULT_CONSENT_INTRO, DEFAULT_CONSENT_TEXT, newConsentId } from "$lib/consent.ts";
+  import { IconArrowUp, IconArrowDown, IconPlus } from "$lib/icons.ts";
 
   const editorState = getContext<{
     form: FormDetail | null;
@@ -209,6 +211,9 @@
       slug: form?.slug ?? "",
       requireConsent: form?.requireConsent ?? true,
       consentText: form?.consentText ?? "",
+      // Copie : les cases se modifient ici sans toucher au formulaire chargé.
+      consentItems: (form?.consentItems ?? []).map((item) => ({ ...item })),
+      consentPosition: form?.consentPosition ?? "END",
       privacyPolicyUrl: form?.privacyPolicyUrl ?? "",
       isAnonymized: form?.isAnonymized ?? false,
       encryptResponses: form?.encryptResponses ?? false,
@@ -292,6 +297,38 @@
     if (!editorState.form || settings.slug === editorState.form.slug) return;
     slugCommitted = true;
     editorState.markDirty();
+  }
+
+  // --- Consentement par finalité ---
+
+  const CONSENT_POSITIONS = [
+    { value: "START" as const, label: "En premier" },
+    { value: "END" as const, label: "À la fin" },
+  ];
+
+  /** Finalités types pas encore présentes dans la liste. */
+  const missingPresets = $derived(
+    CONSENT_PRESETS.filter((preset) => !settings.consentItems.some((item) => item.id === preset.id)),
+  );
+
+  function addConsentItem() {
+    const id = newConsentId("", settings.consentItems.map((item) => item.id));
+    settings.consentItems = [...settings.consentItems, { id, label: "", required: true }];
+  }
+
+  function addConsentPresets() {
+    settings.consentItems = [...settings.consentItems, ...missingPresets.map((preset) => ({ ...preset }))];
+  }
+
+  function moveConsentItem(index: number, delta: number) {
+    const items = [...settings.consentItems];
+    const [item] = items.splice(index, 1);
+    items.splice(index + delta, 0, item);
+    settings.consentItems = items;
+  }
+
+  function removeConsentItem(index: number) {
+    settings.consentItems = settings.consentItems.filter((_, i) => i !== index);
   }
 
   // Allowed emails text helper
@@ -497,6 +534,9 @@
       // Les champs vidés partent tels quels : un `undefined` serait ignoré par
       // le serveur, et l'ancienne valeur resterait en base.
       consentText: settings.consentText,
+      // Une case ajoutée mais pas encore rédigée attend son libellé.
+      consentItems: settings.consentItems.filter((item) => item.label.trim()),
+      consentPosition: settings.consentPosition,
       privacyPolicyUrl: settings.privacyPolicyUrl,
       isAnonymized: settings.isAnonymized,
       encryptResponses: settings.encryptResponses,
@@ -519,6 +559,8 @@
     slugCommitted = false;
     editorState.form.requireConsent = settings.requireConsent;
     editorState.form.consentText = settings.consentText;
+    editorState.form.consentItems = $state.snapshot(settings.consentItems);
+    editorState.form.consentPosition = settings.consentPosition;
     editorState.form.privacyPolicyUrl = settings.privacyPolicyUrl;
     editorState.form.isAnonymized = settings.isAnonymized;
     editorState.form.encryptResponses = settings.encryptResponses;
@@ -769,20 +811,110 @@
         />
         <div>
           <span class="text-sm font-semibold text-[color:var(--ink)]">Exiger le consentement</span>
-          <p class="text-xs text-[color:var(--muted)] mt-0.5">Le répondant devra cocher une case d'acceptation obligatoire avant de pouvoir soumettre le formulaire.</p>
+          <p class="text-xs text-[color:var(--muted)] mt-0.5">Le répondant devra cocher les cases d'acceptation obligatoires avant de pouvoir soumettre le formulaire.</p>
         </div>
       </label>
       
       {#if settings.requireConsent}
+        <div class="pt-2 animate-fade-in flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span class="label text-xs !mb-0">Emplacement</span>
+            <p class="text-[10px] text-[color:var(--muted)] mt-0.5">
+              {settings.consentPosition === "START"
+                ? "Sur la première page : le répondant ne peut pas commencer sans accepter."
+                : "Sur la dernière page, juste avant l'envoi."}
+            </p>
+          </div>
+          <Segmented
+            dense
+            label="Emplacement du consentement"
+            value={settings.consentPosition}
+            options={CONSENT_POSITIONS}
+            onchange={(v) => (settings.consentPosition = v)}
+          />
+        </div>
+
         <div class="pt-2 animate-fade-in">
-          <label class="label text-xs" for="consent-text-input">Texte de consentement</label>
-          <textarea 
+          <label class="label text-xs" for="consent-text-input">
+            {settings.consentItems.length ? "Texte d'introduction" : "Texte de consentement"}
+          </label>
+          <textarea
             id="consent-text-input"
-            class="input text-xs" 
-            rows="3" 
-            placeholder="J'accepte que mes réponses soient traitées conformément au RGPD..." 
+            class="input text-xs"
+            rows="3"
+            placeholder={settings.consentItems.length ? DEFAULT_CONSENT_INTRO : DEFAULT_CONSENT_TEXT}
             bind:value={settings.consentText}
           ></textarea>
+        </div>
+
+        <div class="pt-2 animate-fade-in">
+          <span class="label text-xs">Acceptations séparées</span>
+          <p class="text-[10px] text-[color:var(--muted)] mb-2">
+            Une case par usage des données (collecte, traitement, stockage…), toujours décochée à l'ouverture.
+            Sans acceptation listée, le répondant coche une case unique portant le texte ci-dessus.
+          </p>
+
+          {#if settings.consentItems.length}
+            <ul class="space-y-2 mb-3">
+              {#each settings.consentItems as item, index (item.id)}
+                <li class="rounded-xl border border-[color:var(--line)] p-3">
+                  <div class="flex items-start gap-2">
+                    <textarea
+                      class="input text-xs flex-1"
+                      rows="2"
+                      aria-label="Libellé de l'acceptation {index + 1}"
+                      placeholder="J'accepte que…"
+                      bind:value={item.label}
+                    ></textarea>
+                    <div class="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        class="btn-text !px-1.5 !py-1"
+                        title="Monter"
+                        aria-label="Monter l'acceptation {index + 1}"
+                        disabled={index === 0}
+                        onclick={() => moveConsentItem(index, -1)}
+                      ><IconArrowUp size={14} /></button>
+                      <button
+                        type="button"
+                        class="btn-text !px-1.5 !py-1"
+                        title="Descendre"
+                        aria-label="Descendre l'acceptation {index + 1}"
+                        disabled={index === settings.consentItems.length - 1}
+                        onclick={() => moveConsentItem(index, 1)}
+                      ><IconArrowDown size={14} /></button>
+                    </div>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between gap-3">
+                    <label class="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        bind:checked={item.required}
+                        class="h-4 w-4 rounded border-gray-300 accent-[color:var(--brand)]"
+                      />
+                      Obligatoire pour envoyer
+                    </label>
+                    <button
+                      type="button"
+                      class="btn-text !px-2 text-xs text-[color:var(--danger)] inline-flex items-center gap-1"
+                      onclick={() => removeConsentItem(index)}
+                    ><IconTrash size={14} /> Retirer</button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-secondary text-xs inline-flex items-center gap-1.5" onclick={addConsentItem}>
+              <IconPlus size={14} /> Ajouter une acceptation
+            </button>
+            {#if missingPresets.length}
+              <button type="button" class="btn-text text-xs" onclick={addConsentPresets}>
+                Ajouter {missingPresets.map((p) => p.id).join(", ")}
+              </button>
+            {/if}
+          </div>
         </div>
 
         <div class="pt-2 animate-fade-in">

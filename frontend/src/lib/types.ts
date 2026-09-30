@@ -65,6 +65,17 @@ export interface FieldDefinition {
   scale?: { min: number; max: number; minLabel?: string; maxLabel?: string };
 }
 
+/** Une acceptation du consentement RGPD, avec sa propre case. */
+export interface ConsentItem {
+  /** Identifiant stable renvoyé à la soumission. */
+  id: string;
+  label: string;
+  /** Faux : le répondant peut refuser et envoyer quand même. */
+  required: boolean;
+}
+
+export type ConsentPosition = "START" | "END";
+
 export type MetaColumnKind = "text" | "number" | "formula";
 
 export interface MetaColumn {
@@ -84,6 +95,10 @@ export interface FormSummary {
   encryptResponses: boolean;
   requireConsent: boolean;
   consentText?: string | null;
+  /** Acceptations séparées (collecte, traitement, stockage…) ; vide = case unique. */
+  consentItems?: ConsentItem[];
+  /** Page où s'affichent les cases de consentement. */
+  consentPosition?: ConsentPosition;
   /** Lien vers la politique de confidentialité affiché sous le consentement.
    *  Vide = page générique /legal/confidentialite de l'instance. */
   privacyPolicyUrl?: string | null;

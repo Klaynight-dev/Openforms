@@ -1,12 +1,13 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { toasts } from "$lib/stores/toast.svelte.ts";
   import { onMount } from "svelte";
   import FieldInput from "$components/FieldInput.svelte";
   import { api, type SignedFileDescriptor } from "$api/client.ts";
   import { JUSTIFICATION_SUFFIX, type FormDetail, type FieldDefinition } from "$lib/types.ts";
   import { IconCheckCircle, IconLock, IconShield, IconEye, IconBack } from "$lib/icons.ts";
   import { goto } from "$app/navigation";
+  import ConsentBlock from "$components/ConsentBlock.svelte";
+  import { consentOnPage, missingConsent } from "$lib/consent.ts";
 
   const id = $page.params.id as string;
   let form = $state<FormDetail | null>(null);
@@ -16,6 +17,9 @@
   let values = $state<Record<string, unknown>>({});
   let files = $state<Record<string, { file: SignedFileDescriptor; signature: string }[]>>({});
   let consent = $state(false);
+  let consents = $state<Record<string, boolean>>({});
+  let consentTried = $state(false);
+  let consentError = $derived(consentTried && form ? missingConsent(form, consent, consents) : null);
   let fieldErrors = $state<Record<string, string>>({});
   let submitting = $state(false);
   let submitted = $state(false);
@@ -184,8 +188,16 @@
     return p.fields.every((f) => !errs[f.key]);
   }
 
+  /** Même blocage que le formulaire public (voir PublicForm.svelte). */
+  function checkConsent(p: Page): boolean {
+    if (!form || !consentOnPage(form, p)) return true;
+    consentTried = true;
+    return !missingConsent(form, consent, consents);
+  }
+
   function nextPage() {
     if (!currentPage) return;
+    if (!checkConsent(currentPage)) return;
     if (validatePage(currentPage)) {
       currentPageIndex += 1;
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -215,10 +227,7 @@
 
   function simulateSubmit(e: Event) {
     e.preventDefault();
-    if (form?.requireConsent && !consent) {
-      toasts.error("Vous devez accepter le consentement pour soumettre.");
-      return;
-    }
+    if (currentPage && !checkConsent(currentPage)) return;
     if (!validateAll()) {
       for (let i = 0; i < pages.length; i++) {
         const hasError = pages[i].fields.some((f) => fieldErrors[f.key]);
@@ -241,10 +250,23 @@
     values = {};
     files = {};
     consent = false;
+    consents = {};
+    consentTried = false;
     fieldErrors = {};
     currentPageIndex = 0;
   }
 </script>
+
+{#snippet consentBlock()}
+  <ConsentBlock
+    consentText={translatedForm?.consentText}
+    items={translatedForm?.consentItems}
+    privacyPolicyUrl={translatedForm?.privacyPolicyUrl}
+    bind:consent
+    bind:consents
+    error={consentError}
+  />
+{/snippet}
 
 <svelte:head>
   <title>[Aperçu] {translatedForm?.title ?? "Formulaire"}</title>
@@ -352,6 +374,10 @@
           </div>
         {/if}
 
+        {#if translatedForm.consentPosition === "START" && consentOnPage(translatedForm, currentPage)}
+          {@render consentBlock()}
+        {/if}
+
         {#each currentPage.fields as field (field.key)}
           <div class="mb-4 rounded-xl border border-[color:var(--line)] bg-white p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
             <FieldInput
@@ -365,11 +391,8 @@
           </div>
         {/each}
 
-        {#if currentPage.isLast && translatedForm.requireConsent}
-          <label class="mb-5 flex items-start gap-3 rounded-xl border border-[color:var(--line)] bg-white p-6 text-sm shadow-sm hover:shadow-md cursor-pointer transition-shadow duration-200">
-            <input type="checkbox" bind:checked={consent} class="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand accent-brand cursor-pointer" />
-            <span class="text-[color:var(--ink)] font-medium leading-tight">{translatedForm.consentText || "J'accepte que mes réponses soient traitées conformément au RGPD."}</span>
-          </label>
+        {#if translatedForm.consentPosition !== "START" && consentOnPage(translatedForm, currentPage)}
+          {@render consentBlock()}
         {/if}
 
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
