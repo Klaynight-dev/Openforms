@@ -7,17 +7,11 @@
  * donc exactement ceux de l'application- aucune élévation de privilège.
  */
 
+import { ApiError } from "../../backend/src/mcp/server.ts";
+
 const API_URL = (process.env.OPENFORMS_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const API_KEY = process.env.OPENFORMS_API_KEY ?? "";
 
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-  }
-}
 
 export function assertConfigured(): void {
   if (!API_KEY) {
@@ -28,7 +22,7 @@ export function assertConfigured(): void {
   }
 }
 
-export async function callApi<T = unknown>(
+export async function callApi<T = any>(
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,

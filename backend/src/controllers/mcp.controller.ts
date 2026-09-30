@@ -36,11 +36,16 @@ function jsonRpcError(status: number, message: string, headers: Record<string, s
   });
 }
 
-/** Client de l'API REST pour une clé donnée, en boucle locale. */
-function apiCaller(token: string): CallApi {
+/**
+ * Client de l'API REST pour une clé donnée, en boucle locale. L'IP d'origine
+ * suit la requête : sans elle, les limites de débit par IP de l'API
+ * compteraient tous les utilisateurs du MCP comme un seul (127.0.0.1).
+ */
+function apiCaller(token: string, forwardedFor: string | null): CallApi {
   const base = `http://127.0.0.1:${env.port}`;
   return async (method, path, body) => {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
     const res = await fetch(`${base}${path}`, {
@@ -74,7 +79,9 @@ export const mcpController = new Elysia({ prefix: "/api/mcp" })
       }
 
       // Sans état : un serveur et un transport par requête, aucune session à purger.
-      const server = createMcpServer(apiCaller(token!));
+      const server = createMcpServer(apiCaller(token!, request.headers.get("x-forwarded-for")), {
+        appUrl: env.appUrl,
+      });
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

@@ -48,8 +48,8 @@ Le backend expose les mêmes outils en HTTP sur `/api/mcp` (Streamable HTTP, san
 - ou en en-tête `Authorization: Bearer ofk_...` pour Claude Code :
   `claude mcp add --transport http openforms https://forms.klaynight.fr/api/mcp --header "Authorization: Bearer ofk_..."`
 
-Les outils sont définis dans `backend/src/mcp/server.ts` (copie de ceux de ce
-dossier : le Dockerfile du backend n'embarque pas `mcp-server/`).
+Les outils sont définis une seule fois, dans `backend/src/mcp/server.ts` : le
+backend les sert en HTTP, et `mcp-server/src/index.ts` les sert en stdio.
 
 ## Variables d'environnement
 
@@ -57,20 +57,36 @@ dossier : le Dockerfile du backend n'embarque pas `mcp-server/`).
 | -------------------- | ----------------------- | ----------------------------- |
 | `OPENFORMS_API_URL`  | `http://localhost:3000` | Base de l'API Openforms       |
 | `OPENFORMS_API_KEY`  | —                       | Clé personnelle (obligatoire) |
+| `OPENFORMS_APP_URL`  | `OPENFORMS_API_URL`     | Origine des liens renvoyés    |
 
 ## Outils exposés
 
-**Lecture** — `list_organizations`, `list_forms`, `get_form`, `get_form_stats`,
-`get_global_stats` (super-admin), `list_stats_presets`.
+**Organisations** : `list_organizations`, `list_organization_members`,
+`create_organization`, `invite_organization_member`.
 
-**Configuration** — `update_form_settings`, `set_form_published`,
-`create_stats_preset`, `update_stats_preset`, `delete_stats_preset`,
-`grant_form_access`, `revoke_form_access` (les deux derniers réservés aux super
-administrateurs).
+**Formulaires** : `list_forms`, `get_form`, `create_form` (avec ses questions),
+`update_form_settings`, `set_form_published`, `duplicate_form`, `delete_form`,
+`move_form_to_organization`, `share_form`, `unshare_form`, `list_form_versions`,
+`restore_form_version`.
 
-`update_form_settings` relit le formulaire avant d'écrire et réémet sa structure
-telle quelle : les champs du formulaire ne peuvent pas être altérés par le MCP.
-Les modifications de structure passent par le builder.
+**Questions** : `add_questions`, `update_question`, `delete_question`,
+`move_question`. Elles passent par les mêmes opérations que l'éditeur : les
+personnes qui ont le formulaire ouvert voient les changements en direct, sans
+conflit avec leurs propres modifications.
+
+**Réponses** : `list_responses` (pagination, filtres), `get_response`,
+`submit_response` (validée, comme un participant), `add_response` (saisie
+manuelle du tableur), `update_response`, `delete_response`.
+
+**Statistiques** : `get_form_stats` (résultats question par question),
+`cross_tabulate` (tableau croisé de deux questions), `get_global_stats`
+(super-admin), et les presets de croisement de la page Statistiques
+(`list_stats_presets`, `create_stats_preset`, `update_stats_preset`,
+`delete_stats_preset`). Les statistiques sont calculées sur les réponses, avec
+filtres par période et par réponse à d'autres questions.
+
+**Commentaires** : `list_comments`, `add_comment`, `resolve_comment`,
+`delete_comment`.
 
 ## Développement
 
