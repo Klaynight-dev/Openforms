@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Contexte de build : la RACINE du dépôt (voir docker-compose.yml). Le
-# bun.lock y est, commun aux trois workspaces : l'installation le suit à la
-# lettre (--frozen-lockfile) au lieu de résoudre les versions à chaque build.
+# Image du backend. À construire depuis la racine du dépôt, où se trouve ce
+# fichier : `docker build -f Dockerfile.back .` (Dokploy : Build Path `/`,
+# Docker File `Dockerfile.back`). Le bun.lock y est, commun aux trois
+# workspaces : l'installation le suit à la lettre (--frozen-lockfile) au lieu
+# de résoudre les versions à chaque build.
 #
 # Les couches sont rangées de la moins à la plus changeante : tant que les
 # package.json et bun.lock ne bougent pas, l'installation vient du cache, et
@@ -37,6 +39,11 @@ COPY backend/src ./src
 
 ENV NODE_ENV=production
 ENV PORT=3535
+# Chemin absolu : le dossier de travail est /app/backend, et le défaut
+# relatif (./uploads) sortirait du volume monté sur /app/uploads.
+ENV UPLOAD_DIR=/app/uploads
 EXPOSE 3535
 
-CMD ["bun", "run", "src/index.ts"]
+# Migrations appliquées à chaque démarrage, par l'image elle-même : Dokploy
+# (type Dockerfile) ne lit pas la `command` d'un docker-compose.
+CMD ["sh", "-c", "bunx prisma migrate deploy && exec bun run src/index.ts"]

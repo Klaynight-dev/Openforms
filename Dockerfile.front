@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# Contexte de build : la RACINE du dépôt (voir docker-compose.yml), pour
-# installer depuis le bun.lock commun aux workspaces (--frozen-lockfile).
+# Image du frontend. À construire depuis la racine du dépôt, où se trouve ce
+# fichier : `docker build -f Dockerfile.front .` (Dokploy : Build Path `/`,
+# Docker File `Dockerfile.front`), pour installer depuis le bun.lock commun
+# aux workspaces (--frozen-lockfile).
 
 # --- Build SvelteKit ---
 FROM oven/bun:1.4 AS build

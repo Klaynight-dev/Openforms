@@ -22,9 +22,9 @@ services:
   backend:
     build:
       # Racine du dépôt : l'image s'installe depuis le bun.lock commun aux
-      # workspaces (voir backend/Dockerfile).
+      # workspaces (voir Dockerfile.back).
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile.back
     container_name: humanitour-backend
     restart: always
     depends_on:
@@ -47,13 +47,11 @@ services:
       - uploads:/app/uploads
     ports:
       - "3535:3535"
-    command: >
-      sh -c "bunx prisma migrate deploy && bun run src/index.ts"
 
   frontend:
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: Dockerfile.front
       args:
         # Vide = appels API en relatif (/api/...) sur le domaine chargé.
         # Le reverse-proxy (Caddy) route /api/* vers le backend sur CHAQUE domaine,
