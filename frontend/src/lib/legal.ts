@@ -70,7 +70,7 @@ export const LEGAL = {
   /** Code source du service. */
   source: {
     license: "MIT",
-    repository: "https://github.com/Klaynight/Openforms",
+    repository: "https://github.com/Klaynight-dev/Openforms",
   },
 
   /** Durées de conservation annoncées (voir politique de confidentialité). */
