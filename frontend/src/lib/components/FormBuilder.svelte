@@ -339,9 +339,9 @@
   <div class="flex-1 w-full space-y-5">
 
     <!-- Translation language and Form Title card -->
-    <div class="bg-white rounded-2xl border border-[color:var(--line)] border-t-[10px] border-t-[color:var(--brand)] shadow-sm overflow-hidden p-6 relative" data-cursor-anchor="form-header">
+    <div class="bg-white rounded-2xl border border-[color:var(--line)] border-t-[10px] border-t-[color:var(--brand)] shadow-sm overflow-hidden p-4 sm:p-6 relative" data-cursor-anchor="form-header">
       <!-- Lang selector top right -->
-      <div class="flex items-center gap-2 justify-end mb-4 border-b border-slate-100 pb-3">
+      <div class="flex flex-wrap items-center gap-2 justify-end mb-4 border-b border-slate-100 pb-3">
         <span class="text-xs font-semibold text-[color:var(--muted)]">Langue de saisie :</span>
         <select class="input !w-32 !py-1 text-xs" bind:value={editingLocale}>
           <option value="fr">Français</option>
@@ -352,7 +352,7 @@
 
       {#if editingLocale === "fr"}
         <input 
-          class="w-full border-0 text-2xl font-bold outline-none text-[color:var(--ink)] placeholder-slate-400 focus:ring-0 mb-3 border-b border-transparent focus:border-slate-100 focus:pb-1 transition-all" 
+          class="w-full border-0 text-xl sm:text-2xl font-bold outline-none text-[color:var(--ink)] placeholder-slate-400 focus:ring-0 mb-3 border-b border-transparent focus:border-slate-100 focus:pb-1 transition-all" 
           placeholder="Titre du formulaire" 
           bind:value={settings.title} 
         />
@@ -364,7 +364,7 @@
         ></textarea>
       {:else}
         <input 
-          class="w-full border-0 text-2xl font-bold outline-none text-[color:var(--brand)] placeholder-slate-400 focus:ring-0 mb-3" 
+          class="w-full border-0 text-xl sm:text-2xl font-bold outline-none text-[color:var(--brand)] placeholder-slate-400 focus:ring-0 mb-3" 
           placeholder={`Titre en ${editingLocale.toUpperCase()} (Traduction)`} 
           bind:value={settings.translations[editingLocale].title} 
         />
@@ -382,7 +382,7 @@
       <div class="empty flex flex-col items-center justify-center p-12 text-slate-400 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
         <span class="mb-2 text-slate-300"><IconSparkle size={32} /></span>
         <p class="text-sm font-semibold mb-1">Votre formulaire est vide</p>
-        <p class="text-xs text-slate-400">Cliquez sur le bouton + à droite pour ajouter votre première question.</p>
+        <p class="text-xs text-slate-400">Cliquez sur le bouton + de la barre d'outils pour ajouter votre première question.</p>
       </div>
     {/if}
 
@@ -1010,14 +1010,15 @@
             <!-- COLLAPSED CARD: NON-ACTIVE PREVIEW -->
             <div class="flex flex-col gap-2">
               <div class="flex items-start justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-[color:var(--brand)] bg-violet-50 p-1.5 rounded-lg"><FieldIcon size={15} /></span>
-                  <span class="font-bold text-sm text-[color:var(--ink)]">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="shrink-0 text-[color:var(--brand)] bg-violet-50 p-1.5 rounded-lg"><FieldIcon size={15} /></span>
+                  <span class="min-w-0 break-words font-bold text-sm text-[color:var(--ink)]">
                     {editingLocale === "fr" ? (field.label || "Question sans titre") : (settings.translations?.[editingLocale]?.fields?.[field.key]?.label || `[Traduit] ${field.label || "Question sans titre"}`)}
                     {#if field.required && field.type !== "section"}<span class="text-red-500 ml-0.5">*</span>{/if}
                   </span>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0 text-[10px] text-slate-400 font-semibold uppercase font-mono bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+                <!-- L'icône suffit à identifier le type sur mobile : le badge laisse la place au libellé. -->
+                <div class="hidden sm:flex items-center gap-1.5 shrink-0 text-[10px] text-slate-400 font-semibold uppercase font-mono bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
                   {metaFor(field.type).label}
                 </div>
               </div>
@@ -1056,14 +1057,14 @@
                     <FieldIcon size={14} /> Ajouter un fichier
                   </div>
                 {:else if field.type === "linear_scale"}
-                  <div class="flex items-center gap-3 text-xs text-slate-400 max-w-md">
-                    <span>{field.scale?.minLabel || field.scale?.min || 1}</span>
-                    <div class="flex gap-2.5">
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-400 max-w-md">
+                    <span class="break-words">{field.scale?.minLabel || field.scale?.min || 1}</span>
+                    <div class="flex flex-wrap gap-2.5">
                       {#each Array((field.scale?.max ?? 5) - (field.scale?.min ?? 1) + 1) as _}
                         <span class="w-3.5 h-3.5 rounded-full border border-slate-300 bg-slate-50"></span>
                       {/each}
                     </div>
-                    <span>{field.scale?.maxLabel || field.scale?.max || 5}</span>
+                    <span class="break-words">{field.scale?.maxLabel || field.scale?.max || 5}</span>
                   </div>
                 {:else if field.type === "grid" || field.type === "checkbox_grid"}
                   <div class="text-xs text-slate-400 flex items-center gap-1.5 border border-dashed border-slate-200 rounded-lg p-2 max-w-sm">

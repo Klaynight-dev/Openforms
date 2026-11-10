@@ -398,7 +398,7 @@
     </div>
   {:else if stats}
     <!-- KPI Cards -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
       <!-- Formulaires -->
       <div class="card stats-card group">
         <div class="stats-icon bg-green-50 text-green-600">
@@ -590,10 +590,10 @@
           {/if}
         </p>
       </div>
-      <div class="flex items-center gap-3 shrink-0">
+      <div class="flex items-center gap-3 sm:shrink-0">
         {#if filteredForms.length > 0}
           <button
-            class="flex items-center gap-2 text-xs font-semibold text-[color:var(--muted)] hover:text-[color:var(--ink)] transition px-2 py-1.5 rounded-lg hover:bg-slate-100"
+            class="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs font-semibold text-[color:var(--muted)] hover:text-[color:var(--ink)] transition px-2 py-1.5 rounded-lg hover:bg-slate-100"
             onclick={toggleAll}
           >
             <span class="relative flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition {allSelected ? 'border-brand-500 bg-brand-500' : 'border-slate-300 bg-white'}">
@@ -607,7 +607,7 @@
           </button>
         {/if}
         {#if canCreateForm}
-          <button class="btn-primary w-full sm:w-auto font-bold" onclick={() => goto(`/admin/forms/new${activeOrgId ? `?orgId=${activeOrgId}` : ""}`)}>
+          <button class="btn-primary flex-1 sm:flex-none whitespace-nowrap font-bold" onclick={() => goto(`/admin/forms/new${activeOrgId ? `?orgId=${activeOrgId}` : ""}`)}>
             Nouveau formulaire
           </button>
         {/if}
@@ -615,7 +615,7 @@
     </div>
 
     {#if loading}
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-pulse">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-pulse">
         {#each [1, 2, 3, 4, 5, 6] as _}
           <div class="card flex flex-col min-h-[190px] bg-white border border-[color:var(--line)] p-5">
             <div class="flex items-start justify-between gap-2 mb-3">
@@ -657,7 +657,7 @@
         </EmptyState>
       </div>
     {:else}
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {#each filteredForms as f (f.id)}
           {@const isSelected = selected.has(f.id)}
           <div
@@ -678,15 +678,15 @@
             </span>
 
             <div class="mb-2 flex items-start justify-between gap-2 pr-7">
-              <h3 class="font-bold text-[color:var(--ink)] leading-snug truncate">{f.title}</h3>
+              <h3 class="min-w-0 font-bold text-[color:var(--ink)] leading-snug truncate">{f.title}</h3>
               {#if f.isPublished}
                 <span class="chip shrink-0"><IconCheck size={12} weight="bold" /> Publié</span>
               {:else}
                 <span class="chip-muted shrink-0">Brouillon</span>
               {/if}
             </div>
-            <p class="mb-3 flex-1 text-sm text-[color:var(--muted)]">{f.description ?? "Aucune description."}</p>
-            <div class="mb-4 flex items-center gap-3 text-xs font-semibold text-[color:var(--muted)]">
+            <p class="mb-3 flex-1 text-sm text-[color:var(--muted)] break-words line-clamp-3">{f.description ?? "Aucune description."}</p>
+            <div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-[color:var(--muted)]">
               <span class="flex items-center gap-1"><IconTable size={14} /> {f._count?.responses ?? 0} réponse(s)</span>
               {#if f.isAnonymized}<span class="flex items-center gap-1"><IconLock size={14} /> Anonyme</span>{/if}
               {#if f.visibility === "PUBLIC"}
@@ -857,6 +857,18 @@
     gap: 0.875rem;
     padding: 1rem 1.25rem;
     transition: box-shadow 0.15s;
+  }
+  .stats-card > div:last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* Sur mobile, deux cartes par ligne : l'icône passe au-dessus du texte. */
+  @media (max-width: 639px) {
+    .stats-card {
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.875rem 1rem;
+    }
   }
   .stats-card:hover {
     box-shadow: 0 4px 20px rgba(0,0,0,0.08);

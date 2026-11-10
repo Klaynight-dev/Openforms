@@ -156,6 +156,8 @@
     flex-direction: column;
     width: 100%;
     max-height: calc(100vh - 2rem);
+    /* Sur mobile, 100vh inclut la barre d'adresse : dvh suit la zone visible. */
+    max-height: calc(100dvh - 2rem);
     background: #fff;
     border-radius: 1.25rem;
     border: 1px solid var(--line);
@@ -222,6 +224,23 @@
     padding: 1.25rem;
   }
 
+  /* Petits écrans : la fenêtre occupe toute la largeur utile, marges réduites. */
+  @media (max-width: 639px) {
+    .wrap {
+      padding: 0.75rem;
+    }
+    .dialog {
+      max-height: calc(100vh - 1.5rem);
+      max-height: calc(100dvh - 1.5rem);
+    }
+    header {
+      padding: 1rem 1rem 0.75rem;
+    }
+    .body {
+      padding: 1rem;
+    }
+  }
+
   footer {
     display: flex;
     align-items: center;
@@ -232,5 +251,10 @@
     border-top: 1px solid var(--line);
     background: #fbfcfe;
     border-radius: 0 0 1.25rem 1.25rem;
+  }
+  @media (max-width: 639px) {
+    footer {
+      padding: 0.75rem 1rem;
+    }
   }
 </style>

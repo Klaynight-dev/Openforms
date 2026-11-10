@@ -9,18 +9,18 @@
 
 <div class="min-h-screen bg-[color:var(--surface-bg)]">
   <header class="border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
-    <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-      <a href="/" class="flex items-center gap-2.5 font-semibold text-[color:var(--ink)]">
+    <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 sm:px-6 py-4">
+      <a href="/" class="flex min-w-0 items-center gap-2.5 font-semibold text-[color:var(--ink)]">
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white">
           <IconLeaf size={20} weight="fill" />
         </span>
         <span class="truncate">{LEGAL.siteName}</span>
       </a>
-      <a href="/" class="btn-text gap-1.5 text-sm"><IconBack size={16} /> Retour à l'accueil</a>
+      <a href="/" class="btn-text gap-1.5 text-sm shrink-0 whitespace-nowrap"><IconBack size={16} /> <span class="hidden sm:inline">Retour à l'accueil</span><span class="sm:hidden">Accueil</span></a>
     </div>
   </header>
 
-  <div class="mx-auto grid max-w-5xl gap-8 px-6 py-10 lg:grid-cols-[240px_1fr]">
+  <div class="mx-auto grid max-w-5xl grid-cols-1 gap-6 sm:gap-8 px-4 sm:px-6 py-6 sm:py-10 lg:grid-cols-[240px_minmax(0,1fr)]">
     <!-- Sommaire : navigation entre les quatre textes légaux. -->
     <nav aria-label="Informations légales" class="lg:sticky lg:top-8 lg:self-start">
       <p class="section-label">Informations légales</p>
@@ -43,7 +43,7 @@
       </ul>
     </nav>
 
-    <main class="legal-prose card !p-8">
+    <main class="legal-prose card min-w-0 !p-5 sm:!p-8">
       {@render children()}
       <p class="mt-10 border-t border-[color:var(--line)] pt-4 text-xs text-[color:var(--muted)]">
         Dernière mise à jour : {LEGAL.lastUpdated}.
@@ -56,7 +56,8 @@
   /* Typographie des textes légaux : le projet n'embarque pas le plugin
      `@tailwindcss/typography`, ces règles jouent le même rôle en local. */
   .legal-prose :global(h1) {
-    font-size: 1.875rem;
+    font-size: clamp(1.5rem, 5vw, 1.875rem);
+    overflow-wrap: break-word;
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--ink);
@@ -110,9 +111,17 @@
     color: var(--ink);
     font-weight: 600;
   }
+  /* Les tableaux défilent horizontalement sur mobile plutôt que d'élargir la page. */
+  .legal-prose :global(.table-wrap) {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 1rem;
+  }
   .legal-prose :global(table) {
     width: 100%;
-    margin-bottom: 1rem;
+    min-width: 36rem;
+    margin-bottom: 0;
     border-collapse: collapse;
     font-size: 0.875rem;
   }

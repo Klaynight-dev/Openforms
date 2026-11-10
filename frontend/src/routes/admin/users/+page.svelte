@@ -207,13 +207,13 @@
   <h1 class="mb-6 text-2xl font-bold">Utilisateurs &amp; accès</h1>
   {#if error}<p class="mb-3 text-sm text-red-600">{error}</p>{/if}
 
-  <div class="grid gap-6 lg:grid-cols-3">
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- Liste des utilisateurs -->
-    <div class="lg:col-span-2">
+    <div class="min-w-0 lg:col-span-2">
       <div class="card overflow-x-auto">
         <h2 class="mb-3 font-semibold">Comptes</h2>
         {#if loading}
-          <table class="w-full text-sm animate-pulse">
+          <table class="w-full min-w-[34rem] text-sm animate-pulse">
             <thead class="text-left text-gray-500">
               <tr><th class="py-1">Email</th><th>Rôle</th><th>Actif</th><th></th></tr>
             </thead>
@@ -237,17 +237,17 @@
             </tbody>
           </table>
         {:else}
-          <table class="w-full text-sm">
+          <table class="w-full min-w-[34rem] text-sm">
             <thead class="text-left text-gray-500">
               <tr><th class="py-1">Email</th><th>Rôle</th><th>Statut</th><th></th></tr>
             </thead>
             <tbody>
               {#each users as u (u.id)}
                 <tr class="border-t">
-                  <td class="py-2">{u.email}{#if u.displayName}<span class="text-gray-400"> · {u.displayName}</span>{/if}</td>
+                  <td class="py-2 pr-4">{u.email}{#if u.displayName}<span class="text-gray-400"> · {u.displayName}</span>{/if}</td>
                   <td>
                     {#if u.id === auth.user?.id}
-                      <span class="chip-muted">Super Admin (vous)</span>
+                      <span class="chip-muted whitespace-nowrap">Super Admin (vous)</span>
                     {:else}
                       <select class="input !py-1 text-xs" value={u.role} aria-label="Rôle de {u.email}" onchange={(e) => changeRole(u, (e.target as HTMLSelectElement).value)}>
                         <option value="EDITOR">Éditeur</option>

@@ -46,7 +46,7 @@
 {#if !auth.ready}
   <div class="grid h-screen place-items-center text-[color:var(--muted)]">Chargement…</div>
 {:else}
-  <div class="min-h-screen overflow-x-hidden bg-[color:var(--surface-bg)]">
+  <div class="min-h-screen overflow-x-clip bg-[color:var(--surface-bg)]">
     {#if showChrome}
       <header class="sticky top-0 z-20 border-b border-[color:var(--line)] bg-white/85 backdrop-blur-md">
         <div class="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-3">
