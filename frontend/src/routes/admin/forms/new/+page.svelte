@@ -56,9 +56,9 @@
 
 <svelte:head><title>Nouveau formulaire</title></svelte:head>
 
-<div class="mb-4 flex items-center justify-between">
-  <h1 class="text-2xl font-bold">Nouveau formulaire</h1>
-  <div class="flex gap-2">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+  <h1 class="text-xl sm:text-2xl font-bold">Nouveau formulaire</h1>
+  <div class="flex gap-2 w-full sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
     <button class="btn-secondary" onclick={() => goto("/admin")}><IconBack size={17} /> Annuler</button>
     <button class="btn-primary" onclick={save} disabled={saving}><IconSave size={17} /> {saving ? "…" : "Enregistrer"}</button>
   </div>

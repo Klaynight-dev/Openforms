@@ -43,7 +43,7 @@
 </p>
 
 <h2>2. Données traitées et finalités</h2>
-<table>
+<div class="table-wrap"><table>
   <thead>
     <tr>
       <th>Traitement</th>
@@ -96,7 +96,7 @@
       <td>{retention.sessionDays} jours pour les sessions, 12 mois au plus pour les journaux</td>
     </tr>
   </tbody>
-</table>
+</table></div>
 
 <h2>3. Séparation des identités et des réponses</h2>
 <p>

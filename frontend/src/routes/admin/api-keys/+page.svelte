@@ -76,17 +76,17 @@
 <svelte:head><title>Clés d'API — Humanitour</title></svelte:head>
 
 <div class="mx-auto max-w-4xl">
-  <div class="flex items-center gap-3 mb-2">
-    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+  <div class="flex flex-wrap items-center gap-3 mb-2">
+    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
       <IconKey size={20} />
     </span>
-    <div class="flex-1">
+    <div class="flex-1 min-w-[12rem]">
       <h1 class="text-xl font-bold text-[color:var(--ink)]">Clés d'API</h1>
       <p class="text-sm text-[color:var(--muted)]">
         Pour connecter un client externe (serveur MCP, script) à votre compte.
       </p>
     </div>
-    <button class="btn-primary shrink-0" onclick={() => { newName = ""; createOpen = true; }}>
+    <button class="btn-primary w-full sm:w-auto shrink-0" onclick={() => { newName = ""; createOpen = true; }}>
       <IconPlus size={16} /> Nouvelle clé
     </button>
   </div>
@@ -112,8 +112,8 @@
       hint="Créez une clé pour brancher le serveur MCP Openforms sur votre compte."
     />
   {:else}
-    <div class="bg-white border border-[color:var(--line)] rounded-2xl overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="bg-white border border-[color:var(--line)] rounded-2xl overflow-x-auto">
+      <table class="w-full min-w-[32rem] text-sm">
         <thead class="bg-slate-50 border-b border-[color:var(--line)]">
           <tr>
             <th class="text-left py-2.5 px-4 text-xs font-bold text-[color:var(--muted)] uppercase tracking-wide">Nom</th>

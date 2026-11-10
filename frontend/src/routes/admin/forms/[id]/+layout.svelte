@@ -401,20 +401,21 @@
     {/if}
 
     <!-- Google Forms Header Bar -->
-    <header class="bg-white border-b border-[color:var(--line)] sticky top-0 z-30 shadow-sm">
-      <div class="mx-auto max-w-7xl px-4 sm:px-6">
-        <div class="flex items-center justify-between py-3">
+    <header class="-mx-4 sm:-mx-6 bg-white border-b border-[color:var(--line)] sticky top-0 z-30 shadow-sm">
+      <div class="mx-auto max-w-7xl px-3 sm:px-6">
+        <div class="flex items-center justify-between gap-2 py-2 sm:py-3">
           <!-- Left Section: Back, Title, and Save status -->
-          <div class="flex items-center gap-3 min-w-0 flex-1">
+          <div class="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
             <button 
               class="btn-text !p-2 rounded-full hover:bg-slate-100 transition shrink-0" 
               onclick={() => goto("/admin")} 
               title="Retour à l'administration"
+              aria-label="Retour à l'administration"
             >
               <IconBack size={18} />
             </button>
             
-            <div class="flex flex-col min-w-0">
+            <div class="flex flex-col min-w-0 flex-1">
               {#if editorState.loading}
                 <div class="h-4 bg-slate-200 rounded-md w-36 animate-pulse mb-1"></div>
                 <div class="h-3 bg-slate-100 rounded-md w-24 animate-pulse"></div>
@@ -422,15 +423,15 @@
                 <span class="text-sm font-bold truncate text-[color:var(--ink)]">
                   {editorState.form?.title || "Sans titre"}
                 </span>
-                <span class="text-[10px] text-[color:var(--muted)] flex items-center gap-1">
+                <span class="text-[10px] text-[color:var(--muted)] flex items-center gap-1 whitespace-nowrap min-w-0 truncate">
                   {#if editorState.saving}
                     Enregistrement...
                   {:else if editorState.saved}
-                    <span class="text-green-600 flex items-center gap-0.5"><IconCheck size={12} weight="bold" /> Enregistré dans le cloud</span>
+                    <span class="text-green-600 flex items-center gap-0.5"><IconCheck size={12} weight="bold" /> Enregistré<span class="hidden sm:inline">&nbsp;dans le cloud</span></span>
                   {:else if editorState.dirty}
-                    Modifications en attente...
+                    <span class="sm:hidden">En attente…</span><span class="hidden sm:inline">Modifications en attente...</span>
                   {:else if editorState.form}
-                    Toutes les modifications sont enregistrées
+                    <span class="sm:hidden">Enregistré</span><span class="hidden sm:inline">Toutes les modifications sont enregistrées</span>
                   {/if}
                 </span>
               {/if}
@@ -438,7 +439,7 @@
           </div>
 
           <!-- Right Section: Actions -->
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="flex items-center gap-1 sm:gap-2 shrink-0">
             <!-- Qui d'autre a le formulaire ouvert en ce moment -->
             {#if others.length > 0}
               <div class="hidden sm:flex items-center -space-x-2 mr-1" aria-label={presenceLabel} title={presenceLabel}>
@@ -463,7 +464,7 @@
             {#if editorState.permission === "EDITOR"}
               <div class="flex items-center">
                 <button
-                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                  class="btn-text !p-1.5 sm:!p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
                   onclick={() => { if (editorState.history?.undo()) editorState.markDirty(); }}
                   disabled={!editorState.history?.canUndo}
                   title="Annuler (Ctrl+Z)"
@@ -472,7 +473,7 @@
                   <IconUndo size={18} />
                 </button>
                 <button
-                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                  class="btn-text !p-1.5 sm:!p-2 rounded-full hover:bg-slate-100 transition disabled:opacity-30 disabled:hover:bg-transparent"
                   onclick={() => { if (editorState.history?.redo()) editorState.markDirty(); }}
                   disabled={!editorState.history?.canRedo}
                   title="Rétablir (Ctrl+Maj+Z)"
@@ -481,7 +482,7 @@
                   <IconRedo size={18} />
                 </button>
                 <button
-                  class="btn-text !p-2 rounded-full hover:bg-slate-100 transition"
+                  class="btn-text !p-1.5 sm:!p-2 rounded-full hover:bg-slate-100 transition"
                   onclick={openHistory}
                   title="Historique des versions"
                   aria-label="Ouvrir l'historique des versions"
@@ -496,8 +497,9 @@
               <a
                 href={`/admin/forms/${id}/preview`}
                 target="_blank"
-                class="btn-secondary !py-2 !px-3"
+                class="btn-secondary !py-2 !px-2.5 sm:!px-3"
                 title="Prévisualiser le formulaire"
+                aria-label="Prévisualiser le formulaire"
                 onclick={openPreview}
               >
                 <IconEye size={18} />
@@ -508,12 +510,13 @@
             <!-- Publish State Toggle -->
             {#if editorState.form}
               <button 
-                class="btn-secondary !py-2 !px-3" 
+                class="btn-secondary !py-2 !px-2.5 sm:!px-3" 
                 onclick={togglePublish}
                 title={editorState.form.isPublished ? "Dépublier le formulaire" : "Publier le formulaire"}
+                aria-label={editorState.form.isPublished ? "Publié : dépublier le formulaire" : "Brouillon : publier le formulaire"}
               >
                 <span class="w-2.5 h-2.5 rounded-full shrink-0" class:bg-green-500={editorState.form.isPublished} class:bg-slate-300={!editorState.form.isPublished}></span>
-                <span>{editorState.form.isPublished ? "Publié" : "Brouillon"}</span>
+                <span class="hidden min-[400px]:inline">{editorState.form.isPublished ? "Publié" : "Brouillon"}</span>
               </button>
             {/if}
 
@@ -521,23 +524,24 @@
                  pas attendre, quand une modification est encore en attente. -->
             {#if editorState.saveCallback && (editorState.dirty || editorState.saving)}
               <button
-                class="btn-primary !py-2 !px-4"
+                class="btn-primary !py-2 !px-2.5 sm:!px-4"
                 onclick={() => editorState.triggerSave()}
                 disabled={editorState.saving}
+                aria-label="Enregistrer maintenant"
               >
                 <IconSave size={18} />
-                <span>{editorState.saving ? "Envoi..." : "Enregistrer maintenant"}</span>
+                <span class="hidden sm:inline">{editorState.saving ? "Envoi..." : "Enregistrer maintenant"}</span>
               </button>
             {/if}
           </div>
         </div>
 
         <!-- Tab Navigation Center -->
-        <div class="flex justify-center border-t border-[color:var(--line)]">
-          <nav class="flex gap-6 sm:gap-10 text-sm font-medium">
+        <div class="flex sm:justify-center border-t border-[color:var(--line)] -mx-3 sm:mx-0 overflow-x-auto no-scrollbar">
+          <nav class="flex gap-4 sm:gap-10 px-3 sm:px-0 text-sm font-medium whitespace-nowrap">
             <a 
               href={`/admin/forms/${id}`} 
-              class="py-3 border-b-2 px-1 transition-all flex items-center gap-1.5"
+              class="py-3 border-b-2 px-1 transition-all flex shrink-0 items-center gap-1.5"
               class:border-transparent={activeTab !== "questions"}
               class:text-[color:var(--muted)]={activeTab !== "questions"}
               class:border-[color:var(--brand)]={activeTab === "questions"}
@@ -548,7 +552,7 @@
             </a>
             <a 
               href={`/admin/forms/${id}/responses`} 
-              class="py-3 border-b-2 px-1 transition-all flex items-center gap-1.5"
+              class="py-3 border-b-2 px-1 transition-all flex shrink-0 items-center gap-1.5"
               class:border-transparent={activeTab !== "responses"}
               class:text-[color:var(--muted)]={activeTab !== "responses"}
               class:border-[color:var(--brand)]={activeTab === "responses"}
@@ -559,7 +563,7 @@
             </a>
             <a 
               href={`/admin/forms/${id}/stats`} 
-              class="py-3 border-b-2 px-1 transition-all flex items-center gap-1.5"
+              class="py-3 border-b-2 px-1 transition-all flex shrink-0 items-center gap-1.5"
               class:border-transparent={activeTab !== "stats"}
               class:text-[color:var(--muted)]={activeTab !== "stats"}
               class:border-[color:var(--brand)]={activeTab === "stats"}
@@ -570,7 +574,7 @@
             </a>
             <a 
               href={`/admin/forms/${id}/settings`}
-              class="py-3 border-b-2 px-1 transition-all flex items-center gap-1.5"
+              class="py-3 border-b-2 px-1 transition-all flex shrink-0 items-center gap-1.5"
               class:border-transparent={activeTab !== "settings"}
               class:text-[color:var(--muted)]={activeTab !== "settings"}
               class:border-[color:var(--brand)]={activeTab === "settings"}
